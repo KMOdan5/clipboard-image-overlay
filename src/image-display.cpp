@@ -44,7 +44,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   (フェードアウトの時間だけ QTimer で待つ)。
  * - 表示・非表示の切り替え時に、シーンアイテムの「表示トランジション」「非表示トランジション」で
  *   フェードさせる(OBS 標準の機能。シーンアイテムを右クリックすると出てくる設定と同じもの)。
- * - プラグインが設定するのは、トランジションが未設定のときだけ。配信者が自分で設定したものは上書きしない。
+ * - フェードを設定するのは、シーンに初めて追加したときだけ。以降は配信者が「なし」や別のものに
+ *   変えても、そのまま使う(貼るたびに設定し直すと、配信者の設定を勝手に戻してしまうため)。
+ *
+ * 初めて追加したあとにプラグインが変えるもの:
+ * - 画像ファイル(貼った画像に差し替える)
+ * - 表示サイズ(境界が「自動」のときだけ)
+ * - 表示/非表示(表示する・消す)
+ * 位置・重なり順・境界・トランジションなど、それ以外の設定は変えない。
  * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
  *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
  *
@@ -252,19 +259,17 @@ void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 }
 
 /**
- * @brief シーンアイテムの表示・非表示トランジションにフェードを設定する。
+ * @brief シーンに追加したばかりのシーンアイテムに、表示・非表示トランジション(フェード)を設定する。
  *
  * @details
- * 表示トランジション・非表示トランジションのそれぞれについて、未設定のときだけフェードを設定する。
- * 配信者が OBS 上で別のトランジション(スライドなど)を設定していた場合は、その設定を残す。
+ * 呼ぶのはシーンに初めて追加したときだけ。以降は一切設定し直さない。
+ * 配信者がトランジションを「なし」や別のもの(スライドなど)に変えたら、その設定をずっと使う。
  *
- * @param item 対象のシーンアイテム。
+ * @param item 対象のシーンアイテム(追加したばかりのもの)。
  */
-void ensure_fade_transitions(obs_sceneitem_t *item)
+void set_initial_fade_transitions(obs_sceneitem_t *item)
 {
 	for (const bool show : {true, false}) {
-		if (obs_sceneitem_get_transition(item, show))
-			continue; /* 既に設定がある: 配信者の設定を尊重する */
 
 		obs_source_t *fade = obs_source_create_private(FADE_TRANSITION_ID, nullptr, nullptr);
 		if (!fade) {
@@ -519,15 +524,14 @@ bool show_image_on_current_scene(const SavedImage &image)
 			obs_source_release(scene_source);
 			return false;
 		}
+		/*
+		 * 初めて追加したときだけの設定: 位置(画面中央)と、表示・非表示のフェード。
+		 * 重なり順は obs_scene_add() で最前面になる。以降はどれも設定し直さない。
+		 */
 		apply_default_position(item);
+		set_initial_fade_transitions(item);
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
-
-	/* 表示・非表示をフェードさせる(未設定のときだけ設定する) */
-	ensure_fade_transitions(item);
-
-	/* 他のソースに隠れないよう最前面に移す */
-	obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
 
 	if (obs_sceneitem_visible(item) || pending_swap.item == item) {
 		/* 表示中(または差し替え中): フェードアウト → 差し替え → フェードイン */

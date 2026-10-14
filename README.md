@@ -31,8 +31,10 @@ Built for just-chatting streams, where you want to say "look at this" without br
 - When the time is up, `Clipboard Image` is hidden in **every scene**, so nothing is left on screen even if you switched scenes.
 - If OBS is closed while an image is shown, it is hidden right away the next time OBS starts (or when you switch scene collections).
 - The fade uses the source's **Show/Hide Transition** (right-click `Clipboard Image` → Show Transition / Hide Transition).
-  The plugin only sets a fade when no transition is set, so you can choose another transition and it will be kept.
-- The display time (7 s) and fade duration (0.4 s) are fixed for now and will be configurable in the settings dialog.
+  The plugin sets a fade **only when it first adds the source to a scene**. After that it never changes the transitions,
+  so if you choose another transition or set it to none, your choice is kept.
+- The display time (7 s) and fade duration (0.4 s) are fixed for now and will be configurable in the settings dialog
+  (a fade duration of 0 will mean no transition).
 
 ### 表示と自動で消える動き(日本語)
 
@@ -41,8 +43,9 @@ Built for just-chatting streams, where you want to say "look at this" without br
 - 時間が来ると、**すべてのシーン**の `Clipboard Image` を非表示にします。途中でシーンを切り替えても、画像が出しっぱなしになりません。
 - 画像の表示中に OBS を終了した場合は、次に OBS を起動したとき(シーンコレクションを切り替えたときも)すぐに非表示にします。
 - フェードには、ソースの「**表示トランジション**」「**非表示トランジション**」を使っています(`Clipboard Image` を右クリック)。
-  プラグインがフェードを設定するのは未設定のときだけなので、別のトランジションに変えた場合はそれが使われます。
-- 表示時間(7秒)とフェードの時間(0.4秒)は今は固定で、設定画面ができたら変えられるようにします。
+  プラグインがフェードを設定するのは、**シーンに初めて追加したときだけ**です。その後は一切変えないので、
+  別のトランジションや「なし」に変えた場合は、その設定がずっと使われます。
+- 表示時間(7秒)とフェードの時間(0.4秒)は今は固定で、設定画面ができたら変えられるようにします(フェード時間 0 秒はトランジションなし)。
 
 ## Adjusting where images appear
 
@@ -53,6 +56,10 @@ The first time it is added to a scene, it is placed in the center of the screen.
 Images larger than **60% of the canvas width or height** are scaled down to fit (the aspect ratio is kept).
 Smaller images are shown at their original size (they are never enlarged).
 The 60% limit is fixed for now and will be configurable in the settings dialog.
+
+**What the plugin changes after the first time:** only the image file, the size (while Bounds is Automatic),
+and visibility. Position, layer order, bounds, and transitions are set once when the source is first added
+to a scene and are never changed again.
 
 **Position:** move `Clipboard Image` in the OBS preview to wherever you like.
 The plugin keeps your position for every image you paste afterwards.
@@ -66,6 +73,9 @@ changes the size and OBS sizes every image by the bounding box. Set it back to *
 ### 表示位置・大きさの変え方(日本語)
 
 画像は **`Clipboard Image`** という1つの画像ソースで表示されます。シーンに初めて追加されたときは、画面中央に置かれます。
+
+**初回以降にプラグインが変えるのは、画像・表示サイズ(境界が「自動」のときだけ)・表示/非表示だけです。**
+位置・重なり順・境界・トランジションは、シーンに初めて追加したときに設定するだけで、その後は変えません。
 
 - **大きさ**: 貼るたびに画像の大きさを見て、**画面の幅・高さの60%** を超える画像だけ、収まるように縮小します(縦横比は保ちます)。
   小さい画像は元の大きさのまま表示します(拡大はしません)。60%は今は固定で、設定画面ができたら変えられるようにします。
