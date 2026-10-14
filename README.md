@@ -21,7 +21,7 @@ Built for just-chatting streams, where you want to say "look at this" without br
 - [x] Paste image data or copied image files from the clipboard (copied GIFs keep their animation)
 - [x] Auto placement at a preset position and size
 - [x] Fade in → show for 7 seconds → fade out (press the hotkey again to extend)
-- [ ] Pinned mode (hide manually)
+- [x] Pause/resume the auto-hide timer with a hotkey (hide manually with OBS's own controls)
 - [ ] History dock (v2)
 
 ## Showing and hiding
@@ -33,8 +33,19 @@ Built for just-chatting streams, where you want to say "look at this" without br
 - The fade uses the source's **Show/Hide Transition** (right-click `Clipboard Image` → Show Transition / Hide Transition).
   The plugin sets a fade **only when it first adds the source to a scene**. After that it never changes the transitions,
   so if you choose another transition or set it to none, your choice is kept.
-- The display time (7 s) and fade duration (0.4 s) are fixed for now and will be configurable in the settings dialog
-  (a fade duration of 0 will mean no transition).
+- The display time (7 s) is fixed for now and will be configurable in the settings dialog
+  (0 will mean "keep showing until hidden manually"). To change the fade length, edit the Show/Hide Transition in OBS.
+
+### Pausing and hiding manually
+
+- **Pause/Resume Auto-Hide Timer** hotkey (Settings → Hotkeys): press while an image is shown to stop the countdown,
+  press again to resume from the remaining time. It does nothing when no image is shown.
+- Pasting a new image always resets the countdown to 7 seconds. If the timer is paused, it **stays paused**
+  (the next image replaces the current one and keeps showing).
+- To hide the image yourself, use OBS's own controls: the **eye icon** in the Sources list, or the
+  **Hide 'Clipboard Image'** hotkey in Settings → Hotkeys (OBS lists it per scene, so set it in each scene you use).
+- Whenever the image is hidden (manually or automatically), the pause is released, so the next image disappears
+  after 7 seconds as usual. After restarting OBS, nothing is paused.
 
 ### 表示と自動で消える動き(日本語)
 
@@ -45,7 +56,18 @@ Built for just-chatting streams, where you want to say "look at this" without br
 - フェードには、ソースの「**表示トランジション**」「**非表示トランジション**」を使っています(`Clipboard Image` を右クリック)。
   プラグインがフェードを設定するのは、**シーンに初めて追加したときだけ**です。その後は一切変えないので、
   別のトランジションや「なし」に変えた場合は、その設定がずっと使われます。
-- 表示時間(7秒)とフェードの時間(0.4秒)は今は固定で、設定画面ができたら変えられるようにします(フェード時間 0 秒はトランジションなし)。
+- 表示時間(7秒)は今は固定で、設定画面ができたら変えられるようにします(0秒は「手動で消すまで表示し続ける」)。
+  フェードの長さは、OBS の「表示トランジション」「非表示トランジション」の画面で変えられます。
+
+### 一時停止と手動で消す方法(日本語)
+
+- 「設定」→「ホットキー」の **「自動で消すタイマーを一時停止/再開」**: 画像の表示中に押すとカウントが止まり、
+  もう一度押すと残り時間から再開します。画像が出ていないときは何もしません。
+- 新しい画像を貼ると、残り時間はいつも7秒に戻ります。一時停止中に貼った場合は**一時停止のまま**です(画像だけ差し替わり、出たままになります)。
+- 自分で消したいときは、OBS 標準の機能を使ってください。ソース一覧の**目のアイコン**か、「設定」→「ホットキー」の
+  **「'Clipboard Image' を非表示」**です(OBS ではシーンごとに並ぶので、使うシーンそれぞれで割り当ててください)。
+- 画像が非表示になると(手動でも自動でも)、一時停止は解除されます。次に貼った画像は、普段どおり7秒で消えます。
+  OBS を起動し直したときも、一時停止していない状態から始まります。
 
 ## Adjusting where images appear
 

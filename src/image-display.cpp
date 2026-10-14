@@ -56,10 +56,17 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
  *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
  *
- * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、image_display_shutdown()(image-display.hpp)。
+ * 非表示の検知(#7):
+ * - Clipboard Image を置いたシーンの item_visible 通知を受け取り、非表示になったら一時停止を解除する
+ *   (auto_hide_on_image_hidden())。目のアイコン・OBS 標準のホットキー・自動で消す処理のどれでも届く。
+ * - 差し替えのためのフェードアウトは「表示が続いている」扱いにして無視する。
+ *
+ * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
+ * is_clipboard_image_showing()、image_display_shutdown()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
+#include "auto-hide.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -71,6 +78,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace {
 
@@ -496,6 +504,106 @@ void start_swap(obs_sceneitem_t *item, const SavedImage &image)
 	obs_log(LOG_INFO, "display: swapping image (fade out %d ms)", wait_ms);
 }
 
+/**
+ * @brief 「表示/非表示が切り替わった」通知を受け取っているシーンの一覧(弱い参照)。
+ *
+ * @details
+ * Clipboard Image を置いたシーンごとに、OBS の item_visible 通知を受け取るよう登録する。
+ * 弱い参照で持つのは、シーンが削除されたときにプラグインがシーンを生き残らせないようにするため。
+ */
+std::vector<obs_weak_source_t *> watched_scenes;
+
+/**
+ * @brief Clipboard Image が非表示になったときの処理(UI スレッドで実行する)。
+ *
+ * @details
+ * 自分の差し替え(フェードアウト中)で一時的に非表示にした場合と、
+ * 通知が届くまでに再び表示された場合は無視する。それ以外は一時停止を解除する(#7 のルール 2)。
+ *
+ * @param item 非表示になったシーンアイテム。
+ */
+void handle_item_hidden(obs_sceneitem_t *item)
+{
+	if (pending_swap.item == item)
+		return; /* 差し替えのためのフェードアウト: 表示は続いている扱い */
+	if (obs_sceneitem_visible(item))
+		return; /* 通知が届くまでに、また表示された */
+
+	obs_log(LOG_INFO, "display: Clipboard Image was hidden");
+	auto_hide_on_image_hidden();
+}
+
+/**
+ * @brief OBS の item_visible 通知を受け取る。Clipboard Image が非表示になったら UI スレッドに処理を回す。
+ *
+ * @details
+ * 目のアイコン・OBS 標準のホットキー・プラグイン自身、どの方法で非表示にしても届く。
+ * ホットキーの場合は UI スレッド以外から届くことがあるため、処理は UI スレッドに回す。
+ *
+ * @param cd 通知の内容("item": シーンアイテム、"visible": 表示なら true)。
+ *
+ * @note 呼び出し元: OBS(watch_scene() で登録した通知)。
+ * @note スレッド: 決まっていない(非表示にした操作のスレッド)。
+ */
+void on_item_visible(void *, calldata_t *cd)
+{
+	if (calldata_bool(cd, "visible"))
+		return;
+
+	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
+	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
+	const char *name = source ? obs_source_get_name(source) : nullptr;
+	if (!name || std::strcmp(name, SOURCE_NAME) != 0)
+		return;
+
+	/* UI スレッドで処理するまでアイテムが消えないよう、参照を持って渡す */
+	obs_sceneitem_addref(item);
+	obs_queue_task(
+		OBS_TASK_UI,
+		[](void *param) {
+			auto *queued = static_cast<obs_sceneitem_t *>(param);
+			handle_item_hidden(queued);
+			obs_sceneitem_release(queued);
+		},
+		item, false);
+}
+
+/**
+ * @brief シーンの item_visible 通知を受け取るよう登録する。登録済みなら何もしない。
+ *
+ * @param scene_source 対象のシーン(ソースとして)。
+ */
+void watch_scene(obs_source_t *scene_source)
+{
+	for (obs_weak_source_t *weak : watched_scenes) {
+		if (obs_weak_source_references_source(weak, scene_source))
+			return;
+	}
+
+	signal_handler_connect(obs_source_get_signal_handler(scene_source), "item_visible", on_item_visible, nullptr);
+	watched_scenes.push_back(obs_source_get_weak_source(scene_source));
+	obs_log(LOG_INFO, "display: watching visibility in scene \"%s\"", obs_source_get_name(scene_source));
+}
+
+/**
+ * @brief 登録した item_visible 通知をすべて解除する。
+ *
+ * @details 既に削除されたシーンは、弱い参照から取り出せないので解除不要(通知の仕組みごと消えている)。
+ */
+void unwatch_all_scenes()
+{
+	for (obs_weak_source_t *weak : watched_scenes) {
+		obs_source_t *scene_source = obs_weak_source_get_source(weak);
+		if (scene_source) {
+			signal_handler_disconnect(obs_source_get_signal_handler(scene_source), "item_visible",
+						  on_item_visible, nullptr);
+			obs_source_release(scene_source);
+		}
+		obs_weak_source_release(weak);
+	}
+	watched_scenes.clear();
+}
+
 } // namespace
 
 /**
@@ -543,6 +651,9 @@ bool show_image_on_current_scene(const SavedImage &image)
 		set_initial_fade_transitions(item);
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
+
+	/* 手動で非表示にされたことを知るため、このシーンの表示/非表示の通知を受け取る(#7 の一時停止の解除に使う) */
+	watch_scene(scene_source);
 
 	/* 後から追加されたソースに隠れないよう、最前面に移す(「常に手前に表示する」がオンのとき) */
 	if (ALWAYS_ON_TOP)
@@ -617,7 +728,36 @@ void hide_clipboard_image(bool fade)
  */
 void image_display_shutdown()
 {
+	unwatch_all_scenes();
 	cancel_swap();
 	delete swap_timer;
 	swap_timer = nullptr;
+}
+
+/**
+ * @brief 現在のシーンで Clipboard Image が表示中かどうかを返す。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+bool is_clipboard_image_showing()
+{
+	if (pending_swap.item)
+		return true; /* 差し替え中: いったん非表示にしているが、すぐまた表示する */
+
+	obs_source_t *scene_source = obs_frontend_get_current_scene();
+	obs_scene_t *scene = obs_scene_from_source(scene_source);
+	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+
+	bool showing = false;
+	if (scene && source) {
+		obs_sceneitem_t *item = find_scene_item(scene, source);
+		if (item) {
+			showing = obs_sceneitem_visible(item);
+			obs_sceneitem_release(item);
+		}
+	}
+
+	obs_source_release(source);
+	obs_source_release(scene_source);
+	return showing;
 }

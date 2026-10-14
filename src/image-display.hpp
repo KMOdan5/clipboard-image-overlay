@@ -78,11 +78,24 @@ bool show_image_on_current_scene(const SavedImage &image);
 void hide_clipboard_image(bool fade);
 
 /**
- * @brief 表示処理で使っているタイマーなどを片付ける。何度呼んでもよい。
+ * @brief 現在のシーンで Clipboard Image が表示中かどうかを返す。
  *
- * @details 差し替えの途中なら取り消してから片付ける。OBS の終了時に呼ぶ。
+ * @details 差し替えの途中(フェードアウトして新しい画像を待っている間)も、表示中として扱う。
  *
- * @note 呼び出し元: plugin-main.cpp(終了イベント・プラグイン解放時)。
+ * @return 表示中なら true。
+ *
+ * @note 呼び出し元: auto-hide.cpp(一時停止ホットキーが表示中だけ効くようにするため)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+bool is_clipboard_image_showing();
+
+/**
+ * @brief 表示処理で使っているタイマーや通知の登録を片付ける。何度呼んでもよい。
+ *
+ * @details 差し替えの途中なら取り消し、シーンの表示/非表示の通知の登録も解除する。
+ *          OBS の終了時・起動完了時・シーンコレクション切り替え時に呼ぶ。
+ *
+ * @note 呼び出し元: plugin-main.cpp(画面側のイベント・プラグイン解放時)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void image_display_shutdown();
