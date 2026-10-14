@@ -25,17 +25,20 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @code
  *   ツールメニュー クリック ─┐
  *                              ├→ on_show_requested() ─→ save_clipboard_image()         画像を保存
- *   ホットキー 押下 ──────────┘     (UI スレッド)     │   (clipboard-capture.cpp)
+ *   表示ホットキー 押下 ──────┘     (UI スレッド)     │   (clipboard-capture.cpp)
  *                                                      ├→ show_image_on_current_scene()  シーンに表示
  *                                                      │   (image-display.cpp)
  *                                                      └→ auto_hide_restart()           数秒後に自動で消す
  *                                                          (auto-hide.cpp)
+ *
+ *   一時停止ホットキー 押下 ──→ auto_hide_toggle_pause()  自動で消すタイマーの一時停止/再開
+ *                                (auto-hide.cpp)
  * @endcode
  *
  * 関連ファイル:
  * - clipboard-capture.cpp … クリップボードから画像を取り出して保存する
  * - image-display.cpp … 保存した画像を現在のシーンに表示する/消す
- * - auto-hide.cpp … 表示した画像を一定時間後に自動で消すタイマー
+ * - auto-hide.cpp … 表示した画像を一定時間後に自動で消すタイマーと、その一時停止
  * - data/locale/ の .ini … メニュー名・ホットキー名の表示文字列
  */
 
@@ -61,11 +64,33 @@ constexpr const char *HOTKEY_NAME = "obs_clipboard_image.show";
 /// @brief シーンコレクションの保存データ内で、このプラグインが使うキー名。
 constexpr const char *SAVE_KEY = "obs-clipboard-image";
 
-/// @brief SAVE_KEY の中で、ホットキーの割り当てを保存するキー名。
+/// @brief SAVE_KEY の中で、表示ホットキーの割り当てを保存するキー名。
 constexpr const char *SAVE_HOTKEY_KEY = "show_hotkey";
 
-/// @brief 登録したホットキーの ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
+/**
+ * @brief 一時停止ホットキーの内部名。
+ * @warning OBS の設定ファイルに保存されるため、変更すると既存の割り当てが消える。
+ */
+constexpr const char *PAUSE_HOTKEY_NAME = "obs_clipboard_image.toggle_pause";
+
+/// @brief SAVE_KEY の中で、一時停止ホットキーの割り当てを保存するキー名。
+constexpr const char *SAVE_PAUSE_HOTKEY_KEY = "pause_hotkey";
+
+/// @brief 登録した表示ホットキーの ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
 obs_hotkey_id show_hotkey_id = OBS_INVALID_HOTKEY_ID;
+
+/// @brief 登録した一時停止ホットキーの ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
+obs_hotkey_id pause_hotkey_id = OBS_INVALID_HOTKEY_ID;
+
+/**
+ * @brief シーンコレクションの読み込みが終わり、通知を登録してよい状態なら true。
+ *
+ * @details
+ * シーン一覧の変更(SCENE_LIST_CHANGED)は、読み込みの途中・切り替えの途中・終了の途中にも届く。
+ * その間に通知を登録すると、片付けた後にまた通知を受け取り、タイマーが動き出してしまうことがある。
+ * 起動完了時・切り替え完了時に true、切り替え開始時・終了時に false にする。
+ */
+bool scenes_ready = false;
 
 /**
  * @brief 「クリップボードの画像を表示」の共通処理。
@@ -87,6 +112,14 @@ void on_show_requested(const char *trigger)
 	const auto image = save_clipboard_image();
 	if (!image)
 		return;
+
+	/*
+	 * 何も表示されていないのに一時停止が残っていたら、貼る前に解除する。
+	 * 通常は非表示の通知で解除されるが、ソースの名前を変えた場合など通知では分からない消え方もあるため、
+	 * ここで必ず確かめる(残っていると、貼った画像が一時停止のまま消えなくなる)。
+	 */
+	if (!is_clipboard_image_showing())
+		auto_hide_on_image_hidden();
 
 	/* 保存した画像を現在のシーンに表示する。表示できなければタイマーも動かさない */
 	if (!show_image_on_current_scene(*image))
@@ -126,6 +159,50 @@ void on_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 }
 
 /**
+ * @brief 一時停止ホットキーが押された/離されたときの処理。自動で消すタイマーを一時停止/再開する。
+ *
+ * @param pressed 押したとき true、離したとき false。
+ *
+ * @note 呼び出し元: OBS(obs_module_load() で登録したホットキー)。
+ * @note スレッド: ホットキー専用スレッド(UI スレッドではない)。Qt のタイマーを触るため UI スレッドに処理を依頼する。
+ */
+void on_pause_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
+{
+	if (!pressed)
+		return;
+
+	obs_queue_task(OBS_TASK_UI, [](void *) { auto_hide_toggle_pause(); }, nullptr, false);
+}
+
+/**
+ * @brief 1 つのホットキーの割り当てを、保存データに書き込む。
+ *
+ * @param obj 書き込み先(このプラグイン用の保存データ)。
+ * @param key 保存に使うキー名。
+ * @param id  ホットキーの ID。
+ */
+void save_hotkey(obs_data_t *obj, const char *key, obs_hotkey_id id)
+{
+	obs_data_array_t *hotkey = obs_hotkey_save(id);
+	obs_data_set_array(obj, key, hotkey);
+	obs_data_array_release(hotkey);
+}
+
+/**
+ * @brief 1 つのホットキーの割り当てを、保存データから読み込む。
+ *
+ * @param obj 読み込み元(このプラグイン用の保存データ)。
+ * @param key 保存に使ったキー名。
+ * @param id  ホットキーの ID。
+ */
+void load_hotkey(obs_data_t *obj, const char *key, obs_hotkey_id id)
+{
+	obs_data_array_t *hotkey = obs_data_get_array(obj, key);
+	obs_hotkey_load(id, hotkey);
+	obs_data_array_release(hotkey);
+}
+
+/**
  * @brief ホットキーの割り当てを保存/読み込みする。
  *
  * @details
@@ -133,7 +210,7 @@ void on_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
  * そのため他のフロントエンドプラグインと同じく、シーンコレクションのデータに自分で書き込む。
  * 結果として、割り当てはシーンコレクションごとになる。
  *
- * 保存形式: { "obs-clipboard-image": { "show_hotkey": [...] } }
+ * 保存形式: { "obs-clipboard-image": { "show_hotkey": [...], "pause_hotkey": [...] } }
  *
  * @param save_data シーンコレクションの保存データ。
  * @param saving    保存時 true、読み込み時 false。
@@ -145,10 +222,9 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
 	if (saving) {
 		/* 保存: 現在の割り当てを書き込む */
 		obs_data_t *obj = obs_data_create();
-		obs_data_array_t *hotkey = obs_hotkey_save(show_hotkey_id);
-		obs_data_set_array(obj, SAVE_HOTKEY_KEY, hotkey);
+		save_hotkey(obj, SAVE_HOTKEY_KEY, show_hotkey_id);
+		save_hotkey(obj, SAVE_PAUSE_HOTKEY_KEY, pause_hotkey_id);
 		obs_data_set_obj(save_data, SAVE_KEY, obj);
-		obs_data_array_release(hotkey);
 		obs_data_release(obj);
 		return;
 	}
@@ -158,11 +234,10 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
 	if (!obj)
 		return;
 
-	obs_data_array_t *hotkey = obs_data_get_array(obj, SAVE_HOTKEY_KEY);
-	obs_hotkey_load(show_hotkey_id, hotkey);
-	obs_data_array_release(hotkey);
+	load_hotkey(obj, SAVE_HOTKEY_KEY, show_hotkey_id);
+	load_hotkey(obj, SAVE_PAUSE_HOTKEY_KEY, pause_hotkey_id);
 	obs_data_release(obj);
-	obs_log(LOG_INFO, "hotkey binding loaded");
+	obs_log(LOG_INFO, "hotkey bindings loaded");
 }
 
 /**
@@ -170,10 +245,15 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  *
  * @details
  * - 起動完了時(FINISHED_LOADING)・シーンコレクション切り替え時(SCENE_COLLECTION_CHANGED):
- *   Clipboard Image をフェードなしで即座に非表示にする。
+ *   タイマー・一時停止・通知の登録を片付けてから、Clipboard Image をフェードなしで即座に非表示にする。
  *   OBS は終了処理の最初にシーンコレクションを保存し、EXIT イベントはその後に来る。
  *   そのため表示中に終了すると「表示中」のまま保存され、次の起動時に出たままになる。
  *   保存より前に届くイベントはないので、読み込んだ直後に片付ける。
+ *   その後、全シーンの通知(表示/非表示・追加・削除)を登録する。
+ * - シーンコレクション切り替えの開始時(SCENE_COLLECTION_CHANGING): タイマーと通知の登録を先に片付ける。
+ *   切り替えの途中でタイマーが発火し、片付け中のシーンを触るのを防ぐため。
+ * - シーン一覧の変更時(SCENE_LIST_CHANGED): 追加されたシーンの通知も登録する。
+ *   読み込み・切り替え・終了の途中は登録しない(scenes_ready)。
  * - 終了時(EXIT): 自動で消すタイマーと、画像差し替えのタイマーを止める。終了処理の途中でタイマーが発火し、
  *   片付け中のシーンやソースを触るのを防ぐため。
  *
@@ -187,10 +267,27 @@ void on_frontend_event(obs_frontend_event event, void *)
 	switch (event) {
 	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
-		auto_hide_shutdown(); /* 切り替え前のタイマーが新しいコレクションで発火しないように */
+		/* 切り替え前のタイマー・一時停止・通知の登録が、新しいコレクションに持ち越されないように */
+		auto_hide_shutdown();
+		image_display_shutdown();
 		hide_clipboard_image(false);
+		/* 片付けた後で通知を登録する(起動直後に手動で表示・追加した場合もカウントできるように) */
+		image_display_watch_scenes();
+		scenes_ready = true;
+		break;
+	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
+		/* 切り替えの途中でタイマーが発火し、片付け中のシーンを触らないように先に止める */
+		scenes_ready = false;
+		auto_hide_shutdown();
+		image_display_shutdown();
+		break;
+	case OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED:
+		/* シーンが追加されたら、そのシーンの通知も受け取る(読み込み・切り替え・終了の途中は登録しない) */
+		if (scenes_ready)
+			image_display_watch_scenes();
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
+		scenes_ready = false;
 		auto_hide_shutdown();
 		image_display_shutdown();
 		break;
@@ -216,7 +313,12 @@ bool obs_module_load(void)
 						      on_hotkey_pressed, nullptr);
 	/* ホットキーが登録できなくてもメニューからは使えるので、警告だけ出して続ける */
 	if (show_hotkey_id == OBS_INVALID_HOTKEY_ID)
-		obs_log(LOG_WARNING, "failed to register hotkey");
+		obs_log(LOG_WARNING, "failed to register show hotkey");
+
+	pause_hotkey_id = obs_hotkey_register_frontend(PAUSE_HOTKEY_NAME, obs_module_text("Hotkey.TogglePause"),
+						       on_pause_hotkey_pressed, nullptr);
+	if (pause_hotkey_id == OBS_INVALID_HOTKEY_ID)
+		obs_log(LOG_WARNING, "failed to register pause hotkey");
 
 	obs_frontend_add_save_callback(on_frontend_save, nullptr);
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
@@ -242,6 +344,10 @@ void obs_module_unload(void)
 	if (show_hotkey_id != OBS_INVALID_HOTKEY_ID) {
 		obs_hotkey_unregister(show_hotkey_id);
 		show_hotkey_id = OBS_INVALID_HOTKEY_ID;
+	}
+	if (pause_hotkey_id != OBS_INVALID_HOTKEY_ID) {
+		obs_hotkey_unregister(pause_hotkey_id);
+		pause_hotkey_id = OBS_INVALID_HOTKEY_ID;
 	}
 
 	obs_log(LOG_INFO, "plugin unloaded");
