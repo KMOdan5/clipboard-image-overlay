@@ -20,9 +20,27 @@ Built for just-chatting streams, where you want to say "look at this" without br
 
 - [x] Paste image data or copied image files from the clipboard (copied GIFs keep their animation)
 - [x] Auto placement at a preset position and size
-- [ ] Fade in → show for N seconds → fade out (with extend)
+- [x] Fade in → show for 7 seconds → fade out (press the hotkey again to extend)
 - [ ] Pinned mode (hide manually)
 - [ ] History dock (v2)
+
+## Showing and hiding
+
+- Each image **fades in**, stays for **7 seconds**, then **fades out** automatically.
+- Press the hotkey again while an image is shown to paste the new clipboard image and **restart the 7 seconds**.
+- When the time is up, `Clipboard Image` is hidden in **every scene**, so nothing is left on screen even if you switched scenes.
+- The fade uses the source's **Show/Hide Transition** (right-click `Clipboard Image` → Show Transition / Hide Transition).
+  The plugin only sets a fade when no transition is set, so you can choose another transition and it will be kept.
+- The display time (7 s) and fade duration (0.4 s) are fixed for now and will be configurable in the settings dialog.
+
+### 表示と自動で消える動き(日本語)
+
+- 画像は**フェードイン**し、**7秒**表示したあと、自動で**フェードアウト**して消えます。
+- 表示中にもう一度ホットキーを押すと、新しくコピーした画像に差し替わり、**7秒を最初から数え直します**(延長)。
+- 時間が来ると、**すべてのシーン**の `Clipboard Image` を非表示にします。途中でシーンを切り替えても、画像が出しっぱなしになりません。
+- フェードには、ソースの「**表示トランジション**」「**非表示トランジション**」を使っています(`Clipboard Image` を右クリック)。
+  プラグインがフェードを設定するのは未設定のときだけなので、別のトランジションに変えた場合はそれが使われます。
+- 表示時間(7秒)とフェードの時間(0.4秒)は今は固定で、設定画面ができたら変えられるようにします。
 
 ## Adjusting where images appear
 

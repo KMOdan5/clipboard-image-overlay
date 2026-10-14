@@ -39,7 +39,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *    - 小さい画像は等倍(拡大しない)
  *    - 画像や画面の大きさが取れない場合は等倍(元の大きさのまま)
  *    - 境界が「自動」以外のときは表示サイズを変えない(境界の枠が大きさを決める)
- * 4. ソースをシーンの最前面に移し、表示状態にする
+ * 4. 表示・非表示トランジションが未設定ならフェードを設定する(配信者の設定は上書きしない)
+ * 5. ソースをシーンの最前面に移し、表示状態にする(フェードイン)。既に表示中なら画像だけ差し替わる
  *
  * 位置を設定するのは、シーンに初めて追加したときだけ。
  * 配信者がその後 OBS 上で動かした位置は、上書きしない。
@@ -51,3 +52,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 bool show_image_on_current_scene(const SavedImage &image);
+
+/**
+ * @brief 全シーンの Clipboard Image を非表示にする(フェードアウト)。
+ *
+ * @details
+ * 現在のシーンだけでなく、全シーンを対象にする。表示中にシーンを切り替えても、
+ * 元のシーンに画像が出しっぱなしにならないようにするため。
+ * Clipboard Image がない、または表示中のものがない場合は何もしない。
+ *
+ * @note 呼び出し元: auto-hide.cpp(自動で消すタイマー)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+void hide_clipboard_image();

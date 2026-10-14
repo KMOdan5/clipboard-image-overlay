@@ -38,6 +38,8 @@ target_sources(
   ${CMAKE_PROJECT_NAME}
   PRIVATE
     src/plugin-main.cpp
+    src/auto-hide.cpp
+    src/auto-hide.hpp
     src/clipboard-capture.cpp
     src/clipboard-capture.hpp
     src/image-display.cpp

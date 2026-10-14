@@ -26,13 +26,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   ツールメニュー クリック ─┐
  *                              ├→ on_show_requested() ─→ save_clipboard_image()         画像を保存
  *   ホットキー 押下 ──────────┘     (UI スレッド)     │   (clipboard-capture.cpp)
- *                                                      └→ show_image_on_current_scene()  シーンに表示
- *                                                          (image-display.cpp)
+ *                                                      ├→ show_image_on_current_scene()  シーンに表示
+ *                                                      │   (image-display.cpp)
+ *                                                      └→ auto_hide_restart()           数秒後に自動で消す
+ *                                                          (auto-hide.cpp)
  * @endcode
  *
  * 関連ファイル:
  * - clipboard-capture.cpp … クリップボードから画像を取り出して保存する
- * - image-display.cpp … 保存した画像を現在のシーンに表示する
+ * - image-display.cpp … 保存した画像を現在のシーンに表示する/消す
+ * - auto-hide.cpp … 表示した画像を一定時間後に自動で消すタイマー
  * - data/locale/ の .ini … メニュー名・ホットキー名の表示文字列
  */
 
@@ -40,6 +43,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
 
+#include "auto-hide.hpp"
 #include "clipboard-capture.hpp"
 #include "image-display.hpp"
 
@@ -66,7 +70,8 @@ obs_hotkey_id show_hotkey_id = OBS_INVALID_HOTKEY_ID;
 /**
  * @brief 「クリップボードの画像を表示」の共通処理。
  *
- * @details クリップボードの画像を保存し、現在のシーンに表示する。
+ * @details クリップボードの画像を保存し、現在のシーンに表示して、自動で消すタイマーを開始する。
+ * 表示中にもう一度呼ばれると、画像が差し替わり、タイマーも最初からやり直す(表示時間の延長)。
  * 画像が取れなければ、理由をログに残して何もしない。
  *
  * @param trigger どこから呼ばれたか("menu" / "hotkey")。ログ用。
@@ -83,8 +88,12 @@ void on_show_requested(const char *trigger)
 	if (!image)
 		return;
 
-	/* 保存した画像を現在のシーンに表示する */
-	show_image_on_current_scene(*image);
+	/* 保存した画像を現在のシーンに表示する。表示できなければタイマーも動かさない */
+	if (!show_image_on_current_scene(*image))
+		return;
+
+	/* 一定時間後に自動で消す(既に動いていれば延長) */
+	auto_hide_restart();
 }
 
 /**
@@ -156,12 +165,29 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
 	obs_log(LOG_INFO, "hotkey binding loaded");
 }
 
+/**
+ * @brief OBS の画面側(フロントエンド)のイベントを受け取る。
+ *
+ * @details OBS の終了時(OBS_FRONTEND_EVENT_EXIT)に、自動で消すタイマーを止める。
+ * 終了処理の途中でタイマーが発火し、片付け中のシーンやソースを触るのを防ぐため。
+ *
+ * @param event 発生したイベント。
+ *
+ * @note 呼び出し元: OBS(obs_module_load() で登録)。
+ * @note スレッド: UI スレッド。
+ */
+void on_frontend_event(obs_frontend_event event, void *)
+{
+	if (event == OBS_FRONTEND_EVENT_EXIT)
+		auto_hide_shutdown();
+}
+
 } // namespace
 
 /**
  * @brief プラグインの読み込み時の処理。OBS の起動時に 1 回呼ばれる。
  *
- * @details ツールメニューの項目追加、ホットキー登録、保存処理の登録を行う。
+ * @details ツールメニューの項目追加、ホットキー登録、保存処理と終了イベントの登録を行う。
  *
  * @return true で読み込み成功。false を返すと OBS はこのプラグインを使わない。
  */
@@ -176,6 +202,7 @@ bool obs_module_load(void)
 		obs_log(LOG_WARNING, "failed to register hotkey");
 
 	obs_frontend_add_save_callback(on_frontend_save, nullptr);
+	obs_frontend_add_event_callback(on_frontend_event, nullptr);
 
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
 	return true;
@@ -188,6 +215,10 @@ bool obs_module_load(void)
  */
 void obs_module_unload(void)
 {
+	/* 終了イベントで止まっているはずだが、念のためここでも止める(何度呼んでもよい) */
+	auto_hide_shutdown();
+
+	obs_frontend_remove_event_callback(on_frontend_event, nullptr);
 	obs_frontend_remove_save_callback(on_frontend_save, nullptr);
 
 	if (show_hotkey_id != OBS_INVALID_HOTKEY_ID) {

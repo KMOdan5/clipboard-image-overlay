@@ -39,7 +39,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)で表示する。
  * - 境界が「自動」以外のときは表示サイズを変えない(境界の枠が大きさを決めるため)。
  *
- * 公開している関数は show_image_on_current_scene() だけ(image-display.hpp)。
+ * 表示と非表示:
+ * - 表示・非表示の切り替え時に、シーンアイテムの「表示トランジション」「非表示トランジション」で
+ *   フェードさせる(OBS 標準の機能。シーンアイテムを右クリックすると出てくる設定と同じもの)。
+ * - プラグインが設定するのは、トランジションが未設定のときだけ。配信者が自分で設定したものは上書きしない。
+ * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
+ *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
+ *
+ * 公開している関数は show_image_on_current_scene() と hide_clipboard_image()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
@@ -65,6 +72,12 @@ constexpr const char *SOURCE_NAME = "Clipboard Image";
 
 /// @brief OBS 標準の画像ソースの内部 ID。
 constexpr const char *IMAGE_SOURCE_ID = "image_source";
+
+/// @brief フェードイン・フェードアウトにかける時間(ミリ秒)。#8 の設定画面で変更できるようにする予定。
+constexpr uint32_t FADE_DURATION_MS = 400;
+
+/// @brief OBS 標準のフェードトランジションの内部 ID。
+constexpr const char *FADE_TRANSITION_ID = "fade_transition";
 
 /**
  * @brief 画像の最大の大きさ(画面の幅・高さに対する割合)。これを超える画像だけ縮小する。
@@ -220,6 +233,70 @@ void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 }
 
 /**
+ * @brief シーンアイテムの表示・非表示トランジションにフェードを設定する。
+ *
+ * @details
+ * 表示トランジション・非表示トランジションのそれぞれについて、未設定のときだけフェードを設定する。
+ * 配信者が OBS 上で別のトランジション(スライドなど)を設定していた場合は、その設定を残す。
+ *
+ * @param item 対象のシーンアイテム。
+ */
+void ensure_fade_transitions(obs_sceneitem_t *item)
+{
+	for (const bool show : {true, false}) {
+		if (obs_sceneitem_get_transition(item, show))
+			continue; /* 既に設定がある: 配信者の設定を尊重する */
+
+		obs_source_t *fade = obs_source_create_private(FADE_TRANSITION_ID, nullptr, nullptr);
+		if (!fade) {
+			obs_log(LOG_WARNING, "display: failed to create fade transition (%s)", show ? "show" : "hide");
+			continue; /* フェードなしでも表示・非表示はできるので、続ける */
+		}
+		/* obs_sceneitem_set_transition() は自分で参照を持つので、ここで作った分は解放してよい */
+		obs_sceneitem_set_transition(item, show, fade);
+		obs_sceneitem_set_transition_duration(item, show, FADE_DURATION_MS);
+		obs_source_release(fade);
+		obs_log(LOG_INFO, "display: fade %s transition set (%u ms)", show ? "show" : "hide", FADE_DURATION_MS);
+	}
+}
+
+/**
+ * @brief ソースを非表示の状態でシーンに追加する。
+ *
+ * @details
+ * obs_scene_add() で追加したアイテムは最初から表示状態になる。そのままだと初めて貼ったときだけ
+ * フェードインせず、いきなり画面に出てしまう。そこで追加と非表示化を obs_scene_atomic_update() で
+ * まとめて行い、その間に画面が描かれないようにする(OBS 本体がソースを追加するときと同じ方法)。
+ *
+ * @param scene  追加先のシーン。
+ * @param source 追加するソース。
+ * @return 追加したシーンアイテム(参照カウント付き。使い終わったら obs_sceneitem_release() で解放する)。
+ * @retval nullptr 追加に失敗した。
+ */
+obs_sceneitem_t *add_hidden_scene_item(obs_scene_t *scene, obs_source_t *source)
+{
+	struct add_ctx {
+		obs_source_t *source;
+		obs_sceneitem_t *item;
+	} ctx = {source, nullptr};
+
+	obs_scene_atomic_update(
+		scene,
+		[](void *param, obs_scene_t *target) {
+			auto *ctx = static_cast<add_ctx *>(param);
+			ctx->item = obs_scene_add(target, ctx->source);
+			if (!ctx->item)
+				return;
+			/* obs_scene_add() の戻り値は参照カウントを持たないので、後で解放できるよう揃える */
+			obs_sceneitem_addref(ctx->item);
+			obs_sceneitem_set_visible(ctx->item, false);
+		},
+		&ctx);
+
+	return ctx.item;
+}
+
+/**
  * @brief シーンの中から、指定したソースが置かれているシーンアイテムを探す。
  *
  * @details
@@ -286,7 +363,8 @@ bool show_image_on_current_scene(const SavedImage &image)
 		/* 既にある: 配信者が動かした位置を尊重し、位置は変えない */
 		obs_log(LOG_INFO, "display: reusing item in scene \"%s\"", obs_source_get_name(scene_source));
 	} else {
-		item = obs_scene_add(scene, source);
+		/* 非表示で追加し、後でフェードインさせる(初回だけいきなり出るのを防ぐ) */
+		item = add_hidden_scene_item(scene, source);
 		if (!item) {
 			obs_log(LOG_WARNING, "display: failed to add source to scene \"%s\"",
 				obs_source_get_name(scene_source));
@@ -294,8 +372,6 @@ bool show_image_on_current_scene(const SavedImage &image)
 			obs_source_release(scene_source);
 			return false;
 		}
-		/* obs_scene_add() の戻り値は参照カウントを持たないので、後で解放できるよう揃える */
-		obs_sceneitem_addref(item);
 		apply_default_position(item);
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
@@ -303,7 +379,13 @@ bool show_image_on_current_scene(const SavedImage &image)
 	/* 画像ごとに大きさが違うので、貼るたびに表示サイズを決め直す */
 	apply_display_size(item, image);
 
-	/* 他のソースに隠れないよう最前面に移し、表示状態にする */
+	/* 表示・非表示をフェードさせる(未設定のときだけ設定する) */
+	ensure_fade_transitions(item);
+
+	/*
+	 * 他のソースに隠れないよう最前面に移し、表示状態にする(表示トランジションでフェードインする)。
+	 * 既に表示中のときは、画像だけがその場で差し替わる(フェードし直さない)。
+	 */
 	obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
 	obs_sceneitem_set_visible(item, true);
 	obs_log(LOG_INFO, "display: showing %s", image.path.c_str());
@@ -312,4 +394,45 @@ bool show_image_on_current_scene(const SavedImage &image)
 	obs_source_release(source);
 	obs_source_release(scene_source);
 	return true;
+}
+
+/**
+ * @brief 全シーンの Clipboard Image を非表示にする。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ *
+ * @note 呼び出し元: auto-hide.cpp の on_hide_timer()。
+ * @note スレッド: UI スレッド。
+ */
+void hide_clipboard_image()
+{
+	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	if (!source) {
+		obs_log(LOG_INFO, "display: nothing to hide (no \"%s\")", SOURCE_NAME);
+		return;
+	}
+
+	/* シーン一覧を取り、それぞれのシーンに置かれた Clipboard Image を非表示にする */
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+
+	int hidden = 0;
+	for (size_t i = 0; i < scenes.sources.num; i++) {
+		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
+		if (!scene)
+			continue;
+
+		obs_sceneitem_t *item = find_scene_item(scene, source);
+		if (!item)
+			continue;
+
+		/* 表示中のものだけ非表示にする(非表示トランジションでフェードアウトする) */
+		if (obs_sceneitem_visible(item) && obs_sceneitem_set_visible(item, false))
+			hidden++;
+		obs_sceneitem_release(item);
+	}
+
+	obs_frontend_source_list_free(&scenes);
+	obs_source_release(source);
+	obs_log(LOG_INFO, "display: hidden in %d scene(s)", hidden);
 }
