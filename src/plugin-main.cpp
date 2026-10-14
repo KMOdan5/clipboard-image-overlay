@@ -79,12 +79,12 @@ void on_show_requested(const char *trigger)
 	obs_log(LOG_INFO, "show requested (trigger: %s)", trigger);
 
 	/* クリップボードの画像をファイルに保存する。画像がなければ終了 */
-	const auto path = save_clipboard_image();
-	if (!path)
+	const auto image = save_clipboard_image();
+	if (!image)
 		return;
 
 	/* 保存した画像を現在のシーンに表示する */
-	show_image_on_current_scene(*path);
+	show_image_on_current_scene(*image);
 }
 
 /**

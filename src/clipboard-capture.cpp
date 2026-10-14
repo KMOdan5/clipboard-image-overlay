@@ -116,25 +116,25 @@ QString new_image_path(const QString &extension)
  * @param path 保存したファイルのパス。
  * @param size 画像の幅と高さ(ログ用)。
  * @param how  保存のしかた。"copied original"(そのままコピー)か "encoded png"(PNG に変換)。
- * @return OS 標準の区切り文字(Windows なら \\)にした UTF-8 のパス。
+ * @return 保存した画像の情報。パスは OS 標準の区切り文字(Windows なら \\)にした UTF-8。
  */
-std::optional<std::string> saved(const QString &path, const QSize &size, const char *how)
+std::optional<SavedImage> saved(const QString &path, const QSize &size, const char *how)
 {
 	const QString native = QDir::toNativeSeparators(path);
 	obs_log(LOG_INFO, "save: %dx%d (%s) -> %s", size.width(), size.height(), how, native.toUtf8().constData());
-	return native.toUtf8().toStdString();
+	return SavedImage{native.toUtf8().toStdString(), size.width(), size.height()};
 }
 
 /**
  * @brief 画像を PNG ファイルとして保存する。
  *
  * @param image 保存する画像。
- * @return 保存したパス。
+ * @return 保存した画像の情報。
  * @retval std::nullopt 保存に失敗した。
  *
  * @see save_local_file()(変換が必要なファイル)、save_clipboard_image()(画像データ)… 呼び出し元
  */
-std::optional<std::string> save_as_png(const QImage &image)
+std::optional<SavedImage> save_as_png(const QImage &image)
 {
 	const QString path = new_image_path(QStringLiteral("png"));
 	if (path.isEmpty())
@@ -157,12 +157,12 @@ std::optional<std::string> save_as_png(const QImage &image)
  * 3. それ以外 → 画像を読み込んで PNG に変換
  *
  * @param source コピーされたファイルのパス。
- * @return 保存したパス。
+ * @return 保存した画像の情報。
  * @retval std::nullopt 画像ファイルでない・読めない・保存に失敗した。
  *
  * @see save_clipboard_image()(呼び出し元)
  */
-std::optional<std::string> save_local_file(const QString &source)
+std::optional<SavedImage> save_local_file(const QString &source)
 {
 	QImageReader reader(source);
 	/* EXIF の回転情報を反映して読み込む(手順 3 で PNG に変換するときに効く) */
@@ -218,7 +218,7 @@ std::optional<std::string> save_local_file(const QString &source)
  * @note 呼び出し元: plugin-main.cpp の on_show_requested()。
  * @note スレッド: UI スレッド。
  */
-std::optional<std::string> save_clipboard_image()
+std::optional<SavedImage> save_clipboard_image()
 {
 	const QClipboard *clipboard = QGuiApplication::clipboard();
 	const QMimeData *mime = clipboard ? clipboard->mimeData() : nullptr;

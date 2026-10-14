@@ -27,57 +27,32 @@ Built for just-chatting streams, where you want to say "look at this" without br
 ## Adjusting where images appear
 
 The plugin shows every image through one image source named **`Clipboard Image`**.
-The first time it is added to a scene, it is placed in the center and given a
-bounding box of 60% of the canvas. Each image is fitted inside that box:
-large images are scaled down, small images keep their original size (they are never scaled up).
+The first time it is added to a scene, it is placed in the center of the screen.
 
-To change where images appear, move or resize `Clipboard Image` in the OBS preview.
-Resizing changes the **box**, not the current image, so every image you paste afterwards
-fits into the new box. The plugin never moves the source back once you have adjusted it.
+**Size:** each time you paste, the plugin looks at the image size.
+Images larger than **60% of the canvas width or height** are scaled down to fit (the aspect ratio is kept).
+Smaller images are shown at their original size (they are never enlarged).
+The 60% limit is fixed for now and will be configurable in the settings dialog.
 
-You can also change how the box fits images. Right-click `Clipboard Image` →
-**Transform → Edit Transform**, then change the dropdown in the **Bounds** section.
-In the same dialog, **Size** sets the box size in pixels, and the alignment grid next to
-the dropdown decides where a smaller image sits inside the box.
+**Position:** move `Clipboard Image` in the OBS preview to wherever you like.
+The plugin keeps your position for every image you paste afterwards.
+Resizing the source by dragging only affects the image currently shown; the next image is sized by the 60% rule again.
 
-| Bounds (OBS 32) | OBS 31 and earlier | Result |
-|---|---|---|
-| Maximum size only (set by this plugin) | Maximum size only | Large images shrink to fit; small images stay as they are |
-| Fit | Scale to inner bounds | Every image fits inside the box (small images are enlarged) |
-| Cover / Fill Width / Fill Height | Scale to outer bounds / width / height | The box is filled; parts of the image can go beyond it |
-| Stretch | Stretch to bounds | Fills the box exactly; the aspect ratio is not kept |
-| Automatic (OBS's default for new sources) | No bounds | No box; every image is shown at its original size |
-
-> OBS creates new image sources with **Automatic** (no box). This plugin sets **Maximum size only**
-> when it creates `Clipboard Image`, so images of different sizes always fit on screen.
-> If you create your own image source and name it `Clipboard Image`, the plugin uses it as-is
-> and does not change its bounds. Set **Maximum size only** yourself if you want the same behavior.
+**Bounds:** the plugin creates the source with **Automatic** bounds, the same as OBS's default
+(right-click → Transform → Edit Transform → Bounds). If you set another bounds type yourself
+(for example **Fit**, or **Scale to inner bounds** in OBS 31), the plugin leaves the size to the bounding box
+and does not change the scale.
 
 ### 表示位置・大きさの変え方(日本語)
 
-画像は **`Clipboard Image`** という1つの画像ソースで表示されます。シーンに初めて追加されたときは、
-画面中央に置かれ、画面の60%の大きさの「境界(枠)」が設定されます。
-画像はこの枠に収まるように表示されます(大きい画像は縮小、小さい画像は元の大きさのまま。拡大はしません)。
+画像は **`Clipboard Image`** という1つの画像ソースで表示されます。シーンに初めて追加されたときは、画面中央に置かれます。
 
-- **位置や大きさを変えたい**: プレビュー上で `Clipboard Image` を動かしたり、大きさを変えたりしてください。
-  大きさを変えると**枠**の大きさが変わり、以降に貼る画像はすべて新しい枠に収まります。
-  一度調整した位置・大きさを、プラグインが元に戻すことはありません。
-- **収め方を変えたい**: `Clipboard Image` を右クリック →「変換」→「変換の編集」を開き、
-  「**境界**」のプルダウンを変えます。
-
-  | 境界 | 表示のされ方 |
-  |---|---|
-  | 最大サイズのみ(このプラグインの既定) | 大きい画像だけ枠に収まるよう縮小。小さい画像は元の大きさ |
-  | 内側に合わせる | どの画像も枠に収まる大きさで表示(小さい画像は拡大) |
-  | 外側に合わせる / 幅に合わせる / 高さに合わせる | 枠を埋めるよう拡大縮小。画像の一部が枠からはみ出すことがある |
-  | 引き伸ばす | 枠にぴったり合わせる。縦横比は崩れる |
-  | 自動(OBS で普通に作ったときの既定) | 枠なし。すべて元の大きさで表示(大きい画像は画面からはみ出す) |
-
-  同じ画面の「大きさ」で枠の大きさを数値で指定でき、境界の右の「配置」で、枠より小さい画像を枠のどこに置くか(中央・左上など)を選べます。
-- **OBS で普通に画像ソースを作ると、境界は「自動」(枠なし)になります。** このプラグインは、大きさの違う画像でも画面に収まるよう、`Clipboard Image` を作るときに「最大サイズのみ」を設定しています。
-  自分で作った画像ソースに `Clipboard Image` と名前を付けた場合は、プラグインは境界を変えません。同じ動きにしたいときは、上の手順で境界を「最大サイズのみ」にしてください。
-
-画面の表記は OBS 32 のものです。OBS 31 以前は「バウンディングボックスの種類」「境界無し」「境界の内側に合わせる」などの表記でした。
+- **大きさ**: 貼るたびに画像の大きさを見て、**画面の幅・高さの60%** を超える画像だけ、収まるように縮小します(縦横比は保ちます)。
+  小さい画像は元の大きさのまま表示します(拡大はしません)。60%は今は固定で、設定画面ができたら変えられるようにします。
+- **位置**: プレビュー上で `Clipboard Image` を好きな場所に動かしてください。以降に貼る画像も、その位置に表示されます。
+  ドラッグで大きさを変えた場合は、今表示している画像だけが変わります。次の画像は、また60%のルールで大きさが決まります。
+- **境界**: プラグインは、OBS の既定と同じ「**自動**」でソースを作ります(右クリック →「変換」→「変換の編集」→「境界」)。
+  自分で「内側に合わせる」など別の境界を設定した場合は、その枠に大きさを任せ、プラグインは大きさを変えません。
 
 ## Building
 
