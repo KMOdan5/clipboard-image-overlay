@@ -33,12 +33,17 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  *   一時停止ホットキー 押下 ──→ auto_hide_toggle_pause()  自動で消すタイマーの一時停止/再開
  *                                (auto-hide.cpp)
+ *
+ *   ツールメニュー「設定...」 ─→ open_settings_dialog()    設定画面(表示時間・最大サイズなど)
+ *                                (settings-dialog.cpp)
  * @endcode
  *
  * 関連ファイル:
  * - clipboard-capture.cpp … クリップボードから画像を取り出して保存する
  * - image-display.cpp … 保存した画像を現在のシーンに表示する/消す
  * - auto-hide.cpp … 表示した画像を一定時間後に自動で消すタイマーと、その一時停止
+ * - settings.cpp … 設定値の読み込み・保存(起動時に settings_load() で読む)
+ * - settings-dialog.cpp … 設定画面
  * - data/locale/ の .ini … メニュー名・ホットキー名の表示文字列
  */
 
@@ -49,6 +54,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "auto-hide.hpp"
 #include "clipboard-capture.hpp"
 #include "image-display.hpp"
+#include "settings-dialog.hpp"
+#include "settings.hpp"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -138,6 +145,17 @@ void on_show_requested(const char *trigger)
 void on_tools_menu_clicked(void *)
 {
 	on_show_requested("menu");
+}
+
+/**
+ * @brief ツールメニュー「Clipboard Image の設定...」がクリックされたときの処理。設定画面を開く。
+ *
+ * @note 呼び出し元: OBS(obs_module_load() で登録したメニュー項目)。
+ * @note スレッド: UI スレッド(メニュー操作は UI スレッドで届く)。
+ */
+void on_settings_menu_clicked(void *)
+{
+	open_settings_dialog();
 }
 
 /**
@@ -307,7 +325,11 @@ void on_frontend_event(obs_frontend_event event, void *)
  */
 bool obs_module_load(void)
 {
+	/* 表示時間などの設定を、表示処理より先に読み込んでおく */
+	settings_load();
+
 	obs_frontend_add_tools_menu_item(obs_module_text("Menu.ShowClipboardImage"), on_tools_menu_clicked, nullptr);
+	obs_frontend_add_tools_menu_item(obs_module_text("Menu.Settings"), on_settings_menu_clicked, nullptr);
 
 	show_hotkey_id = obs_hotkey_register_frontend(HOTKEY_NAME, obs_module_text("Hotkey.ShowClipboardImage"),
 						      on_hotkey_pressed, nullptr);

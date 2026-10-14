@@ -33,11 +33,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   境界を使うと、ソースをドラッグで拡大縮小しても枠だけが変わり画像の大きさが変わらず、
  *   OBS の普段の操作と違って分かりにくいため。
  * - 代わりに貼るたびに画像の幅・高さを見て表示サイズを決め、大きい画像を
- *   画面の幅・高さの MAX_SIZE_RATIO(60%)に収める。小さい画像は等倍(拡大しない)。
+ *   画面の幅・高さの「最大サイズの割合」(設定画面で変更。既定 60%)に収める。小さい画像は等倍(拡大しない)。
  * - 表示サイズは OBS の仕組み上「倍率」で設定する。境界が「自動」のとき、シーンアイテムが持つのは
  *   倍率で、「変換の編集」の「大きさ」(幅・高さ)は 元の画像の大きさ × 倍率 で計算された表示用の値のため。
  * - 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)で表示する。
  * - 境界が「自動」以外のときは表示サイズを変えない(境界の枠が大きさを決めるため)。
+ * - 設定画面で「大きい画像を画面に収める」をオフにしたときも、表示サイズを変えない。
  *
  * 表示と非表示:
  * - 表示中に新しい画像を貼ったときは、フェードアウト → 差し替え → フェードイン の順に入れ替える
@@ -74,6 +75,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "image-display.hpp"
 #include "auto-hide.hpp"
+#include "settings.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -102,30 +104,14 @@ constexpr const char *SOURCE_NAME = "Clipboard Image";
 /// @brief OBS 標準の画像ソースの内部 ID。
 constexpr const char *IMAGE_SOURCE_ID = "image_source";
 
-/// @brief フェードイン・フェードアウトにかける時間(ミリ秒)。#8 の設定画面で変更できるようにする予定。
+/**
+ * @brief シーンに初めて追加したときに設定する、フェードイン・フェードアウトの時間(ミリ秒)。
+ * @note プラグインの設定には含めない。配信者は OBS 標準の表示/非表示トランジションの画面で変えられる。
+ */
 constexpr uint32_t FADE_DURATION_MS = 400;
 
 /// @brief OBS 標準のフェードトランジションの内部 ID。
 constexpr const char *FADE_TRANSITION_ID = "fade_transition";
-
-/**
- * @brief 貼るたびに Clipboard Image を最前面(一番手前)に移すかどうか。
- *
- * @details
- * OBS では後から追加したソースが一番上に置かれる。初回だけ最前面にしても、配信者が後で
- * テロップや枠を追加すると、その下に隠れて「貼ったのに出ない」ことになる。
- * このプラグインは「みんなに見せる」ためのものなので、既定では貼るたびに最前面に移す。
- *
- * @note #8 の設定画面で「常に手前に表示する」(既定オン)として切り替えられるようにする。
- *       重なり順を自分で管理したい配信者はオフにする。MVP では既定のオンで固定。
- */
-constexpr bool ALWAYS_ON_TOP = true;
-
-/**
- * @brief 画像の最大の大きさ(画面の幅・高さに対する割合)。これを超える画像だけ縮小する。
- * @note MVP では固定。#8 の設定画面で変更できるようにする。
- */
-constexpr float MAX_SIZE_RATIO = 0.6f;
 
 /**
  * @brief 画像ソースに、表示する画像ファイルを設定する(前の画像と差し替わる)。
@@ -242,7 +228,7 @@ void apply_default_position(obs_sceneitem_t *item)
  * @brief 画像の大きさに合わせて、表示サイズ(「変換の編集」の「大きさ」)を決める。
  *
  * @details
- * 画像が画面の幅・高さの MAX_SIZE_RATIO を超える場合だけ、収まるように縮小する。
+ * 画像が画面の幅・高さの「最大サイズの割合」(設定画面で変更。既定 60%)を超える場合だけ、収まるように縮小する。
  * 縦横比は保つ(幅と高さに同じ倍率を使う)。小さい画像は等倍のまま拡大しない。
  * OBS では表示サイズを倍率で設定するため、計算した倍率を obs_sceneitem_set_scale() で設定する。
  *
@@ -260,13 +246,18 @@ void apply_default_position(obs_sceneitem_t *item)
  * ログにも実際と違う大きさが出て調査の妨げになる。境界の種類はシーンアイテムの設定値として
  * 確実に取得できるので、それで判定する。
  *
- * @note 表示サイズの自動調整のオン/オフは #8 の設定画面で用意する(境界が「自動」のときだけ有効)。
+ * 設定画面で「大きい画像を画面に収める」がオフのときも何もしない(配信者が設定した大きさをそのまま使う)。
  *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報(幅・高さを使う)。
  */
 void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 {
+	const PluginSettings &settings = settings_get();
+	if (!settings.fit_large_images) {
+		obs_log(LOG_INFO, "display: fitting large images is off; size is not changed");
+		return;
+	}
 	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
 		obs_log(LOG_INFO, "display: bounds type is not automatic; size is decided by the bounding box");
 		return;
@@ -279,8 +270,9 @@ void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 	if (image.width <= 0 || image.height <= 0) {
 		obs_log(LOG_WARNING, "display: unknown image size; showing at original size");
 	} else if (get_canvas_size(canvas_w, canvas_h)) {
-		const float max_w = canvas_w * MAX_SIZE_RATIO;
-		const float max_h = canvas_h * MAX_SIZE_RATIO;
+		const float ratio = static_cast<float>(settings.max_size_percent) / 100.0f;
+		const float max_w = canvas_w * ratio;
+		const float max_h = canvas_h * ratio;
 		const float fit =
 			std::min(max_w / static_cast<float>(image.width), max_h / static_cast<float>(image.height));
 		factor = std::min(1.0f, fit);
@@ -965,8 +957,12 @@ bool show_image_on_current_scene(const SavedImage &image)
 	/* 通知の受け付けは起動完了時などに全シーン分まとめて登録している。念のため、このシーンも確かめておく */
 	watch_scene(scene_source);
 
-	/* 後から追加されたソースに隠れないよう、最前面に移す(「常に手前に表示する」がオンのとき) */
-	if (ALWAYS_ON_TOP)
+	/*
+	 * 後から追加されたソースに隠れないよう、最前面に移す(「常に手前に表示する」がオンのとき。既定オン)。
+	 * OBS では後から追加したソースが一番上に置かれるため、初回だけ最前面にしても、配信者が後で
+	 * テロップや枠を追加するとその下に隠れてしまう。オフなら重なり順を一切変えない。
+	 */
+	if (settings_get().always_on_top)
 		obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
 
 	/* 別のシーンで差し替えを待っている途中なら取り消す(そちらはフェードアウト済み。両方に出さないように) */
