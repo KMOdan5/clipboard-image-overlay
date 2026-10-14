@@ -35,7 +35,7 @@ Built for just-chatting streams, where you want to say "look at this" without br
   The plugin sets a fade **only when it first adds the source to a scene**. After that it never changes the transitions,
   so if you choose another transition or set it to none, your choice is kept.
 - The display time can be changed in the settings (0 = keep showing until you hide it yourself).
-  To change the fade length, edit the Show/Hide Transition in OBS.
+  How `Clipboard Image` is shown and hidden (fade, etc.) can be changed with its Show/Hide Transition.
 
 ### Pausing and hiding manually
 
@@ -62,7 +62,7 @@ Built for just-chatting streams, where you want to say "look at this" without br
   プラグインがフェードを設定するのは、**シーンに初めて追加したときだけ**です。その後は一切変えないので、
   別のトランジションや「なし」に変えた場合は、その設定がずっと使われます。
 - 表示時間は設定で変更可能です(0秒にすると非表示にせず表示し続けます)。
-  フェードの長さは、OBS の「表示トランジション」「非表示トランジション」の画面で変えられます。
+  表示・非表示の切り替え方(フェードなど)は、「Clipboard Image」の表示/非表示トランジションで変更可能です。
 
 ### 一時停止と手動で非表示にする方法(日本語)
 
@@ -92,7 +92,7 @@ Open **Tools → Clipboard Image → Settings...** in OBS.
 - Changes apply from the next image you show (an image already on screen keeps its timer and size).
 - Settings are shared by all scene collections and saved in the plugin's config folder
   (Windows: `%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json`).
-- The fade length is not a plugin setting. Change it with the Show/Hide Transition of `Clipboard Image`.
+- How `Clipboard Image` is shown and hidden (fade, etc.) can be changed with its Show/Hide Transition.
 
 ### 設定(日本語)
 
@@ -108,7 +108,7 @@ OBS の「**ツール**」→「**Clipboard Image**」→「**設定...**」で�
 - 変更は、次に画像を表示したときから反映されます(表示中の画像のタイマーや大きさは変わりません)。
 - 設定はすべてのシーンコレクションで共通です。プラグインの設定フォルダに保存されます
   (Windows: `%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json`)。
-- フェードの長さはプラグインの設定ではありません。`Clipboard Image` の「表示トランジション」「非表示トランジション」で変えてください。
+- 表示・非表示の切り替え方(フェードなど)は、「Clipboard Image」の表示/非表示トランジションで変更可能です。
 
 ## Adjusting where images appear
 
