@@ -37,6 +37,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 表示サイズは OBS の仕組み上「倍率」で設定する。境界が「自動」のとき、シーンアイテムが持つのは
  *   倍率で、「変換の編集」の「大きさ」(幅・高さ)は 元の画像の大きさ × 倍率 で計算された表示用の値のため。
  * - 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)で表示する。
+ * - 境界が「自動」以外のときは表示サイズを変えない(境界の枠が大きさを決めるため)。
  *
  * 公開している関数は show_image_on_current_scene() だけ(image-display.hpp)。
  */
@@ -177,14 +178,24 @@ void apply_default_position(obs_sceneitem_t *item)
  * 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)にする。
  * 前の画像の倍率を引き継ぐと、表示される大きさが前の画像次第で変わってしまうため。
  *
- * @note 配信者が境界(自動以外)を設定している場合、OBS は倍率ではなく境界で大きさを決めるので、
- *       ここで設定した倍率は実質的に効かない。自動調整のオン/オフは #8 の設定画面で用意する。
+ * 境界が「自動」以外のときは何もしない(表示サイズは境界の枠で決まる)。
+ * OBS は境界があると倍率ではなく枠で大きさを決めるため、倍率を設定しても見た目は変わらない。
+ * それでも設定すると、使われない倍率が裏で書き換わり(境界を「自動」に戻したときに思わぬ大きさになる)、
+ * ログにも実際と違う大きさが出て調査の妨げになる。境界の種類はシーンアイテムの設定値として
+ * 確実に取得できるので、それで判定する。
+ *
+ * @note 表示サイズの自動調整のオン/オフは #8 の設定画面で用意する(境界が「自動」のときだけ有効)。
  *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報(幅・高さを使う)。
  */
 void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 {
+	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
+		obs_log(LOG_INFO, "display: bounds type is not automatic; size is decided by the bounding box");
+		return;
+	}
+
 	float factor = 1.0f;
 	float canvas_w = 0.0f;
 	float canvas_h = 0.0f;
