@@ -24,12 +24,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 処理の流れ:
  * @code
  *   ツールメニュー クリック ─┐
- *                              ├→ on_show_requested() → save_clipboard_image()
- *   ホットキー 押下 ──────────┘     (UI スレッド)        (clipboard-capture.cpp)
+ *                              ├→ on_show_requested() ─→ save_clipboard_image()         画像を保存
+ *   ホットキー 押下 ──────────┘     (UI スレッド)     │   (clipboard-capture.cpp)
+ *                                                      └→ show_image_on_current_scene()  シーンに表示
+ *                                                          (image-display.cpp)
  * @endcode
  *
  * 関連ファイル:
  * - clipboard-capture.cpp … クリップボードから画像を取り出して保存する
+ * - image-display.cpp … 保存した画像を現在のシーンに表示する
  * - data/locale/ の .ini … メニュー名・ホットキー名の表示文字列
  */
 
@@ -38,6 +41,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include "clipboard-capture.hpp"
+#include "image-display.hpp"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -62,7 +66,8 @@ obs_hotkey_id show_hotkey_id = OBS_INVALID_HOTKEY_ID;
 /**
  * @brief 「クリップボードの画像を表示」の共通処理。
  *
- * @details 画像が取れなければ、理由をログに残して何もしない。
+ * @details クリップボードの画像を保存し、現在のシーンに表示する。
+ * 画像が取れなければ、理由をログに残して何もしない。
  *
  * @param trigger どこから呼ばれたか("menu" / "hotkey")。ログ用。
  *
@@ -78,7 +83,8 @@ void on_show_requested(const char *trigger)
 	if (!path)
 		return;
 
-	/* 保存した画像をシーンに表示する処理は #5 で実装する */
+	/* 保存した画像を現在のシーンに表示する */
+	show_image_on_current_scene(*path);
 }
 
 /**
