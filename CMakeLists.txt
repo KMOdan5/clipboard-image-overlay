@@ -34,6 +34,14 @@ if(ENABLE_QT)
   )
 endif()
 
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.cpp src/clipboard-capture.cpp src/clipboard-capture.hpp)
+target_sources(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE
+    src/plugin-main.cpp
+    src/clipboard-capture.cpp
+    src/clipboard-capture.hpp
+    src/image-display.cpp
+    src/image-display.hpp
+)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
