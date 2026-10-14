@@ -23,7 +23,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @details
  * Qt のウィジェットを組み合わせて作る(.ui ファイルや Q_OBJECT は使わない。項目が少ないため)。
  * 表示する文字列はすべて data/locale の ini から読む。
- * 「OK」で settings_save()(settings.cpp)を呼び、変更は次に画像を表示したときから反映される。
+ * 「OK」「適用」で settings_save()(settings.cpp)を呼び、変更は次に画像を表示したときから反映される。
+ * 開いたまま OBS を操作できる画面(モードレス)で、同時に開くのは 1 つだけ。
  *
  * 公開している関数の説明は settings-dialog.hpp を参照。
  */
@@ -40,6 +41,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -79,7 +81,10 @@ QLabel *make_note(const char *key)
 }
 
 /**
- * @brief 設定値を画面の各項目に表示する。
+ * @brief 設定画面の入力欄をまとめたもの。設定値と画面の値の受け渡しをする。
+ *
+ * @details 中身はウィジェットへのポインタだけ(ウィジェット自体はダイアログが持つ)なので、
+ *          ボタンの処理(ラムダ)には値のままコピーして渡してよい。
  */
 struct SettingsWidgets {
 	/// @brief 表示時間(秒)。
@@ -119,20 +124,45 @@ struct SettingsWidgets {
 	}
 };
 
+/**
+ * @brief 開いている設定画面。開いていなければ空(QPointer なので、画面が消えると自動で空になる)。
+ *
+ * @details 2 つ目の画面を開かないようにするためと、OBS の終了時に閉じるために持っておく。
+ */
+QPointer<QDialog> settings_dialog;
+
 } // namespace
 
 /**
- * @brief 設定画面を開く。
+ * @brief 設定画面を開く。開いていれば手前に出す。
  * @details 仕様の詳細は settings-dialog.hpp の宣言側を参照。
  */
 void open_settings_dialog()
 {
-	auto *main_window = static_cast<QWidget *>(obs_frontend_get_main_window());
-	QDialog dialog(main_window);
-	dialog.setWindowTitle(text("Settings.Title"));
-	dialog.setMinimumWidth(DIALOG_MIN_WIDTH);
+	/* 既に開いていれば、入力途中の値を残したまま手前に出すだけ */
+	if (settings_dialog) {
+		settings_dialog->show();
+		settings_dialog->raise();
+		settings_dialog->activateWindow();
+		return;
+	}
 
-	auto *layout = new QVBoxLayout(&dialog);
+	/*
+	 * 開いたまま OBS を操作できる画面にする(閉じるまで待つ exec() は使わない)。
+	 * 設定を試しながら画像を貼れるようにするためと、exec() の中で別の処理ループが回り、
+	 * その間に表示処理や OBS の終了処理が割り込むのを避けるため。
+	 * 親を OBS のメイン画面にする。閉じ方(OK・キャンセル・Esc キー・右上の×)に関係なく、
+	 * 閉じると必ず finished が届くので、そこで解放する(閉じ方ごとに後片付けを書かないため)。
+	 */
+	auto *main_window = static_cast<QWidget *>(obs_frontend_get_main_window());
+	auto *dialog = new QDialog(main_window);
+	dialog->setModal(false);
+	QObject::connect(dialog, &QDialog::finished, dialog, &QObject::deleteLater);
+	dialog->setWindowTitle(text("Settings.Title"));
+	dialog->setMinimumWidth(DIALOG_MIN_WIDTH);
+	settings_dialog = dialog;
+
+	auto *layout = new QVBoxLayout(dialog);
 	SettingsWidgets widgets;
 
 	/* 表示時間: 「表示時間 [7] 秒」 */
@@ -177,26 +207,48 @@ void open_settings_dialog()
 	apply_note->setWordWrap(true);
 	layout->addWidget(apply_note);
 
-	/* OK / キャンセル / 既定に戻す(既定に戻すは画面上の値だけ。OK を押すまで保存しない) */
-	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel |
+	/*
+	 * OK: 保存して閉じる / キャンセル: 保存せずに閉じる / 適用: 保存して開いたまま /
+	 * 既定値: 画面上の値だけ既定値に戻す(OK か適用を押すまで保存しない)。並びは OBS の設定画面に合わせる
+	 */
+	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply |
 					     QDialogButtonBox::RestoreDefaults);
 	/* ボタンの文字は Qt の既定だと英語のままになることがあるので、翻訳した文字列を使う */
 	buttons->button(QDialogButtonBox::Ok)->setText(text("Settings.OK"));
 	buttons->button(QDialogButtonBox::Cancel)->setText(text("Settings.Cancel"));
+	buttons->button(QDialogButtonBox::Apply)->setText(text("Settings.Apply"));
 	buttons->button(QDialogButtonBox::RestoreDefaults)->setText(text("Settings.RestoreDefaults"));
 	layout->addSpacing(8);
 	layout->addWidget(buttons);
-	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-	QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-	QObject::connect(buttons->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked,
-			 [&widgets]() { widgets.show_values(PluginSettings()); });
+
+	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, widgets]() {
+		settings_save(widgets.values());
+		dialog->accept();
+	});
+	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+	/* キャンセル・Esc キー・右上の×はどれも reject になる */
+	QObject::connect(dialog, &QDialog::rejected, dialog,
+			 []() { obs_log(LOG_INFO, "settings dialog closed without saving"); });
+	QObject::connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, dialog,
+			 [widgets]() { settings_save(widgets.values()); });
+	QObject::connect(buttons->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, dialog,
+			 [widgets]() { widgets.show_values(PluginSettings()); });
 
 	widgets.show_values(settings_get());
 
+	dialog->show();
 	obs_log(LOG_INFO, "settings dialog opened");
-	if (dialog.exec() != QDialog::Accepted) {
-		obs_log(LOG_INFO, "settings dialog canceled");
+}
+
+/**
+ * @brief 設定画面が開いていれば閉じる。
+ * @details 仕様の詳細は settings-dialog.hpp の宣言側を参照。
+ */
+void close_settings_dialog()
+{
+	if (!settings_dialog)
 		return;
-	}
-	settings_save(widgets.values());
+	/* 終了処理の途中なので、後回しにせずその場で解放する(保存はしない) */
+	delete settings_dialog.data();
+	obs_log(LOG_INFO, "settings dialog closed");
 }

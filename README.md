@@ -88,6 +88,7 @@ Open **Tools → Clipboard Image Settings...** in OBS.
 | Fit large images within N% of the screen | On, 60% | Images larger than N% of the canvas width or height are scaled down to fit. Works only while the **Bounds Type** of `Clipboard Image` is **Automatic**. When off, the plugin never changes the size. |
 | Always show on top | On | Moves `Clipboard Image` to the top of the sources every time you paste. When off, the plugin never changes the layer order. |
 
+- **Apply** saves without closing the window, so you can keep OBS in use and paste images to try the settings.
 - Changes apply from the next image you show (an image already on screen keeps its timer and size).
 - Settings are shared by all scene collections and saved in the plugin's config folder
   (Windows: `%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json`).
@@ -103,6 +104,7 @@ OBS の「**ツール**」→「**Clipboard Image の設定...**」で開きま�
 | 大きい画像を画面の N% に収める | オン・60% | 画面の幅・高さの N% を超える画像を、収まるように縮小します。`Clipboard Image` の**境界の種類が「自動」**のときだけ働きます。オフにすると大きさを一切変えません。 |
 | 常に手前に表示する | オン | 貼るたびに `Clipboard Image` を一番手前に移します。オフにすると重なり順を一切変えません。 |
 
+- 「**適用**」を押すと、画面を開いたまま保存します。開いたまま OBS を操作したり画像を貼ったりできるので、試しながら調整できます。
 - 変更は、次に画像を表示したときから反映されます(表示中の画像のタイマーや大きさは変わりません)。
 - 設定はすべてのシーンコレクションで共通です。プラグインの設定フォルダに保存されます
   (Windows: `%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json`)。

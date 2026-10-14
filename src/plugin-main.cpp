@@ -272,8 +272,8 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  *   切り替えの途中でタイマーが発火し、片付け中のシーンを触るのを防ぐため。
  * - シーン一覧の変更時(SCENE_LIST_CHANGED): 追加されたシーンの通知も登録する。
  *   読み込み・切り替え・終了の途中は登録しない(scenes_ready)。
- * - 終了時(EXIT): 自動で消すタイマーと、画像差し替えのタイマーを止める。終了処理の途中でタイマーが発火し、
- *   片付け中のシーンやソースを触るのを防ぐため。
+ * - 終了時(EXIT): 設定画面が開いていれば閉じ、自動で消すタイマーと、画像差し替えのタイマーを止める。
+ *   終了処理の途中でタイマーが発火し、片付け中のシーンやソースを触るのを防ぐため。
  *
  * @param event 発生したイベント。
  *
@@ -306,6 +306,7 @@ void on_frontend_event(obs_frontend_event event, void *)
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
 		scenes_ready = false;
+		close_settings_dialog();
 		auto_hide_shutdown();
 		image_display_shutdown();
 		break;
@@ -357,6 +358,7 @@ bool obs_module_load(void)
 void obs_module_unload(void)
 {
 	/* 終了イベントで止まっているはずだが、念のためここでも止める(何度呼んでもよい) */
+	close_settings_dialog();
 	auto_hide_shutdown();
 	image_display_shutdown();
 
