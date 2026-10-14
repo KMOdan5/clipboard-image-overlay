@@ -32,8 +32,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 境界(バウンディングボックス)は使わない(OBS の既定と同じ「自動」)。
  *   境界を使うと、ソースをドラッグで拡大縮小しても枠だけが変わり画像の大きさが変わらず、
  *   OBS の普段の操作と違って分かりにくいため。
- * - 代わりに貼るたびに画像の幅・高さを見て拡大率を設定し、大きい画像を
+ * - 代わりに貼るたびに画像の幅・高さを見て表示サイズを決め、大きい画像を
  *   画面の幅・高さの MAX_SIZE_RATIO(60%)に収める。小さい画像は等倍(拡大しない)。
+ * - 表示サイズは OBS の仕組み上「倍率」で設定する。境界が「自動」のとき、シーンアイテムが持つのは
+ *   倍率で、「変換の編集」の「大きさ」(幅・高さ)は 元の画像の大きさ × 倍率 で計算された表示用の値のため。
  * - 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)で表示する。
  *
  * 公開している関数は show_image_on_current_scene() だけ(image-display.hpp)。
@@ -134,7 +136,7 @@ bool get_canvas_size(float &width, float &height)
  *
  * @details
  * 基準点(配置)を中央にしてから画面中央に置く。基準点が中央なので、
- * 後で拡大率が変わっても画像は画面中央を中心に大きくなったり小さくなったりする。
+ * 後で表示サイズが変わっても、画像は画面中央を中心に大きくなったり小さくなったりする。
  * 境界は「自動」(OBS_BOUNDS_NONE)にする(理由はファイル冒頭の説明を参照)。
  *
  * @param item 配置するシーンアイテム。
@@ -160,11 +162,12 @@ void apply_default_position(obs_sceneitem_t *item)
 }
 
 /**
- * @brief 画像の大きさに合わせて、シーンアイテムの拡大率を決める。
+ * @brief 画像の大きさに合わせて、表示サイズ(「変換の編集」の「大きさ」)を決める。
  *
  * @details
  * 画像が画面の幅・高さの MAX_SIZE_RATIO を超える場合だけ、収まるように縮小する。
- * 縦横比は保つ(幅と高さで同じ拡大率を使う)。小さい画像は等倍のまま拡大しない。
+ * 縦横比は保つ(幅と高さに同じ倍率を使う)。小さい画像は等倍のまま拡大しない。
+ * OBS では表示サイズを倍率で設定するため、計算した倍率を obs_sceneitem_set_scale() で設定する。
  *
  * 例: 画面 1920x1080、割合 60% → 最大 1152x648
  * - 3840x2160 の画像 → 0.3 倍(1152x648)
@@ -172,15 +175,15 @@ void apply_default_position(obs_sceneitem_t *item)
  * - 400x300 の画像   → 1 倍(そのまま)
  *
  * 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)にする。
- * 前の画像の拡大率を引き継ぐと、表示される大きさが前の画像次第で変わってしまうため。
+ * 前の画像の倍率を引き継ぐと、表示される大きさが前の画像次第で変わってしまうため。
  *
- * @note 配信者が境界(自動以外)を設定している場合、OBS は拡大率ではなく境界で大きさを決めるので、
- *       ここで設定した拡大率は実質的に効かない。自動調整のオン/オフは #8 の設定画面で用意する。
+ * @note 配信者が境界(自動以外)を設定している場合、OBS は倍率ではなく境界で大きさを決めるので、
+ *       ここで設定した倍率は実質的に効かない。自動調整のオン/オフは #8 の設定画面で用意する。
  *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報(幅・高さを使う)。
  */
-void apply_fit_scale(obs_sceneitem_t *item, const SavedImage &image)
+void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 {
 	float factor = 1.0f;
 	float canvas_w = 0.0f;
@@ -194,8 +197,8 @@ void apply_fit_scale(obs_sceneitem_t *item, const SavedImage &image)
 		const float fit =
 			std::min(max_w / static_cast<float>(image.width), max_h / static_cast<float>(image.height));
 		factor = std::min(1.0f, fit);
-		obs_log(LOG_INFO, "display: scale %.3f for %dx%d (max %.0fx%.0f)", factor, image.width, image.height,
-			max_w, max_h);
+		obs_log(LOG_INFO, "display: size %.0fx%.0f (scale %.3f) for %dx%d image (max %.0fx%.0f)",
+			image.width * factor, image.height * factor, factor, image.width, image.height, max_w, max_h);
 	} else {
 		obs_log(LOG_WARNING, "display: unknown canvas size; showing at original size");
 	}
@@ -286,8 +289,8 @@ bool show_image_on_current_scene(const SavedImage &image)
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
 
-	/* 画像ごとに大きさが違うので、貼るたびに拡大率を決め直す */
-	apply_fit_scale(item, image);
+	/* 画像ごとに大きさが違うので、貼るたびに表示サイズを決め直す */
+	apply_display_size(item, image);
 
 	/* 他のソースに隠れないよう最前面に移し、表示状態にする */
 	obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
