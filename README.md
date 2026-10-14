@@ -85,7 +85,7 @@ Open **Tools → Clipboard Image Settings...** in OBS.
 | Setting | Default | What it does |
 |---|---|---|
 | Display time | 7 s | Images disappear automatically after this time. **0** keeps them shown until you hide them yourself (the pause hotkey then does nothing). |
-| Fit images within N% of the canvas size | On, 60% | Images larger than N% of the canvas width or height are scaled down to fit (the size in pixels is shown next to N; smaller images are not enlarged). Works only while the **Bounds Type** of `Clipboard Image` is **Automatic**. When off, the plugin never changes the size. |
+| Fit images within N% of the canvas size | On, 60% | Images larger than N% of the canvas width or height are scaled down to fit (the size in pixels is shown next to N; smaller images are not enlarged). Works only while the **Bounds Type** of `Clipboard Image` is **Automatic**. When off, the plugin never changes the size, so the scale of the previous image is also used for the next image. |
 | Always show on top | On | Moves `Clipboard Image` to the top of the sources every time you paste. When off, the plugin never changes the layer order. |
 
 - **Apply** saves without closing the window, so you can keep OBS in use and paste images to try the settings.
@@ -101,7 +101,7 @@ OBS の「**ツール**」→「**Clipboard Image の設定...**」で開きま�
 | 項目 | 既定 | 内容 |
 |---|---|---|
 | 表示時間 | 7秒 | この時間がたつと自動で消えます。**0** にすると自動で消さず、自分で消すまで表示し続けます(一時停止ホットキーは何もしません)。 |
-| 画像をキャンバスサイズの N% に収める | オン・60% | キャンバスの幅・高さの N% を超える画像を、収まるように縮小します(N の横にその大きさをピクセルで表示。小さい画像は拡大しません)。`Clipboard Image` の**境界の種類が「自動」**のときだけ働きます。オフにすると大きさを一切変えません。 |
+| 画像をキャンバスサイズの N% に収める | オン・60% | キャンバスの幅・高さの N% を超える画像を、収まるように縮小します(N の横にその大きさをピクセルで表示。小さい画像は拡大しません)。`Clipboard Image` の**境界の種類が「自動」**のときだけ働きます。オフにすると大きさを一切変えないので、前の画像の縮小・拡大の比率が次の画像にもそのまま使われます。 |
 | 常に手前に表示する | オン | 貼るたびに `Clipboard Image` を一番手前に移します。オフにすると重なり順を一切変えません。 |
 
 - 「**適用**」を押すと、画面を開いたまま保存します。開いたまま OBS を操作したり画像を貼ったりできるので、試しながら調整できます。
