@@ -46,8 +46,10 @@ Built for just-chatting streams, where you want to say "look at this" without br
   **Hide 'Clipboard Image'** hotkey in Settings → Hotkeys (OBS lists it per scene, so set it in each scene you use).
 - Whenever the image is hidden (manually or automatically), the pause is released, so the next image disappears
   after 7 seconds as usual. After restarting OBS, nothing is paused.
-- If you show `Clipboard Image` yourself (eye icon or OBS's **Show 'Clipboard Image'** hotkey), it is treated
-  like a paste: it disappears after 7 seconds, and the pause hotkey works.
+- If you show `Clipboard Image` yourself (eye icon or OBS's **Show 'Clipboard Image'** hotkey), or add it to a scene
+  as a visible source, it is treated like a paste: it disappears after 7 seconds, and the pause hotkey works.
+- Removing `Clipboard Image` from a scene (or deleting the source) counts as hiding it. The pause is released once
+  the image is no longer shown in any scene.
 
 ### 表示と自動で消える動き(日本語)
 
@@ -70,8 +72,10 @@ Built for just-chatting streams, where you want to say "look at this" without br
   **「'Clipboard Image' を非表示」**です(OBS ではシーンごとに並ぶので、使うシーンそれぞれで割り当ててください)。
 - 画像が非表示になると(手動でも自動でも)、一時停止は解除されます。次に貼った画像は、普段どおり7秒で消えます。
   OBS を起動し直したときも、一時停止していない状態から始まります。
-- 自分で `Clipboard Image` を表示した場合(目のアイコンや、OBS 標準の「'Clipboard Image' を表示」ホットキー)も、
-  貼ったときと同じ扱いです。7秒で消え、一時停止ホットキーも使えます。
+- 自分で `Clipboard Image` を表示した場合(目のアイコンや、OBS 標準の「'Clipboard Image' を表示」ホットキー)や、
+  表示した状態でシーンに追加した場合も、貼ったときと同じ扱いです。7秒で消え、一時停止ホットキーも使えます。
+- シーンから `Clipboard Image` を削除した場合(ソースごと削除した場合も)は、非表示と同じ扱いです。
+  どのシーンにも表示されなくなった時点で、一時停止は解除されます。
 
 ## Adjusting where images appear
 

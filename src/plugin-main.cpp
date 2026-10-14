@@ -83,6 +83,16 @@ obs_hotkey_id show_hotkey_id = OBS_INVALID_HOTKEY_ID;
 obs_hotkey_id pause_hotkey_id = OBS_INVALID_HOTKEY_ID;
 
 /**
+ * @brief シーンコレクションの読み込みが終わり、通知を登録してよい状態なら true。
+ *
+ * @details
+ * シーン一覧の変更(SCENE_LIST_CHANGED)は、読み込みの途中・切り替えの途中・終了の途中にも届く。
+ * その間に通知を登録すると、片付けた後にまた通知を受け取り、タイマーが動き出してしまうことがある。
+ * 起動完了時・切り替え完了時に true、切り替え開始時・終了時に false にする。
+ */
+bool scenes_ready = false;
+
+/**
  * @brief 「クリップボードの画像を表示」の共通処理。
  *
  * @details クリップボードの画像を保存し、現在のシーンに表示して、自動で消すタイマーを開始する。
@@ -102,6 +112,14 @@ void on_show_requested(const char *trigger)
 	const auto image = save_clipboard_image();
 	if (!image)
 		return;
+
+	/*
+	 * 何も表示されていないのに一時停止が残っていたら、貼る前に解除する。
+	 * 通常は非表示の通知で解除されるが、ソースの名前を変えた場合など通知では分からない消え方もあるため、
+	 * ここで必ず確かめる(残っていると、貼った画像が一時停止のまま消えなくなる)。
+	 */
+	if (!is_clipboard_image_showing())
+		auto_hide_on_image_hidden();
 
 	/* 保存した画像を現在のシーンに表示する。表示できなければタイマーも動かさない */
 	if (!show_image_on_current_scene(*image))
@@ -231,6 +249,11 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  *   OBS は終了処理の最初にシーンコレクションを保存し、EXIT イベントはその後に来る。
  *   そのため表示中に終了すると「表示中」のまま保存され、次の起動時に出たままになる。
  *   保存より前に届くイベントはないので、読み込んだ直後に片付ける。
+ *   その後、全シーンの通知(表示/非表示・追加・削除)を登録する。
+ * - シーンコレクション切り替えの開始時(SCENE_COLLECTION_CHANGING): タイマーと通知の登録を先に片付ける。
+ *   切り替えの途中でタイマーが発火し、片付け中のシーンを触るのを防ぐため。
+ * - シーン一覧の変更時(SCENE_LIST_CHANGED): 追加されたシーンの通知も登録する。
+ *   読み込み・切り替え・終了の途中は登録しない(scenes_ready)。
  * - 終了時(EXIT): 自動で消すタイマーと、画像差し替えのタイマーを止める。終了処理の途中でタイマーが発火し、
  *   片付け中のシーンやソースを触るのを防ぐため。
  *
@@ -248,8 +271,23 @@ void on_frontend_event(obs_frontend_event event, void *)
 		auto_hide_shutdown();
 		image_display_shutdown();
 		hide_clipboard_image(false);
+		/* 片付けた後で通知を登録する(起動直後に手動で表示・追加した場合もカウントできるように) */
+		image_display_watch_scenes();
+		scenes_ready = true;
+		break;
+	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
+		/* 切り替えの途中でタイマーが発火し、片付け中のシーンを触らないように先に止める */
+		scenes_ready = false;
+		auto_hide_shutdown();
+		image_display_shutdown();
+		break;
+	case OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED:
+		/* シーンが追加されたら、そのシーンの通知も受け取る(読み込み・切り替え・終了の途中は登録しない) */
+		if (scenes_ready)
+			image_display_watch_scenes();
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
+		scenes_ready = false;
 		auto_hide_shutdown();
 		image_display_shutdown();
 		break;

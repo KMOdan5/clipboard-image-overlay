@@ -57,18 +57,19 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
  *
  * 表示/非表示の検知(#7):
- * - Clipboard Image を置いたシーンの item_visible 通知を受け取る。目のアイコン・OBS 標準のホットキー・
- *   プラグイン自身の操作のどれでも届く。
- * - 非表示になったら、一時停止を解除する(auto_hide_on_image_hidden())。
- * - 手動で表示されたら、貼ったときと同じく自動で消すカウントを始める(auto_hide_restart())。
- *   プラグイン自身が表示した場合(貼ったとき・差し替えのとき)は、plugin-main.cpp で既にカウントを
- *   始めているので無視する(self_showing で区別する)。
- * - 差し替えのためのフェードアウトは「表示が続いている」扱いにして無視する。
- * - 通知を受け取るシーン: 貼ったときの現在のシーンと、hide_clipboard_image() で見つけた
- *   Clipboard Image のあるシーン(起動完了時にも呼ぶので、OBS を起動し直した直後から検知できる)。
+ * - 全シーンの item_visible(表示/非表示)・item_add(追加)・item_remove(削除)通知を受け取る。
+ *   名前が Clipboard Image のものだけを扱い、他のソースの通知は名前を比べるだけで捨てる。
+ * - 通知は UI スレッドに回し、処理する時点の状態を見て判断する(handle_visibility_changed())。
+ *   - どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める(auto_hide_on_image_hidden())
+ *   - 配信者が表示・追加したなら、貼ったときと同じくカウントを始める(auto_hide_restart())
+ *   - 差し替え中(フェードアウト中)は「表示が続いている」扱いにして何もしない
+ * - プラグイン自身の追加・表示の通知は捨てる(self_changing)。カウントは plugin-main.cpp で始めているため、
+ *   二重に数えないようにする。
+ * - 片付け(シーンコレクションの切り替え・終了)より前に回した通知は、片付けた後には処理しない(watch_generation)。
+ * - 差し替えを待つ間にアイテム・ソース・シーンが削除されたら、差し替えを取り消す。
  *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
- * is_clipboard_image_showing()、image_display_shutdown()(image-display.hpp)。
+ * image_display_watch_scenes()、is_clipboard_image_showing()、image_display_shutdown()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
@@ -84,6 +85,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <cstring>
 #include <vector>
 
@@ -149,7 +151,7 @@ void set_image_file(obs_source_t *source, const char *path)
  *
  * @param path 新しく作るときに設定する画像ファイルのパス(UTF-8)。
  * @return 画像ソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
- * @retval nullptr 作成に失敗した、または同じ名前の別種類のソースがある。
+ * @retval nullptr 作成に失敗した、同じ名前の別種類のソースがある、または削除の途中。
  */
 obs_source_t *get_or_create_image_source(const char *path)
 {
@@ -159,6 +161,12 @@ obs_source_t *get_or_create_image_source(const char *path)
 		 * 同じ名前のソースを配信者が自分で作っている可能性がある(テキストソースなど)。
 		 * 種類が違うものを書き換えると配信者の設定を壊すので、触らずに失敗扱いにする。
 		 */
+		/* 削除の途中(OBS が片付けるまでの一瞬)のソースは使わない。消えるソースに画像を出してしまうため */
+		if (obs_source_removed(source)) {
+			obs_log(LOG_WARNING, "display: \"%s\" is being removed; try again", SOURCE_NAME);
+			obs_source_release(source);
+			return nullptr;
+		}
 		if (std::strcmp(obs_source_get_unversioned_id(source), IMAGE_SOURCE_ID) != 0) {
 			obs_log(LOG_WARNING, "display: a source named \"%s\" exists but is not an image source (%s)",
 				SOURCE_NAME, obs_source_get_unversioned_id(source));
@@ -335,6 +343,32 @@ bool hide_item_instantly(obs_sceneitem_t *item)
 }
 
 /**
+ * @brief このスレッドで、プラグイン自身がシーンアイテムを追加・表示している最中なら true。
+ *
+ * @details
+ * OBS の item_add / item_visible 通知は、obs_scene_add() / obs_sceneitem_set_visible() の中から
+ * 同じスレッドで同期的に届く(OBS 本体の obs-scene.c で確認)。操作の直前に true、直後に false にすることで、
+ * 通知が「プラグイン自身の操作」か「配信者の操作」かを on_item_visible() などで区別する。
+ * プラグイン自身の表示は、呼び出し元(plugin-main.cpp)でカウントを始めているので、二重に数えないようにする。
+ *
+ * thread_local にしているのは、別のスレッド(ホットキーなど)で同時に起きた配信者の操作を、
+ * プラグイン自身の操作と取り違えないようにするため。
+ */
+thread_local bool self_changing = false;
+
+/**
+ * @brief self_changing を、この変数が生きている間だけ true にする。
+ *
+ * @details 途中で return しても必ず false に戻るよう、変数の寿命で管理する。
+ */
+struct SelfChangeScope {
+	SelfChangeScope() { self_changing = true; }
+	~SelfChangeScope() { self_changing = false; }
+	SelfChangeScope(const SelfChangeScope &) = delete;
+	SelfChangeScope &operator=(const SelfChangeScope &) = delete;
+};
+
+/**
  * @brief ソースを非表示の状態でシーンに追加する。
  *
  * @details
@@ -354,6 +388,8 @@ obs_sceneitem_t *add_hidden_scene_item(obs_scene_t *scene, obs_source_t *source)
 		obs_sceneitem_t *item;
 	} ctx = {source, nullptr};
 
+	/* 追加と非表示化で届く通知は、プラグイン自身の操作なので無視させる */
+	const SelfChangeScope scope;
 	obs_scene_atomic_update(
 		scene,
 		[](void *param, obs_scene_t *target) {
@@ -405,6 +441,83 @@ obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
 }
 
 /**
+ * @brief シーンの中から、指定したソースが置かれているシーンアイテムをすべて集める。
+ *
+ * @details
+ * 配信者が同じシーンに Clipboard Image を 2 つ以上置いている場合もあるため、
+ * 非表示にするときや「どこかに表示されているか」を調べるときは、最初の 1 つだけでなく全部を見る。
+ * 集めたあとで操作するのは、obs_scene_enum_items() の途中(シーンをロック中)に表示を切り替えないようにするため。
+ *
+ * @param scene  探す対象のシーン。
+ * @param source 探すソース。
+ * @return 見つかったシーンアイテム(それぞれ参照カウント付き。release_items() で解放する)。
+ */
+std::vector<obs_sceneitem_t *> collect_items(obs_scene_t *scene, obs_source_t *source)
+{
+	struct search {
+		obs_source_t *source;
+		std::vector<obs_sceneitem_t *> found;
+	} ctx = {source, {}};
+
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			auto *ctx = static_cast<search *>(param);
+			if (obs_sceneitem_get_source(item) == ctx->source) {
+				obs_sceneitem_addref(item);
+				ctx->found.push_back(item);
+			}
+			return true; /* 全部集めるので最後まで調べる */
+		},
+		&ctx);
+
+	return ctx.found;
+}
+
+/// @brief collect_items() で集めたシーンアイテムをすべて解放する。
+void release_items(std::vector<obs_sceneitem_t *> &items)
+{
+	for (obs_sceneitem_t *item : items)
+		obs_sceneitem_release(item);
+	items.clear();
+}
+
+/**
+ * @brief Clipboard Image が、いずれかのシーンで表示状態になっているかを調べる。
+ *
+ * @details
+ * 自動で消す処理は全シーンを対象にするので、「表示中か」も全シーンで判断する。
+ * 現在のシーンだけで判断すると、別のシーンに表示が残っているのにタイマーや一時停止を
+ * 片付けてしまい、その画像が消えなくなるため。
+ *
+ * @return どこかのシーンで表示状態なら true。Clipboard Image がなければ false。
+ */
+bool is_visible_in_any_scene()
+{
+	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	if (!source)
+		return false;
+
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+
+	bool visible = false;
+	for (size_t i = 0; i < scenes.sources.num && !visible; i++) {
+		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
+		if (!scene)
+			continue;
+		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
+		for (obs_sceneitem_t *item : items)
+			visible = visible || obs_sceneitem_visible(item);
+		release_items(items);
+	}
+
+	obs_frontend_source_list_free(&scenes);
+	obs_source_release(source);
+	return visible;
+}
+
+/**
  * @brief 表示中の画像を差し替えるときの、待ち中の情報。
  *
  * @details
@@ -414,6 +527,12 @@ obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
 struct PendingSwap {
 	/// @brief 差し替え中のシーンアイテム(参照カウント付き)。待ちがなければ nullptr。
 	obs_sceneitem_t *item = nullptr;
+	/**
+	 * @brief item が置かれているシーン(弱い参照)。
+	 * @details 待っている間にシーンが削除されると、item からシーンをたどれなくなる(解放済みになる)。
+	 *          そのためシーンは別に弱い参照で持ち、差し替える前に残っているか確かめる。
+	 */
+	obs_weak_source_t *scene = nullptr;
 	/// @brief フェードアウトが終わったら表示する画像。
 	SavedImage image;
 };
@@ -428,21 +547,10 @@ QTimer *swap_timer = nullptr;
 constexpr int SWAP_MARGIN_MS = 50;
 
 /**
- * @brief プラグイン自身が Clipboard Image を表示している最中なら true。
- *
- * @details
- * OBS の item_visible 通知は、obs_sceneitem_set_visible() の中から同じスレッドで届く。
- * 表示する直前に true、直後に false にすることで、通知が「プラグイン自身の表示」か
- * 「配信者の手動の表示」かを on_item_visible() で区別する。
- * 通知はホットキーのスレッドから届くこともあるため、atomic にしておく。
- */
-std::atomic<bool> self_showing{false};
-
-/**
  * @brief 画像ファイルを差し替え、表示サイズを決め直して、表示する(フェードイン)。
  *
  * @details 自動で消すカウントは呼び出し元(plugin-main.cpp)で始めるので、
- *          この表示は「手動の表示」として数えないよう self_showing を立てておく。
+ *          この表示は「配信者の操作」として数えないよう self_changing を立てておく。
  *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報。
@@ -451,9 +559,10 @@ void show_new_image(obs_sceneitem_t *item, const SavedImage &image)
 {
 	set_image_file(obs_sceneitem_get_source(item), image.path.c_str());
 	apply_display_size(item, image);
-	self_showing = true;
-	obs_sceneitem_set_visible(item, true);
-	self_showing = false;
+	{
+		const SelfChangeScope scope;
+		obs_sceneitem_set_visible(item, true);
+	}
 	obs_log(LOG_INFO, "display: showing %s", image.path.c_str());
 }
 
@@ -469,22 +578,67 @@ void cancel_swap()
 		pending_swap.item = nullptr;
 		obs_log(LOG_INFO, "display: pending swap canceled");
 	}
+	obs_weak_source_release(pending_swap.scene);
+	pending_swap.scene = nullptr;
+}
+
+/**
+ * @brief 差し替え中のシーンアイテムが、まだシーンに置かれているかを調べる。
+ *
+ * @details
+ * フェードアウトを待つ間に、配信者がアイテム・ソース・シーンを削除することがある。
+ * 削除されたアイテムを表示し直すと、消えたはずの画像が裏で動き続けるなどの不具合になるため、確かめてから使う。
+ *
+ * @return 置かれたままなら true。待ちがない・削除された場合は false。
+ */
+bool is_pending_swap_alive()
+{
+	if (!pending_swap.item)
+		return false;
+
+	obs_source_t *scene_source = obs_weak_source_get_source(pending_swap.scene);
+	if (!scene_source)
+		return false; /* シーンが削除された */
+
+	bool alive = false;
+	obs_scene_t *scene = obs_scene_from_source(scene_source);
+	if (scene && !obs_source_removed(scene_source)) {
+		std::vector<obs_sceneitem_t *> items =
+			collect_items(scene, obs_sceneitem_get_source(pending_swap.item));
+		alive = std::find(items.begin(), items.end(), pending_swap.item) != items.end();
+		release_items(items);
+	}
+	obs_source_release(scene_source);
+	return alive;
 }
 
 /**
  * @brief フェードアウトが終わったときの処理。新しい画像に差し替えて、フェードインさせる。
+ *
+ * @details 待っている間にアイテムが削除されていたら、差し替えずに取り消す。
  *
  * @note 呼び出し元: Qt(swap_timer の timeout)。
  * @note スレッド: UI スレッド。
  */
 void finish_swap()
 {
-	obs_sceneitem_t *item = pending_swap.item;
-	if (!item)
+	if (!pending_swap.item)
 		return;
-	pending_swap.item = nullptr;
 
-	show_new_image(item, pending_swap.image);
+	if (!is_pending_swap_alive()) {
+		obs_log(LOG_INFO, "display: swap target was removed");
+		cancel_swap();
+		return;
+	}
+
+	/* 先に待ちを空にしてから表示する(表示の通知を受けたとき「差し替え中」と判断させないため) */
+	obs_sceneitem_t *item = pending_swap.item;
+	const SavedImage image = pending_swap.image;
+	pending_swap.item = nullptr;
+	obs_weak_source_release(pending_swap.scene);
+	pending_swap.scene = nullptr;
+
+	show_new_image(item, image);
 	obs_sceneitem_release(item);
 }
 
@@ -496,10 +650,11 @@ void finish_swap()
  * 待っている間にもう一度貼られた場合は、待ち時間はそのままで、差し替え先だけを最新の画像にする
  * (最後に貼った画像が表示される。途中の画像が一瞬出たりはしない)。
  *
- * @param item  表示中のシーンアイテム。
- * @param image 新しく表示する画像の情報。
+ * @param item         表示中のシーンアイテム。
+ * @param scene_source item が置かれているシーン(ソースとして)。
+ * @param image        新しく表示する画像の情報。
  */
-void start_swap(obs_sceneitem_t *item, const SavedImage &image)
+void start_swap(obs_sceneitem_t *item, obs_source_t *scene_source, const SavedImage &image)
 {
 	if (pending_swap.item) {
 		pending_swap.image = image;
@@ -515,6 +670,7 @@ void start_swap(obs_sceneitem_t *item, const SavedImage &image)
 
 	obs_sceneitem_addref(item);
 	pending_swap.item = item;
+	pending_swap.scene = obs_source_get_weak_source(scene_source);
 	pending_swap.image = image;
 
 	/* 非表示トランジションがあればその長さだけ待つ。なければすぐ消えるので待たない */
@@ -528,90 +684,113 @@ void start_swap(obs_sceneitem_t *item, const SavedImage &image)
 }
 
 /**
- * @brief 「表示/非表示が切り替わった」通知を受け取っているシーンの一覧(弱い参照)。
+ * @brief 通知の受け付けを片付けた回数。片付ける前に届いた古い通知を捨てるために使う。
  *
  * @details
- * Clipboard Image を置いたシーンごとに、OBS の item_visible 通知を受け取るよう登録する。
+ * 通知は UI スレッドに回してから処理するので、処理されるまでに少し間がある。
+ * その間にシーンコレクションの切り替えや終了で片付けが行われると、古いコレクションの通知が
+ * 新しいコレクションの状態に作用してしまう。通知を回すときにこの値を一緒に渡し、
+ * 処理するときに値が変わっていたら捨てる。別スレッドから読むので atomic にしておく。
+ */
+std::atomic<uintptr_t> watch_generation{0};
+
+/**
+ * @brief 「表示/非表示が切り替わった」などの通知を受け取っているシーンの一覧(弱い参照)。
+ *
+ * @details
  * 弱い参照で持つのは、シーンが削除されたときにプラグインがシーンを生き残らせないようにするため。
  */
 std::vector<obs_weak_source_t *> watched_scenes;
 
 /**
- * @brief Clipboard Image が非表示になったときの処理(UI スレッドで実行する)。
+ * @brief Clipboard Image の表示状態が変わったときの処理(UI スレッドで実行する)。
  *
  * @details
- * 自分の差し替え(フェードアウト中)で一時的に非表示にした場合と、
- * 通知が届くまでに再び表示された場合は無視する。それ以外は一時停止を解除する(#7 のルール 2)。
+ * 通知の中身(どのアイテムか)ではなく、処理する時点の状態を見て判断する。
+ * 通知が届くまでの間に状態が変わっていても(貼った・消した・削除した)、今の状態に合った動きになるため。
+ * 1. 差し替え中のアイテムが削除されていたら、差し替えを取り消す
+ * 2. 差し替え中なら何もしない(表示が続いている扱い。カウントは貼ったときに始めている)
+ * 3. どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める(#7 のルール 2)
+ * 4. 配信者が表示した(表示・追加の通知)なら、貼ったときと同じくカウントを始める
+ *    (既にどこかに表示中でカウントしていた場合は、7 秒に戻る)
  *
- * @param item 非表示になったシーンアイテム。
+ * @param shown 配信者が表示した通知(表示にした・表示状態で追加した)なら true。
+ *              非表示にした・削除した通知なら false。
  */
-void handle_item_hidden(obs_sceneitem_t *item)
+void handle_visibility_changed(bool shown)
 {
-	if (pending_swap.item == item)
-		return; /* 差し替えのためのフェードアウト: 表示は続いている扱い */
-	if (obs_sceneitem_visible(item))
-		return; /* 通知が届くまでに、また表示された */
+	if (pending_swap.item && !is_pending_swap_alive()) {
+		obs_log(LOG_INFO, "display: swap target was removed");
+		cancel_swap();
+	}
+	if (pending_swap.item)
+		return;
 
-	obs_log(LOG_INFO, "display: Clipboard Image was hidden");
-	auto_hide_on_image_hidden();
+	if (!is_visible_in_any_scene()) {
+		obs_log(LOG_INFO, "display: Clipboard Image is not shown in any scene");
+		auto_hide_on_image_hidden();
+		return;
+	}
+
+	if (shown) {
+		obs_log(LOG_INFO, "display: Clipboard Image was shown by the user");
+		auto_hide_restart();
+	}
 }
 
 /**
- * @brief Clipboard Image が手動で表示されたときの処理(UI スレッドで実行する)。
+ * @brief UI スレッドで handle_visibility_changed() を呼ぶ。
+ *
+ * @param param 通知を回したときの watch_generation と shown をまとめた値(最下位ビットが shown)。
+ */
+void visibility_changed_task(void *param)
+{
+	const auto value = reinterpret_cast<uintptr_t>(param);
+	if ((value >> 1) != (watch_generation.load() & (UINTPTR_MAX >> 1)))
+		return; /* 片付ける前に届いた古い通知 */
+	handle_visibility_changed((value & 1) != 0);
+}
+
+/**
+ * @brief 通知を UI スレッドに回す。
  *
  * @details
- * 貼ったときと同じく、自動で消すカウントを表示時間(7 秒)で始める(一時停止中なら一時停止のまま)。
- * 手動で消したあとに目のアイコンなどで表示し直すと、カウントが動いておらず、
- * 自動で消えず一時停止ホットキーも効かない状態になってしまうため。
- * 差し替えの途中(フェードアウト中に表示し直された)と、通知が届くまでに再び非表示になった場合は無視する。
+ * 通知は UI スレッド以外(ホットキーのスレッド、ソースを削除したときの描画スレッド)からも届く。
+ * 描画スレッドではシーンをロックしたまま届くので、ここではシーンに触らず、処理を UI スレッドに回すだけにする。
+ * アイテムへの参照は渡さない(削除される途中のアイテムを生き残らせないため。処理は状態を見て判断する)。
  *
- * @param item 表示されたシーンアイテム。
- *
- * @see auto_hide_restart()
+ * @param shown 配信者が表示した通知なら true。
  */
-void handle_item_shown(obs_sceneitem_t *item)
+void queue_visibility_changed(bool shown)
 {
-	if (pending_swap.item == item)
-		return; /* 差し替え中: 貼ったときにカウントを始めている */
-	if (!obs_sceneitem_visible(item))
-		return; /* 通知が届くまでに、また非表示になった */
-
-	obs_log(LOG_INFO, "display: Clipboard Image was shown manually");
-	auto_hide_restart();
+	const uintptr_t value = (watch_generation.load() << 1) | (shown ? 1 : 0);
+	obs_queue_task(OBS_TASK_UI, visibility_changed_task, reinterpret_cast<void *>(value), false);
 }
 
 /**
- * @brief UI スレッドで handle_item_hidden() を呼び、預かった参照を返す。
+ * @brief 通知の対象が Clipboard Image のシーンアイテムなら、そのアイテムを返す。
  *
- * @param param on_item_visible() で参照を増やしたシーンアイテム。
+ * @param cd 通知の内容("item": シーンアイテム)。
+ * @return Clipboard Image のシーンアイテム(参照カウントは増やさない)。
+ * @retval nullptr 別のソースのアイテム。
  */
-void handle_item_hidden_task(void *param)
+obs_sceneitem_t *clipboard_item_from(calldata_t *cd)
 {
-	auto *item = static_cast<obs_sceneitem_t *>(param);
-	handle_item_hidden(item);
-	obs_sceneitem_release(item);
-}
-
-/**
- * @brief UI スレッドで handle_item_shown() を呼び、預かった参照を返す。
- *
- * @param param on_item_visible() で参照を増やしたシーンアイテム。
- */
-void handle_item_shown_task(void *param)
-{
-	auto *item = static_cast<obs_sceneitem_t *>(param);
-	handle_item_shown(item);
-	obs_sceneitem_release(item);
+	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
+	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
+	const char *name = source ? obs_source_get_name(source) : nullptr;
+	if (!name || std::strcmp(name, SOURCE_NAME) != 0)
+		return nullptr;
+	return item;
 }
 
 /**
  * @brief OBS の item_visible 通知を受け取る。Clipboard Image の表示/非表示を UI スレッドに回す。
  *
  * @details
- * 目のアイコン・OBS 標準のホットキー・プラグイン自身、どの方法で切り替えても届く。
+ * 目のアイコン・OBS 標準のホットキー・元に戻す・プラグイン自身、どの方法で切り替えても届く。
  * 名前が Clipboard Image のものだけを扱い、それ以外のソースの通知は名前を比べるだけで何もしない。
- * プラグイン自身が表示した通知(self_showing が true)は、カウントを既に始めているので捨てる。
- * ホットキーの場合は UI スレッド以外から届くことがあるため、処理は UI スレッドに回す。
+ * プラグイン自身の操作(self_changing が true)の通知は捨てる。
  *
  * @param cd 通知の内容("item": シーンアイテム、"visible": 表示なら true)。
  *
@@ -620,23 +799,69 @@ void handle_item_shown_task(void *param)
  */
 void on_item_visible(void *, calldata_t *cd)
 {
-	const bool visible = calldata_bool(cd, "visible");
-	if (visible && self_showing)
+	if (self_changing || !clipboard_item_from(cd))
 		return;
-
-	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
-	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
-	const char *name = source ? obs_source_get_name(source) : nullptr;
-	if (!name || std::strcmp(name, SOURCE_NAME) != 0)
-		return;
-
-	/* UI スレッドで処理するまでアイテムが消えないよう、参照を持って渡す */
-	obs_sceneitem_addref(item);
-	obs_queue_task(OBS_TASK_UI, visible ? handle_item_shown_task : handle_item_hidden_task, item, false);
+	queue_visibility_changed(calldata_bool(cd, "visible"));
 }
 
 /**
- * @brief シーンの item_visible 通知を受け取るよう登録する。登録済みなら何もしない。
+ * @brief OBS の item_add 通知を受け取る。配信者が Clipboard Image をシーンに追加したとき用。
+ *
+ * @details
+ * 「既存のソースを追加」などで追加したアイテムは、表示状態で置かれ、item_visible 通知は来ない。
+ * 表示状態で追加されたら、手動で表示したときと同じくカウントを始める(出しっぱなしにしないため)。
+ * プラグイン自身の追加(非表示で追加する)は捨てる。
+ *
+ * @param cd 通知の内容("item": 追加されたシーンアイテム)。
+ *
+ * @note 呼び出し元: OBS(watch_scene() で登録した通知)。
+ * @note スレッド: 決まっていない(追加した操作のスレッド)。
+ */
+void on_item_add(void *, calldata_t *cd)
+{
+	if (self_changing)
+		return;
+	obs_sceneitem_t *item = clipboard_item_from(cd);
+	if (!item)
+		return;
+	queue_visibility_changed(obs_sceneitem_visible(item));
+}
+
+/**
+ * @brief OBS の item_remove 通知を受け取る。Clipboard Image がシーンから削除されたとき用。
+ *
+ * @details
+ * アイテムやソース・シーンを削除したときは、item_visible 通知は来ず、この通知だけが来る。
+ * 削除で画面から消えたら、非表示と同じく一時停止を解除する(一時停止が残って、次の画像が消えなくなるのを防ぐ)。
+ * ソースを削除したときは描画スレッドからシーンをロックしたまま届くので、UI スレッドに回すだけにする。
+ *
+ * @param cd 通知の内容("item": 削除されたシーンアイテム)。
+ *
+ * @note 呼び出し元: OBS(watch_scene() で登録した通知)。
+ * @note スレッド: 決まっていない(UI スレッド、またはソース削除時の描画スレッド)。
+ */
+void on_item_remove(void *, calldata_t *cd)
+{
+	if (!clipboard_item_from(cd))
+		return;
+	queue_visibility_changed(false);
+}
+
+/// @brief watch_scene() で登録する通知と、その受け取り関数の組み合わせ。
+struct SceneSignal {
+	const char *name;
+	signal_callback_t callback;
+};
+
+/// @brief シーンごとに登録する通知の一覧。
+constexpr SceneSignal SCENE_SIGNALS[] = {
+	{"item_visible", on_item_visible},
+	{"item_add", on_item_add},
+	{"item_remove", on_item_remove},
+};
+
+/**
+ * @brief シーンの通知(表示/非表示・追加・削除)を受け取るよう登録する。登録済みなら何もしない。
  *
  * @param scene_source 対象のシーン(ソースとして)。
  */
@@ -647,13 +872,15 @@ void watch_scene(obs_source_t *scene_source)
 			return;
 	}
 
-	signal_handler_connect(obs_source_get_signal_handler(scene_source), "item_visible", on_item_visible, nullptr);
+	signal_handler_t *handler = obs_source_get_signal_handler(scene_source);
+	for (const SceneSignal &signal : SCENE_SIGNALS)
+		signal_handler_connect(handler, signal.name, signal.callback, nullptr);
 	watched_scenes.push_back(obs_source_get_weak_source(scene_source));
-	obs_log(LOG_INFO, "display: watching visibility in scene \"%s\"", obs_source_get_name(scene_source));
+	obs_log(LOG_INFO, "display: watching scene \"%s\"", obs_source_get_name(scene_source));
 }
 
 /**
- * @brief 登録した item_visible 通知をすべて解除する。
+ * @brief 登録した通知をすべて解除する。
  *
  * @details 既に削除されたシーンは、弱い参照から取り出せないので解除不要(通知の仕組みごと消えている)。
  */
@@ -662,13 +889,29 @@ void unwatch_all_scenes()
 	for (obs_weak_source_t *weak : watched_scenes) {
 		obs_source_t *scene_source = obs_weak_source_get_source(weak);
 		if (scene_source) {
-			signal_handler_disconnect(obs_source_get_signal_handler(scene_source), "item_visible",
-						  on_item_visible, nullptr);
+			signal_handler_t *handler = obs_source_get_signal_handler(scene_source);
+			for (const SceneSignal &signal : SCENE_SIGNALS)
+				signal_handler_disconnect(handler, signal.name, signal.callback, nullptr);
 			obs_source_release(scene_source);
 		}
 		obs_weak_source_release(weak);
 	}
 	watched_scenes.clear();
+}
+
+/**
+ * @brief 削除されたシーンの弱い参照を一覧から取り除く(シーンを何度も作り直しても一覧が増え続けないように)。
+ */
+void prune_watched_scenes()
+{
+	auto expired = [](obs_weak_source_t *weak) {
+		if (!obs_weak_source_expired(weak))
+			return false;
+		obs_weak_source_release(weak);
+		return true;
+	};
+	watched_scenes.erase(std::remove_if(watched_scenes.begin(), watched_scenes.end(), expired),
+			     watched_scenes.end());
 }
 
 } // namespace
@@ -719,16 +962,20 @@ bool show_image_on_current_scene(const SavedImage &image)
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
 
-	/* 手動で表示/非表示にされたことを知るため、このシーンの通知を受け取る(#7 のカウント開始・一時停止の解除に使う) */
+	/* 通知の受け付けは起動完了時などに全シーン分まとめて登録している。念のため、このシーンも確かめておく */
 	watch_scene(scene_source);
 
 	/* 後から追加されたソースに隠れないよう、最前面に移す(「常に手前に表示する」がオンのとき) */
 	if (ALWAYS_ON_TOP)
 		obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
 
+	/* 別のシーンで差し替えを待っている途中なら取り消す(そちらはフェードアウト済み。両方に出さないように) */
+	if (pending_swap.item && pending_swap.item != item)
+		cancel_swap();
+
 	if (obs_sceneitem_visible(item) || pending_swap.item == item) {
 		/* 表示中(または差し替え中): フェードアウト → 差し替え → フェードイン */
-		start_swap(item, image);
+		start_swap(item, scene_source, image);
 	} else {
 		/* 非表示: 画像を設定してフェードイン */
 		show_new_image(item, image);
@@ -770,26 +1017,41 @@ void hide_clipboard_image(bool fade)
 		if (!scene)
 			continue;
 
-		obs_sceneitem_t *item = find_scene_item(scene, source);
-		if (!item)
-			continue;
-
-		/* 手動で表示/非表示にされたことを知るため、Clipboard Image のあるシーンの通知を受け取る。
-		   起動完了時にも呼ばれるので、OBS を起動し直した直後に手動で表示した場合もカウントできる */
-		watch_scene(scenes.sources.array[i]);
-
-		/* 表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
-		if (obs_sceneitem_visible(item)) {
+		/* 同じシーンに 2 つ以上置かれていることもあるので、全部を対象にする */
+		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
+		for (obs_sceneitem_t *item : items) {
+			/* 表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
+			if (!obs_sceneitem_visible(item))
+				continue;
 			const bool changed = fade ? obs_sceneitem_set_visible(item, false) : hide_item_instantly(item);
 			if (changed)
 				hidden++;
 		}
-		obs_sceneitem_release(item);
+		release_items(items);
 	}
 
 	obs_frontend_source_list_free(&scenes);
 	obs_source_release(source);
-	obs_log(LOG_INFO, "display: hidden in %d scene(s) (%s)", hidden, fade ? "fade" : "instant");
+	obs_log(LOG_INFO, "display: hidden %d item(s) (%s)", hidden, fade ? "fade" : "instant");
+}
+
+/**
+ * @brief 全シーンの通知(表示/非表示・追加・削除)を受け取るよう登録する。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ *
+ * @note 呼び出し元: plugin-main.cpp の on_frontend_event()(起動完了時・シーンコレクション切り替え時・シーン一覧の変更時)。
+ * @note スレッド: UI スレッド。
+ */
+void image_display_watch_scenes()
+{
+	prune_watched_scenes();
+
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+	for (size_t i = 0; i < scenes.sources.num; i++)
+		watch_scene(scenes.sources.array[i]);
+	obs_frontend_source_list_free(&scenes);
 }
 
 /**
@@ -799,6 +1061,8 @@ void hide_clipboard_image(bool fade)
  */
 void image_display_shutdown()
 {
+	/* 片付ける前に UI スレッドへ回した通知を、片付けた後に処理しないようにする */
+	watch_generation++;
 	unwatch_all_scenes();
 	cancel_swap();
 	delete swap_timer;
@@ -806,7 +1070,7 @@ void image_display_shutdown()
 }
 
 /**
- * @brief 現在のシーンで Clipboard Image が表示中かどうかを返す。
+ * @brief Clipboard Image がいずれかのシーンで表示中かどうかを返す。
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  */
@@ -814,21 +1078,5 @@ bool is_clipboard_image_showing()
 {
 	if (pending_swap.item)
 		return true; /* 差し替え中: いったん非表示にしているが、すぐまた表示する */
-
-	obs_source_t *scene_source = obs_frontend_get_current_scene();
-	obs_scene_t *scene = obs_scene_from_source(scene_source);
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
-
-	bool showing = false;
-	if (scene && source) {
-		obs_sceneitem_t *item = find_scene_item(scene, source);
-		if (item) {
-			showing = obs_sceneitem_visible(item);
-			obs_sceneitem_release(item);
-		}
-	}
-
-	obs_source_release(source);
-	obs_source_release(scene_source);
-	return showing;
+	return is_visible_in_any_scene();
 }
