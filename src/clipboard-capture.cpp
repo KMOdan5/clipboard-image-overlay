@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QClipboard>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
@@ -35,6 +36,15 @@ namespace {
 
 constexpr const char *IMAGE_FOLDER = "images";
 
+/*
+ * Formats OBS's image source can show as-is. GIF keeps its animation.
+ * WebP is left out: OBS cannot load animated WebP, so it is re-encoded.
+ */
+const QStringList OBS_IMAGE_FORMATS = {
+	QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
+	QStringLiteral("gif"), QStringLiteral("bmp"), QStringLiteral("tga"),
+};
+
 /* Folder for saved images, e.g. %APPDATA%\obs-studio\plugin_config\obs-clipboard-image\images */
 QString image_folder()
 {
@@ -44,83 +54,113 @@ QString image_folder()
 	return folder;
 }
 
-/* Loads the first copied local file that Qt can read as an image. */
-QImage image_from_local_files(const QMimeData *mime)
+/* Returns a new, timestamped path in the image folder, or an empty string on failure. */
+QString new_image_path(const QString &extension)
 {
-	if (!mime->hasUrls())
-		return QImage();
-
-	for (const QUrl &url : mime->urls()) {
-		if (!url.isLocalFile())
-			continue;
-
-		const QString path = url.toLocalFile();
-		QImageReader reader(path);
-		reader.setAutoTransform(true);
-		QImage image = reader.read();
-		if (!image.isNull()) {
-			obs_log(LOG_INFO, "clipboard: read copied file %s", path.toUtf8().constData());
-			return image;
-		}
-
-		obs_log(LOG_INFO, "clipboard: skipped copied file %s (%s)", path.toUtf8().constData(),
-			reader.errorString().toUtf8().constData());
+	const QString folder = image_folder();
+	if (folder.isEmpty() || !QDir().mkpath(folder)) {
+		obs_log(LOG_WARNING, "save: cannot create folder %s", folder.toUtf8().constData());
+		return QString();
 	}
 
-	return QImage();
+	const QString name = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz")) +
+			     QStringLiteral(".") + extension;
+	return QDir(folder).filePath(name);
 }
 
-QImage image_from_clipboard()
+std::optional<std::string> saved(const QString &path, const QSize &size, const char *how)
 {
-	const QClipboard *clipboard = QGuiApplication::clipboard();
-	const QMimeData *mime = clipboard ? clipboard->mimeData() : nullptr;
-	if (!mime) {
-		obs_log(LOG_INFO, "clipboard: unavailable");
-		return QImage();
+	const QString native = QDir::toNativeSeparators(path);
+	obs_log(LOG_INFO, "save: %dx%d (%s) -> %s", size.width(), size.height(), how, native.toUtf8().constData());
+	return native.toUtf8().toStdString();
+}
+
+std::optional<std::string> save_as_png(const QImage &image)
+{
+	const QString path = new_image_path(QStringLiteral("png"));
+	if (path.isEmpty())
+		return std::nullopt;
+
+	if (!image.save(path, "PNG")) {
+		obs_log(LOG_WARNING, "save: failed to write %s", path.toUtf8().constData());
+		return std::nullopt;
+	}
+	return saved(path, image.size(), "encoded png");
+}
+
+/*
+ * Saves one copied local file. Files OBS can show directly are copied
+ * unchanged, which keeps GIF animation and the original file size.
+ * Other readable images (and photos that need EXIF rotation) are re-encoded
+ * as PNG. Returns std::nullopt if the file is not an image.
+ */
+std::optional<std::string> save_local_file(const QString &source)
+{
+	QImageReader reader(source);
+	reader.setAutoTransform(true);
+	if (!reader.canRead()) {
+		obs_log(LOG_INFO, "clipboard: skipped copied file %s (%s)", source.toUtf8().constData(),
+			reader.errorString().toUtf8().constData());
+		return std::nullopt;
 	}
 
-	/* Prefer a copied file: it keeps the original quality and transparency. */
-	QImage image = image_from_local_files(mime);
-	if (!image.isNull())
-		return image;
+	const QString format = QString::fromLatin1(reader.format()).toLower();
+	const QString extension = QFileInfo(source).suffix().toLower();
+	const bool supported = OBS_IMAGE_FORMATS.contains(format) && OBS_IMAGE_FORMATS.contains(extension);
+	const bool needs_rotation = reader.transformation() != QImageIOHandler::TransformationNone;
+	obs_log(LOG_INFO, "clipboard: read copied file %s (format: %s)", source.toUtf8().constData(),
+		format.toUtf8().constData());
 
-	if (mime->hasImage()) {
-		image = qvariant_cast<QImage>(mime->imageData());
-		if (!image.isNull()) {
-			obs_log(LOG_INFO, "clipboard: read image data");
-			return image;
+	if (supported && !needs_rotation) {
+		const QString path = new_image_path(extension);
+		if (path.isEmpty())
+			return std::nullopt;
+		if (!QFile::copy(source, path)) {
+			obs_log(LOG_WARNING, "save: failed to copy to %s", path.toUtf8().constData());
+			return std::nullopt;
 		}
+		return saved(path, reader.size(), "copied original");
 	}
 
-	obs_log(LOG_INFO, "clipboard: no image found (formats: %s)",
-		mime->formats().join(QStringLiteral(", ")).toUtf8().constData());
-	return QImage();
+	const QImage image = reader.read();
+	if (image.isNull()) {
+		obs_log(LOG_INFO, "clipboard: failed to decode %s (%s)", source.toUtf8().constData(),
+			reader.errorString().toUtf8().constData());
+		return std::nullopt;
+	}
+	return save_as_png(image);
 }
 
 } // namespace
 
 std::optional<std::string> save_clipboard_image()
 {
-	const QImage image = image_from_clipboard();
-	if (image.isNull())
-		return std::nullopt;
-
-	const QString folder = image_folder();
-	if (folder.isEmpty() || !QDir().mkpath(folder)) {
-		obs_log(LOG_WARNING, "save: cannot create folder %s", folder.toUtf8().constData());
+	const QClipboard *clipboard = QGuiApplication::clipboard();
+	const QMimeData *mime = clipboard ? clipboard->mimeData() : nullptr;
+	if (!mime) {
+		obs_log(LOG_INFO, "clipboard: unavailable");
 		return std::nullopt;
 	}
 
-	const QString name =
-		QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz")) + QStringLiteral(".png");
-	const QString path = QDir(folder).filePath(name);
-
-	if (!image.save(path, "PNG")) {
-		obs_log(LOG_WARNING, "save: failed to write %s", path.toUtf8().constData());
-		return std::nullopt;
+	/* Prefer a copied file: it keeps the original quality, transparency and animation. */
+	if (mime->hasUrls()) {
+		for (const QUrl &url : mime->urls()) {
+			if (!url.isLocalFile())
+				continue;
+			if (auto path = save_local_file(url.toLocalFile()))
+				return path;
+		}
 	}
 
-	const QString native = QDir::toNativeSeparators(path);
-	obs_log(LOG_INFO, "save: %dx%d -> %s", image.width(), image.height(), native.toUtf8().constData());
-	return native.toUtf8().toStdString();
+	if (mime->hasImage()) {
+		const QImage image = qvariant_cast<QImage>(mime->imageData());
+		if (!image.isNull()) {
+			obs_log(LOG_INFO, "clipboard: read image data");
+			return save_as_png(image);
+		}
+	}
+
+	obs_log(LOG_INFO, "clipboard: no image found (formats: %s)",
+		mime->formats().join(QStringLiteral(", ")).toUtf8().constData());
+	return std::nullopt;
 }
