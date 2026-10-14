@@ -37,8 +37,8 @@ namespace {
 constexpr const char *IMAGE_FOLDER = "images";
 
 /*
- * Formats OBS's image source can show as-is. GIF keeps its animation.
- * WebP is left out: OBS cannot load animated WebP, so it is re-encoded.
+ * Formats OBS's image source can display. A copied file in one of these is
+ * saved unchanged. WebP is left out because OBS cannot load animated WebP.
  */
 const QStringList OBS_IMAGE_FORMATS = {
 	QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
@@ -89,10 +89,15 @@ std::optional<std::string> save_as_png(const QImage &image)
 }
 
 /*
- * Saves one copied local file. Files OBS can show directly are copied
- * unchanged, which keeps GIF animation and the original file size.
- * Other readable images (and photos that need EXIF rotation) are re-encoded
- * as PNG. Returns std::nullopt if the file is not an image.
+ * Saves one copied local file.
+ *
+ * Rule: keep the original file and extension, so GIF animation, quality and
+ * file size are preserved.
+ * Exceptions, re-encoded as PNG so the image always shows in OBS:
+ *   - formats OBS's image source cannot display (see OBS_IMAGE_FORMATS)
+ *   - photos with an EXIF orientation, which OBS would show unrotated
+ *
+ * Returns std::nullopt if the file is not an image.
  */
 std::optional<std::string> save_local_file(const QString &source)
 {
@@ -106,12 +111,12 @@ std::optional<std::string> save_local_file(const QString &source)
 
 	const QString format = QString::fromLatin1(reader.format()).toLower();
 	const QString extension = QFileInfo(source).suffix().toLower();
-	const bool supported = OBS_IMAGE_FORMATS.contains(format) && OBS_IMAGE_FORMATS.contains(extension);
+	const bool obs_can_display = OBS_IMAGE_FORMATS.contains(format) && OBS_IMAGE_FORMATS.contains(extension);
 	const bool needs_rotation = reader.transformation() != QImageIOHandler::TransformationNone;
 	obs_log(LOG_INFO, "clipboard: read copied file %s (format: %s)", source.toUtf8().constData(),
 		format.toUtf8().constData());
 
-	if (supported && !needs_rotation) {
+	if (obs_can_display && !needs_rotation) {
 		const QString path = new_image_path(extension);
 		if (path.isEmpty())
 			return std::nullopt;
