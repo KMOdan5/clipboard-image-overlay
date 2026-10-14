@@ -26,6 +26,7 @@
 - 対象OS: まず Windows。macOS / Linux はビルドが通る状態を維持するが、動作保証は後回し
 - 生成した画像はプラグイン設定フォルダ(`obs_module_config_path("images")`、Windows では `%APPDATA%\obs-studio\plugin_config\obs-clipboard-image\images`)に保存し、古いものは自動削除する
 - OBS は Ctrl+V を「ソースの貼り付け」に使っているため奪わない。操作はホットキー(OBSの設定 > ホットキーで割り当て)とメニューから行う
+- OBS の非推奨(deprecated)API は使わない。ビルドで警告がエラー扱いになり CI が落ちる(例: `obs_scene_sceneitem_from_source` は OBS 31 で非推奨)
 - ライセンス: GPL-2.0(OBS本体に合わせる)
 
 ## 開発の進め方
