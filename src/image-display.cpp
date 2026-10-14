@@ -140,6 +140,40 @@ void apply_default_layout(obs_sceneitem_t *item)
 	obs_log(LOG_INFO, "display: default layout applied (center, max %.0fx%.0f)", bounds.x, bounds.y);
 }
 
+/**
+ * @brief シーンの中から、指定したソースが置かれているシーンアイテムを探す。
+ *
+ * @details
+ * OBS 31 で obs_scene_sceneitem_from_source() が非推奨になったため、
+ * シーンアイテムを順に調べる obs_scene_enum_items() で探す。
+ *
+ * @param scene  探す対象のシーン。
+ * @param source 探すソース。
+ * @return 見つかったシーンアイテム(参照カウント付き。使い終わったら obs_sceneitem_release() で解放する)。
+ * @retval nullptr シーンに置かれていない。
+ */
+obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
+{
+	struct search {
+		obs_source_t *source;
+		obs_sceneitem_t *found;
+	} ctx = {source, nullptr};
+
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			auto *ctx = static_cast<search *>(param);
+			if (obs_sceneitem_get_source(item) != ctx->source)
+				return true; /* 違うソース: 次を調べる */
+			obs_sceneitem_addref(item);
+			ctx->found = item;
+			return false; /* 見つかった: 探索を終える */
+		},
+		&ctx);
+
+	return ctx.found;
+}
+
 } // namespace
 
 /**
@@ -168,7 +202,7 @@ bool show_image_on_current_scene(const std::string &path)
 	}
 
 	/* 現在のシーンに専用ソースが置かれているか探す。なければ追加して既定の位置に置く */
-	obs_sceneitem_t *item = obs_scene_sceneitem_from_source(scene, source);
+	obs_sceneitem_t *item = find_scene_item(scene, source);
 	if (item) {
 		/* 既にある: 配信者が調整した位置・大きさを尊重し、配置は変えない */
 		obs_log(LOG_INFO, "display: reusing item in scene \"%s\"", obs_source_get_name(scene_source));
