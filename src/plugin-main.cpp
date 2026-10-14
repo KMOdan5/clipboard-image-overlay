@@ -28,7 +28,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * 関連ファイル:
  *   - clipboard-capture.cpp … クリップボードから画像を取り出して保存する
- *   - data/locale/*.ini      … メニュー名・ホットキー名の表示文字列
+ *   - data/locale/ の .ini … メニュー名・ホットキー名の表示文字列
  */
 
 #include <obs-module.h>
