@@ -41,6 +41,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPalette>
 #include <QPointer>
 #include <QPushButton>
 #include <QSpinBox>
@@ -53,6 +54,12 @@ constexpr int NOTE_INDENT = 24;
 
 /// @brief ダイアログの最小の幅(ピクセル)。説明文が細かく折り返されて読みにくくならないように。
 constexpr int DIALOG_MIN_WIDTH = 440;
+
+/// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
+constexpr const char *PERCENT_SPIN_NAME = "maxSizePercent";
+
+/// @brief 割合に対応するピクセル数を表示するラベルの objectName。
+constexpr const char *PIXELS_LABEL_NAME = "maxSizePixels";
 
 /**
  * @brief 翻訳した文字列を Qt の文字列で返す。
@@ -78,6 +85,53 @@ QLabel *make_note(const char *key)
 	note->setWordWrap(true);
 	note->setContentsMargins(NOTE_INDENT, 0, 0, 0);
 	return note;
+}
+
+/**
+ * @brief 割合を指定したときの大きさ(ピクセル)を、割合の横のラベルに表示する。
+ *
+ * @details
+ * 例: キャンバスが 1920x1080 で 60% → 「(1152 × 648 px)」。
+ * キャンバスの大きさは開くたび・割合を変えるたびに取り直す(画面を開いたまま OBS の解像度を変えることがあるため)。
+ * キャンバスの大きさが取れないときは、ラベルを隠す(間違った数字を出さないため)。
+ *
+ * @param dialog 設定画面。
+ */
+void update_pixel_label(QDialog *dialog)
+{
+	auto *spin = dialog->findChild<QSpinBox *>(PERCENT_SPIN_NAME);
+	auto *label = dialog->findChild<QLabel *>(PIXELS_LABEL_NAME);
+	if (!spin || !label)
+		return;
+
+	obs_video_info ovi = {};
+	if (!obs_get_video_info(&ovi) || ovi.base_width == 0 || ovi.base_height == 0) {
+		label->hide();
+		return;
+	}
+
+	const double ratio = spin->value() / 100.0;
+	const int width = static_cast<int>(ovi.base_width * ratio + 0.5);
+	const int height = static_cast<int>(ovi.base_height * ratio + 0.5);
+	label->setText(text("Settings.FitLarge.Pixels").arg(width).arg(height));
+	label->show();
+}
+
+/**
+ * @brief 補足の数字などを、ほかの文字より薄い色で表示するようにする。
+ *
+ * @details
+ * OBS のテーマには、薄い文字の見た目(text-muted という class)が用意されているので、それを付ける。
+ * テーマにない場合に備えて、Qt の配色(入力欄の薄い案内文字の色)も合わせて設定しておく。
+ *
+ * @param label 対象のラベル。
+ */
+void make_muted(QLabel *label)
+{
+	label->setProperty("class", QStringLiteral("text-muted"));
+	QPalette palette = label->palette();
+	palette.setColor(QPalette::WindowText, palette.color(QPalette::PlaceholderText));
+	label->setPalette(palette);
 }
 
 /**
@@ -139,8 +193,9 @@ QPointer<QDialog> settings_dialog;
  */
 void open_settings_dialog()
 {
-	/* 既に開いていれば、入力途中の値を残したまま手前に出すだけ */
+	/* 既に開いていれば、入力途中の値を残したまま手前に出すだけ(キャンバスの大きさは取り直す) */
 	if (settings_dialog) {
+		update_pixel_label(settings_dialog);
 		settings_dialog->show();
 		settings_dialog->raise();
 		settings_dialog->activateWindow();
@@ -176,16 +231,26 @@ void open_settings_dialog()
 	layout->addLayout(time_row);
 	layout->addWidget(make_note("Settings.DisplayTime.Note"));
 
-	/* 大きい画像を収める: 「[✓] 大きい画像を画面の [60]% に収める」。割合はオンのときだけ変えられる */
+	/*
+	 * 大きい画像を収める: 「[✓] 画像をキャンバスサイズの [60]% に収める (1152 × 648 px)」。
+	 * 割合はオンのときだけ変えられる。ピクセル数は割合を変えるたびに計算し直し、薄い文字で表示する
+	 */
 	auto *fit_row = new QHBoxLayout();
 	widgets.fit_large_images = new QCheckBox(text("Settings.FitLarge.Before"));
 	widgets.max_size_percent = new QSpinBox();
+	widgets.max_size_percent->setObjectName(PERCENT_SPIN_NAME);
 	widgets.max_size_percent->setRange(MAX_SIZE_PERCENT_MIN, MAX_SIZE_PERCENT_MAX);
 	widgets.max_size_percent->setSuffix(QStringLiteral("%"));
+	auto *pixels = new QLabel();
+	pixels->setObjectName(PIXELS_LABEL_NAME);
+	make_muted(pixels);
 	fit_row->addWidget(widgets.fit_large_images);
 	fit_row->addWidget(widgets.max_size_percent);
 	fit_row->addWidget(new QLabel(text("Settings.FitLarge.After")));
+	fit_row->addWidget(pixels);
 	fit_row->addStretch();
+	QObject::connect(widgets.max_size_percent, &QSpinBox::valueChanged, dialog,
+			 [dialog]() { update_pixel_label(dialog); });
 	layout->addSpacing(8);
 	layout->addLayout(fit_row);
 	layout->addWidget(make_note("Settings.FitLarge.Note"));
@@ -235,6 +300,7 @@ void open_settings_dialog()
 			 [widgets]() { widgets.show_values(PluginSettings()); });
 
 	widgets.show_values(settings_get());
+	update_pixel_label(dialog);
 
 	dialog->show();
 	obs_log(LOG_INFO, "settings dialog opened");
