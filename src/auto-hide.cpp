@@ -64,7 +64,7 @@ QTimer *hide_timer = nullptr;
 void on_hide_timer()
 {
 	obs_log(LOG_INFO, "auto-hide: %d seconds passed", AUTO_HIDE_SECONDS);
-	hide_clipboard_image();
+	hide_clipboard_image(true);
 }
 
 } // namespace

@@ -261,6 +261,27 @@ void ensure_fade_transitions(obs_sceneitem_t *item)
 }
 
 /**
+ * @brief シーンアイテムを、非表示トランジションを使わずに即座に非表示にする。
+ *
+ * @details
+ * 非表示トランジションを一時的に外してから非表示にし、終わったら元に戻す。
+ * 配信者が設定したトランジションも、外したあと同じものを戻すので失われない。
+ *
+ * @param item 対象のシーンアイテム。
+ * @return 非表示に切り替えたら true(もともと非表示なら false)。
+ */
+bool hide_item_instantly(obs_sceneitem_t *item)
+{
+	/* obs_sceneitem_get_transition() は参照を増やさないので、戻すまで消えないよう参照を持っておく */
+	obs_source_t *transition = obs_source_get_ref(obs_sceneitem_get_transition(item, false));
+	obs_sceneitem_set_transition(item, false, nullptr);
+	const bool changed = obs_sceneitem_set_visible(item, false);
+	obs_sceneitem_set_transition(item, false, transition);
+	obs_source_release(transition);
+	return changed;
+}
+
+/**
  * @brief ソースを非表示の状態でシーンに追加する。
  *
  * @details
@@ -401,10 +422,11 @@ bool show_image_on_current_scene(const SavedImage &image)
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  *
- * @note 呼び出し元: auto-hide.cpp の on_hide_timer()。
+ * @note 呼び出し元: auto-hide.cpp の on_hide_timer()(フェードあり)、
+ *       plugin-main.cpp の on_frontend_event()(起動時などにフェードなし)。
  * @note スレッド: UI スレッド。
  */
-void hide_clipboard_image()
+void hide_clipboard_image(bool fade)
 {
 	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
 	if (!source) {
@@ -426,13 +448,16 @@ void hide_clipboard_image()
 		if (!item)
 			continue;
 
-		/* 表示中のものだけ非表示にする(非表示トランジションでフェードアウトする) */
-		if (obs_sceneitem_visible(item) && obs_sceneitem_set_visible(item, false))
-			hidden++;
+		/* 表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
+		if (obs_sceneitem_visible(item)) {
+			const bool changed = fade ? obs_sceneitem_set_visible(item, false) : hide_item_instantly(item);
+			if (changed)
+				hidden++;
+		}
 		obs_sceneitem_release(item);
 	}
 
 	obs_frontend_source_list_free(&scenes);
 	obs_source_release(source);
-	obs_log(LOG_INFO, "display: hidden in %d scene(s)", hidden);
+	obs_log(LOG_INFO, "display: hidden in %d scene(s) (%s)", hidden, fade ? "fade" : "instant");
 }

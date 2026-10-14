@@ -54,14 +54,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 bool show_image_on_current_scene(const SavedImage &image);
 
 /**
- * @brief 全シーンの Clipboard Image を非表示にする(フェードアウト)。
+ * @brief 全シーンの Clipboard Image を非表示にする。
  *
  * @details
  * 現在のシーンだけでなく、全シーンを対象にする。表示中にシーンを切り替えても、
  * 元のシーンに画像が出しっぱなしにならないようにするため。
  * Clipboard Image がない、または表示中のものがない場合は何もしない。
  *
- * @note 呼び出し元: auto-hide.cpp(自動で消すタイマー)。
+ * @param fade true なら非表示トランジション(フェード)で消す。
+ *             false なら即座に消す。起動時に、前回の表示が残っていたものを片付けるときに使う。
+ *
+ * @note 呼び出し元: auto-hide.cpp(自動で消すタイマー、fade = true)、
+ *       plugin-main.cpp(起動時・シーンコレクション切り替え時、fade = false)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
-void hide_clipboard_image();
+void hide_clipboard_image(bool fade);

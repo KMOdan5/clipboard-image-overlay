@@ -168,8 +168,14 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
 /**
  * @brief OBS の画面側(フロントエンド)のイベントを受け取る。
  *
- * @details OBS の終了時(OBS_FRONTEND_EVENT_EXIT)に、自動で消すタイマーを止める。
- * 終了処理の途中でタイマーが発火し、片付け中のシーンやソースを触るのを防ぐため。
+ * @details
+ * - 起動完了時(FINISHED_LOADING)・シーンコレクション切り替え時(SCENE_COLLECTION_CHANGED):
+ *   Clipboard Image をフェードなしで即座に非表示にする。
+ *   OBS は終了処理の最初にシーンコレクションを保存し、EXIT イベントはその後に来る。
+ *   そのため表示中に終了すると「表示中」のまま保存され、次の起動時に出たままになる。
+ *   保存より前に届くイベントはないので、読み込んだ直後に片付ける。
+ * - 終了時(EXIT): 自動で消すタイマーを止める。終了処理の途中でタイマーが発火し、
+ *   片付け中のシーンやソースを触るのを防ぐため。
  *
  * @param event 発生したイベント。
  *
@@ -178,8 +184,18 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  */
 void on_frontend_event(obs_frontend_event event, void *)
 {
-	if (event == OBS_FRONTEND_EVENT_EXIT)
+	switch (event) {
+	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
+	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
+		auto_hide_shutdown(); /* 切り替え前のタイマーが新しいコレクションで発火しないように */
+		hide_clipboard_image(false);
+		break;
+	case OBS_FRONTEND_EVENT_EXIT:
 		auto_hide_shutdown();
+		break;
+	default:
+		break;
+	}
 }
 
 } // namespace
@@ -187,7 +203,7 @@ void on_frontend_event(obs_frontend_event event, void *)
 /**
  * @brief プラグインの読み込み時の処理。OBS の起動時に 1 回呼ばれる。
  *
- * @details ツールメニューの項目追加、ホットキー登録、保存処理と終了イベントの登録を行う。
+ * @details ツールメニューの項目追加、ホットキー登録、保存処理と画面側イベント(起動完了・終了など)の登録を行う。
  *
  * @return true で読み込み成功。false を返すと OBS はこのプラグインを使わない。
  */
