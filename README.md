@@ -27,7 +27,7 @@ Built for just-chatting streams, where you want to say "look at this" without br
 ## Showing and hiding
 
 - Each image **fades in**, stays for **7 seconds**, then **fades out** automatically.
-- Press the hotkey again while an image is shown to paste the new clipboard image and **restart the 7 seconds**.
+- Press the hotkey again while an image is shown: the current image **fades out**, the new clipboard image **fades in**, and the 7 seconds **restart**.
 - When the time is up, `Clipboard Image` is hidden in **every scene**, so nothing is left on screen even if you switched scenes.
 - If OBS is closed while an image is shown, it is hidden right away the next time OBS starts (or when you switch scene collections).
 - The fade uses the source's **Show/Hide Transition** (right-click `Clipboard Image` → Show Transition / Hide Transition).
@@ -37,7 +37,7 @@ Built for just-chatting streams, where you want to say "look at this" without br
 ### 表示と自動で消える動き(日本語)
 
 - 画像は**フェードイン**し、**7秒**表示したあと、自動で**フェードアウト**して消えます。
-- 表示中にもう一度ホットキーを押すと、新しくコピーした画像に差し替わり、**7秒を最初から数え直します**(延長)。
+- 表示中にもう一度ホットキーを押すと、今の画像が**フェードアウト**し、新しくコピーした画像が**フェードイン**します。7秒は**最初から数え直します**(延長)。
 - 時間が来ると、**すべてのシーン**の `Clipboard Image` を非表示にします。途中でシーンを切り替えても、画像が出しっぱなしになりません。
 - 画像の表示中に OBS を終了した場合は、次に OBS を起動したとき(シーンコレクションを切り替えたときも)すぐに非表示にします。
 - フェードには、ソースの「**表示トランジション**」「**非表示トランジション**」を使っています(`Clipboard Image` を右クリック)。

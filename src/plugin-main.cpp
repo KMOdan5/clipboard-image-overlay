@@ -174,7 +174,7 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  *   OBS は終了処理の最初にシーンコレクションを保存し、EXIT イベントはその後に来る。
  *   そのため表示中に終了すると「表示中」のまま保存され、次の起動時に出たままになる。
  *   保存より前に届くイベントはないので、読み込んだ直後に片付ける。
- * - 終了時(EXIT): 自動で消すタイマーを止める。終了処理の途中でタイマーが発火し、
+ * - 終了時(EXIT): 自動で消すタイマーと、画像差し替えのタイマーを止める。終了処理の途中でタイマーが発火し、
  *   片付け中のシーンやソースを触るのを防ぐため。
  *
  * @param event 発生したイベント。
@@ -192,6 +192,7 @@ void on_frontend_event(obs_frontend_event event, void *)
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
 		auto_hide_shutdown();
+		image_display_shutdown();
 		break;
 	default:
 		break;
@@ -233,6 +234,7 @@ void obs_module_unload(void)
 {
 	/* 終了イベントで止まっているはずだが、念のためここでも止める(何度呼んでもよい) */
 	auto_hide_shutdown();
+	image_display_shutdown();
 
 	obs_frontend_remove_event_callback(on_frontend_event, nullptr);
 	obs_frontend_remove_save_callback(on_frontend_save, nullptr);
