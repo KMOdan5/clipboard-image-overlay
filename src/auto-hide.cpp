@@ -23,7 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @details
  * 状態の移り変わり:
  * @code
- *   [非表示] ──貼る──→ [カウント中] ──時間切れ/手動で非表示──→ [非表示]
+ *   [非表示] ──貼る/手動で表示──→ [カウント中] ──時間切れ/手動で非表示──→ [非表示]
  *                        │    ↑ 貼る: 残り時間を 7 秒に戻す(延長)
  *       一時停止ホットキー │    │ 一時停止ホットキー(残り時間から再開)
  *                        ↓    │
@@ -38,7 +38,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 起動時は「非表示・一時停止なし・タイマーなし」から始まる。
  *
  * 関連ファイル:
- * - image-display.cpp … hide_clipboard_image()(画像を消す)、非表示の検知(auto_hide_on_image_hidden() を呼ぶ)
+ * - image-display.cpp … hide_clipboard_image()(画像を消す)、非表示の検知(auto_hide_on_image_hidden() を呼ぶ)、
+ *   手動の表示の検知(auto_hide_restart() を呼ぶ)
  * - plugin-main.cpp … 貼ったときに auto_hide_restart()、一時停止ホットキーで auto_hide_toggle_pause() を呼ぶ
  */
 

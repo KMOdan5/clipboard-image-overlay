@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * 一時停止のルール(#7):
  * 1. 貼ると、残り時間は表示時間(7 秒)に戻る。一時停止中かどうかに関係ない
+ *    - 手動(目のアイコン・OBS 標準のホットキー)で表示したときも、貼ったときと同じ扱い
  * 2. 一時停止は、画像が表示されている間だけ続く
  *    - 新しい画像を貼って差し替えても、一時停止のまま
  *    - 画像が非表示になった時点で(手動でも自動でも)、一時停止は解除される
@@ -33,7 +34,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 /**
- * @brief 画像を貼ったときに呼ぶ。自動で消すまでの残り時間を表示時間(7 秒)に戻す。
+ * @brief 画像を貼ったとき・手動で表示されたときに呼ぶ。自動で消すまでの残り時間を表示時間(7 秒)に戻す。
  *
  * @details
  * - カウント中・非表示から: 表示時間でカウントを始め直す(表示中に貼ると延長になる)
@@ -41,6 +42,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * 時間が来ると hide_clipboard_image()(image-display.cpp)でフェードアウトさせる。
  *
+ * @note 呼び出し元: plugin-main.cpp(貼ったとき)、image-display.cpp(手動で表示されたのを検知したとき)。
  * @note スレッド: UI スレッドから呼ぶこと(Qt のタイマーを使うため)。
  */
 void auto_hide_restart();

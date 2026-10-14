@@ -56,10 +56,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
  *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
  *
- * 非表示の検知(#7):
- * - Clipboard Image を置いたシーンの item_visible 通知を受け取り、非表示になったら一時停止を解除する
- *   (auto_hide_on_image_hidden())。目のアイコン・OBS 標準のホットキー・自動で消す処理のどれでも届く。
+ * 表示/非表示の検知(#7):
+ * - Clipboard Image を置いたシーンの item_visible 通知を受け取る。目のアイコン・OBS 標準のホットキー・
+ *   プラグイン自身の操作のどれでも届く。
+ * - 非表示になったら、一時停止を解除する(auto_hide_on_image_hidden())。
+ * - 手動で表示されたら、貼ったときと同じく自動で消すカウントを始める(auto_hide_restart())。
+ *   プラグイン自身が表示した場合(貼ったとき・差し替えのとき)は、plugin-main.cpp で既にカウントを
+ *   始めているので無視する(self_showing で区別する)。
  * - 差し替えのためのフェードアウトは「表示が続いている」扱いにして無視する。
+ * - 通知を受け取るシーン: 貼ったときの現在のシーンと、hide_clipboard_image() で見つけた
+ *   Clipboard Image のあるシーン(起動完了時にも呼ぶので、OBS を起動し直した直後から検知できる)。
  *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
  * is_clipboard_image_showing()、image_display_shutdown()(image-display.hpp)。
@@ -77,6 +83,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QTimer>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <vector>
 
@@ -421,7 +428,21 @@ QTimer *swap_timer = nullptr;
 constexpr int SWAP_MARGIN_MS = 50;
 
 /**
+ * @brief プラグイン自身が Clipboard Image を表示している最中なら true。
+ *
+ * @details
+ * OBS の item_visible 通知は、obs_sceneitem_set_visible() の中から同じスレッドで届く。
+ * 表示する直前に true、直後に false にすることで、通知が「プラグイン自身の表示」か
+ * 「配信者の手動の表示」かを on_item_visible() で区別する。
+ * 通知はホットキーのスレッドから届くこともあるため、atomic にしておく。
+ */
+std::atomic<bool> self_showing{false};
+
+/**
  * @brief 画像ファイルを差し替え、表示サイズを決め直して、表示する(フェードイン)。
+ *
+ * @details 自動で消すカウントは呼び出し元(plugin-main.cpp)で始めるので、
+ *          この表示は「手動の表示」として数えないよう self_showing を立てておく。
  *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報。
@@ -430,7 +451,9 @@ void show_new_image(obs_sceneitem_t *item, const SavedImage &image)
 {
 	set_image_file(obs_sceneitem_get_source(item), image.path.c_str());
 	apply_display_size(item, image);
+	self_showing = true;
 	obs_sceneitem_set_visible(item, true);
+	self_showing = false;
 	obs_log(LOG_INFO, "display: showing %s", image.path.c_str());
 }
 
@@ -534,20 +557,71 @@ void handle_item_hidden(obs_sceneitem_t *item)
 }
 
 /**
- * @brief OBS の item_visible 通知を受け取る。Clipboard Image が非表示になったら UI スレッドに処理を回す。
+ * @brief Clipboard Image が手動で表示されたときの処理(UI スレッドで実行する)。
  *
  * @details
- * 目のアイコン・OBS 標準のホットキー・プラグイン自身、どの方法で非表示にしても届く。
+ * 貼ったときと同じく、自動で消すカウントを表示時間(7 秒)で始める(一時停止中なら一時停止のまま)。
+ * 手動で消したあとに目のアイコンなどで表示し直すと、カウントが動いておらず、
+ * 自動で消えず一時停止ホットキーも効かない状態になってしまうため。
+ * 差し替えの途中(フェードアウト中に表示し直された)と、通知が届くまでに再び非表示になった場合は無視する。
+ *
+ * @param item 表示されたシーンアイテム。
+ *
+ * @see auto_hide_restart()
+ */
+void handle_item_shown(obs_sceneitem_t *item)
+{
+	if (pending_swap.item == item)
+		return; /* 差し替え中: 貼ったときにカウントを始めている */
+	if (!obs_sceneitem_visible(item))
+		return; /* 通知が届くまでに、また非表示になった */
+
+	obs_log(LOG_INFO, "display: Clipboard Image was shown manually");
+	auto_hide_restart();
+}
+
+/**
+ * @brief UI スレッドで handle_item_hidden() を呼び、預かった参照を返す。
+ *
+ * @param param on_item_visible() で参照を増やしたシーンアイテム。
+ */
+void handle_item_hidden_task(void *param)
+{
+	auto *item = static_cast<obs_sceneitem_t *>(param);
+	handle_item_hidden(item);
+	obs_sceneitem_release(item);
+}
+
+/**
+ * @brief UI スレッドで handle_item_shown() を呼び、預かった参照を返す。
+ *
+ * @param param on_item_visible() で参照を増やしたシーンアイテム。
+ */
+void handle_item_shown_task(void *param)
+{
+	auto *item = static_cast<obs_sceneitem_t *>(param);
+	handle_item_shown(item);
+	obs_sceneitem_release(item);
+}
+
+/**
+ * @brief OBS の item_visible 通知を受け取る。Clipboard Image の表示/非表示を UI スレッドに回す。
+ *
+ * @details
+ * 目のアイコン・OBS 標準のホットキー・プラグイン自身、どの方法で切り替えても届く。
+ * 名前が Clipboard Image のものだけを扱い、それ以外のソースの通知は名前を比べるだけで何もしない。
+ * プラグイン自身が表示した通知(self_showing が true)は、カウントを既に始めているので捨てる。
  * ホットキーの場合は UI スレッド以外から届くことがあるため、処理は UI スレッドに回す。
  *
  * @param cd 通知の内容("item": シーンアイテム、"visible": 表示なら true)。
  *
  * @note 呼び出し元: OBS(watch_scene() で登録した通知)。
- * @note スレッド: 決まっていない(非表示にした操作のスレッド)。
+ * @note スレッド: 決まっていない(表示/非表示を切り替えた操作のスレッド)。
  */
 void on_item_visible(void *, calldata_t *cd)
 {
-	if (calldata_bool(cd, "visible"))
+	const bool visible = calldata_bool(cd, "visible");
+	if (visible && self_showing)
 		return;
 
 	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
@@ -558,14 +632,7 @@ void on_item_visible(void *, calldata_t *cd)
 
 	/* UI スレッドで処理するまでアイテムが消えないよう、参照を持って渡す */
 	obs_sceneitem_addref(item);
-	obs_queue_task(
-		OBS_TASK_UI,
-		[](void *param) {
-			auto *queued = static_cast<obs_sceneitem_t *>(param);
-			handle_item_hidden(queued);
-			obs_sceneitem_release(queued);
-		},
-		item, false);
+	obs_queue_task(OBS_TASK_UI, visible ? handle_item_shown_task : handle_item_hidden_task, item, false);
 }
 
 /**
@@ -652,7 +719,7 @@ bool show_image_on_current_scene(const SavedImage &image)
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
 
-	/* 手動で非表示にされたことを知るため、このシーンの表示/非表示の通知を受け取る(#7 の一時停止の解除に使う) */
+	/* 手動で表示/非表示にされたことを知るため、このシーンの通知を受け取る(#7 のカウント開始・一時停止の解除に使う) */
 	watch_scene(scene_source);
 
 	/* 後から追加されたソースに隠れないよう、最前面に移す(「常に手前に表示する」がオンのとき) */
@@ -706,6 +773,10 @@ void hide_clipboard_image(bool fade)
 		obs_sceneitem_t *item = find_scene_item(scene, source);
 		if (!item)
 			continue;
+
+		/* 手動で表示/非表示にされたことを知るため、Clipboard Image のあるシーンの通知を受け取る。
+		   起動完了時にも呼ばれるので、OBS を起動し直した直後に手動で表示した場合もカウントできる */
+		watch_scene(scenes.sources.array[i]);
 
 		/* 表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
 		if (obs_sceneitem_visible(item)) {
