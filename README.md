@@ -20,9 +20,32 @@ Built for just-chatting streams, where you want to say "look at this" without br
 
 - [x] Paste image data or copied image files from the clipboard (copied GIFs keep their animation)
 - [x] Auto placement at a preset position and size
-- [ ] Fade in → show for N seconds → fade out (with extend)
+- [x] Fade in → show for 7 seconds → fade out (press the hotkey again to extend)
 - [ ] Pinned mode (hide manually)
 - [ ] History dock (v2)
+
+## Showing and hiding
+
+- Each image **fades in**, stays for **7 seconds**, then **fades out** automatically.
+- Press the hotkey again while an image is shown: the current image **fades out**, the new clipboard image **fades in**, and the 7 seconds **restart**.
+- When the time is up, `Clipboard Image` is hidden in **every scene**, so nothing is left on screen even if you switched scenes.
+- If OBS is closed while an image is shown, it is hidden right away the next time OBS starts (or when you switch scene collections).
+- The fade uses the source's **Show/Hide Transition** (right-click `Clipboard Image` → Show Transition / Hide Transition).
+  The plugin sets a fade **only when it first adds the source to a scene**. After that it never changes the transitions,
+  so if you choose another transition or set it to none, your choice is kept.
+- The display time (7 s) and fade duration (0.4 s) are fixed for now and will be configurable in the settings dialog
+  (a fade duration of 0 will mean no transition).
+
+### 表示と自動で消える動き(日本語)
+
+- 画像は**フェードイン**し、**7秒**表示したあと、自動で**フェードアウト**して消えます。
+- 表示中にもう一度ホットキーを押すと、今の画像が**フェードアウト**し、新しくコピーした画像が**フェードイン**します。7秒は**最初から数え直します**(延長)。
+- 時間が来ると、**すべてのシーン**の `Clipboard Image` を非表示にします。途中でシーンを切り替えても、画像が出しっぱなしになりません。
+- 画像の表示中に OBS を終了した場合は、次に OBS を起動したとき(シーンコレクションを切り替えたときも)すぐに非表示にします。
+- フェードには、ソースの「**表示トランジション**」「**非表示トランジション**」を使っています(`Clipboard Image` を右クリック)。
+  プラグインがフェードを設定するのは、**シーンに初めて追加したときだけ**です。その後は一切変えないので、
+  別のトランジションや「なし」に変えた場合は、その設定がずっと使われます。
+- 表示時間(7秒)とフェードの時間(0.4秒)は今は固定で、設定画面ができたら変えられるようにします(フェード時間 0 秒はトランジションなし)。
 
 ## Adjusting where images appear
 
@@ -33,6 +56,14 @@ The first time it is added to a scene, it is placed in the center of the screen.
 Images larger than **60% of the canvas width or height** are scaled down to fit (the aspect ratio is kept).
 Smaller images are shown at their original size (they are never enlarged).
 The 60% limit is fixed for now and will be configurable in the settings dialog.
+
+**What the plugin changes after the first time:** the image file, the size (while Bounds is Automatic),
+the layer order (moved to the top on every paste, see below), and visibility. Position, bounds, and transitions
+are set once when the source is first added to a scene and are never changed again.
+
+**Layer order:** `Clipboard Image` is moved to the **top** every time you paste, so it is never hidden behind
+sources you add later (OBS puts new sources on top). An option to turn this off ("Always show on top")
+will come with the settings dialog for streamers who manage their layer order themselves.
 
 **Position:** move `Clipboard Image` in the OBS preview to wherever you like.
 The plugin keeps your position for every image you paste afterwards.
@@ -46,6 +77,13 @@ changes the size and OBS sizes every image by the bounding box. Set it back to *
 ### 表示位置・大きさの変え方(日本語)
 
 画像は **`Clipboard Image`** という1つの画像ソースで表示されます。シーンに初めて追加されたときは、画面中央に置かれます。
+
+**初回以降にプラグインが変えるのは、画像・表示サイズ(境界が「自動」のときだけ)・重なり順(下記)・表示/非表示だけです。**
+位置・境界・トランジションは、シーンに初めて追加したときに設定するだけで、その後は変えません。
+
+- **重なり順**: 貼るたびに `Clipboard Image` を**一番手前**に移します。OBS では後から追加したソースが一番上に置かれるため、
+  テロップや枠を後で追加しても画像がその下に隠れないようにするためです。
+  重なり順を自分で管理したい人向けに、設定画面で「常に手前に表示する」をオフにできるようにする予定です。
 
 - **大きさ**: 貼るたびに画像の大きさを見て、**画面の幅・高さの60%** を超える画像だけ、収まるように縮小します(縦横比は保ちます)。
   小さい画像は元の大きさのまま表示します(拡大はしません)。60%は今は固定で、設定画面ができたら変えられるようにします。

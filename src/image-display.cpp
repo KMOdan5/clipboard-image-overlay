@@ -39,7 +39,24 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)で表示する。
  * - 境界が「自動」以外のときは表示サイズを変えない(境界の枠が大きさを決めるため)。
  *
- * 公開している関数は show_image_on_current_scene() だけ(image-display.hpp)。
+ * 表示と非表示:
+ * - 表示中に新しい画像を貼ったときは、フェードアウト → 差し替え → フェードイン の順に入れ替える
+ *   (フェードアウトの時間だけ QTimer で待つ)。
+ * - 表示・非表示の切り替え時に、シーンアイテムの「表示トランジション」「非表示トランジション」で
+ *   フェードさせる(OBS 標準の機能。シーンアイテムを右クリックすると出てくる設定と同じもの)。
+ * - フェードを設定するのは、シーンに初めて追加したときだけ。以降は配信者が「なし」や別のものに
+ *   変えても、そのまま使う(貼るたびに設定し直すと、配信者の設定を勝手に戻してしまうため)。
+ *
+ * 初めて追加したあとにプラグインが変えるもの:
+ * - 画像ファイル(貼った画像に差し替える)
+ * - 表示サイズ(境界が「自動」のときだけ)
+ * - 重なり順(「常に手前に表示する」がオンのとき、貼るたびに最前面へ。既定オン)
+ * - 表示/非表示(表示する・消す)
+ * 位置・境界・トランジションなど、それ以外の設定は変えない。
+ * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
+ *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
+ *
+ * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、image_display_shutdown()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
@@ -49,6 +66,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include <graphics/vec2.h>
+
+#include <QTimer>
 
 #include <algorithm>
 #include <cstring>
@@ -66,6 +85,25 @@ constexpr const char *SOURCE_NAME = "Clipboard Image";
 /// @brief OBS 標準の画像ソースの内部 ID。
 constexpr const char *IMAGE_SOURCE_ID = "image_source";
 
+/// @brief フェードイン・フェードアウトにかける時間(ミリ秒)。#8 の設定画面で変更できるようにする予定。
+constexpr uint32_t FADE_DURATION_MS = 400;
+
+/// @brief OBS 標準のフェードトランジションの内部 ID。
+constexpr const char *FADE_TRANSITION_ID = "fade_transition";
+
+/**
+ * @brief 貼るたびに Clipboard Image を最前面(一番手前)に移すかどうか。
+ *
+ * @details
+ * OBS では後から追加したソースが一番上に置かれる。初回だけ最前面にしても、配信者が後で
+ * テロップや枠を追加すると、その下に隠れて「貼ったのに出ない」ことになる。
+ * このプラグインは「みんなに見せる」ためのものなので、既定では貼るたびに最前面に移す。
+ *
+ * @note #8 の設定画面で「常に手前に表示する」(既定オン)として切り替えられるようにする。
+ *       重なり順を自分で管理したい配信者はオフにする。MVP では既定のオンで固定。
+ */
+constexpr bool ALWAYS_ON_TOP = true;
+
 /**
  * @brief 画像の最大の大きさ(画面の幅・高さに対する割合)。これを超える画像だけ縮小する。
  * @note MVP では固定。#8 の設定画面で変更できるようにする。
@@ -73,17 +111,33 @@ constexpr const char *IMAGE_SOURCE_ID = "image_source";
 constexpr float MAX_SIZE_RATIO = 0.6f;
 
 /**
- * @brief 専用の画像ソースを取得する。なければ作る。表示する画像ファイルも設定する。
+ * @brief 画像ソースに、表示する画像ファイルを設定する(前の画像と差し替わる)。
  *
- * @param path 表示する画像ファイルのパス(UTF-8)。
+ * @param source 対象の画像ソース。
+ * @param path   表示する画像ファイルのパス(UTF-8)。
+ */
+void set_image_file(obs_source_t *source, const char *path)
+{
+	obs_data_t *settings = obs_data_create();
+	obs_data_set_string(settings, "file", path);
+	obs_source_update(source, settings);
+	obs_data_release(settings);
+}
+
+/**
+ * @brief 専用の画像ソースを取得する。なければ作る。
+ *
+ * @details
+ * 新しく作るときは、表示する画像ファイルを設定した状態で作る。
+ * 既存のソースの画像ファイルは、ここでは変えない。表示中の画像をフェードアウトしてから
+ * 差し替える必要があるため、差し替えのタイミングは呼び出し元が決める。
+ *
+ * @param path 新しく作るときに設定する画像ファイルのパス(UTF-8)。
  * @return 画像ソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
  * @retval nullptr 作成に失敗した、または同じ名前の別種類のソースがある。
  */
 obs_source_t *get_or_create_image_source(const char *path)
 {
-	obs_data_t *settings = obs_data_create();
-	obs_data_set_string(settings, "file", path);
-
 	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
 	if (source) {
 		/*
@@ -94,22 +148,21 @@ obs_source_t *get_or_create_image_source(const char *path)
 			obs_log(LOG_WARNING, "display: a source named \"%s\" exists but is not an image source (%s)",
 				SOURCE_NAME, obs_source_get_unversioned_id(source));
 			obs_source_release(source);
-			obs_data_release(settings);
 			return nullptr;
 		}
-
-		/* 既存のソース: 表示する画像ファイルだけ差し替える(前の画像は消える) */
-		obs_source_update(source, settings);
-		obs_log(LOG_INFO, "display: updated source \"%s\"", SOURCE_NAME);
-	} else {
-		source = obs_source_create(IMAGE_SOURCE_ID, SOURCE_NAME, settings, nullptr);
-		if (source)
-			obs_log(LOG_INFO, "display: created source \"%s\"", SOURCE_NAME);
-		else
-			obs_log(LOG_WARNING, "display: failed to create source \"%s\"", SOURCE_NAME);
+		return source;
 	}
 
+	obs_data_t *settings = obs_data_create();
+	obs_data_set_string(settings, "file", path);
+	source = obs_source_create(IMAGE_SOURCE_ID, SOURCE_NAME, settings, nullptr);
 	obs_data_release(settings);
+
+	if (source) {
+		obs_log(LOG_INFO, "display: created source \"%s\"", SOURCE_NAME);
+	} else {
+		obs_log(LOG_WARNING, "display: failed to create source \"%s\"", SOURCE_NAME);
+	}
 	return source;
 }
 
@@ -220,6 +273,89 @@ void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 }
 
 /**
+ * @brief シーンに追加したばかりのシーンアイテムに、表示・非表示トランジション(フェード)を設定する。
+ *
+ * @details
+ * 呼ぶのはシーンに初めて追加したときだけ。以降は一切設定し直さない。
+ * 配信者がトランジションを「なし」や別のもの(スライドなど)に変えたら、その設定をずっと使う。
+ *
+ * @param item 対象のシーンアイテム(追加したばかりのもの)。
+ */
+void set_initial_fade_transitions(obs_sceneitem_t *item)
+{
+	for (const bool show : {true, false}) {
+
+		obs_source_t *fade = obs_source_create_private(FADE_TRANSITION_ID, nullptr, nullptr);
+		if (!fade) {
+			obs_log(LOG_WARNING, "display: failed to create fade transition (%s)", show ? "show" : "hide");
+			continue; /* フェードなしでも表示・非表示はできるので、続ける */
+		}
+		/* obs_sceneitem_set_transition() は自分で参照を持つので、ここで作った分は解放してよい */
+		obs_sceneitem_set_transition(item, show, fade);
+		obs_sceneitem_set_transition_duration(item, show, FADE_DURATION_MS);
+		obs_source_release(fade);
+		obs_log(LOG_INFO, "display: fade %s transition set (%u ms)", show ? "show" : "hide", FADE_DURATION_MS);
+	}
+}
+
+/**
+ * @brief シーンアイテムを、非表示トランジションを使わずに即座に非表示にする。
+ *
+ * @details
+ * 非表示トランジションを一時的に外してから非表示にし、終わったら元に戻す。
+ * 配信者が設定したトランジションも、外したあと同じものを戻すので失われない。
+ *
+ * @param item 対象のシーンアイテム。
+ * @return 非表示に切り替えたら true(もともと非表示なら false)。
+ */
+bool hide_item_instantly(obs_sceneitem_t *item)
+{
+	/* obs_sceneitem_get_transition() は参照を増やさないので、戻すまで消えないよう参照を持っておく */
+	obs_source_t *transition = obs_source_get_ref(obs_sceneitem_get_transition(item, false));
+	obs_sceneitem_set_transition(item, false, nullptr);
+	const bool changed = obs_sceneitem_set_visible(item, false);
+	obs_sceneitem_set_transition(item, false, transition);
+	obs_source_release(transition);
+	return changed;
+}
+
+/**
+ * @brief ソースを非表示の状態でシーンに追加する。
+ *
+ * @details
+ * obs_scene_add() で追加したアイテムは最初から表示状態になる。そのままだと初めて貼ったときだけ
+ * フェードインせず、いきなり画面に出てしまう。そこで追加と非表示化を obs_scene_atomic_update() で
+ * まとめて行い、その間に画面が描かれないようにする(OBS 本体がソースを追加するときと同じ方法)。
+ *
+ * @param scene  追加先のシーン。
+ * @param source 追加するソース。
+ * @return 追加したシーンアイテム(参照カウント付き。使い終わったら obs_sceneitem_release() で解放する)。
+ * @retval nullptr 追加に失敗した。
+ */
+obs_sceneitem_t *add_hidden_scene_item(obs_scene_t *scene, obs_source_t *source)
+{
+	struct add_ctx {
+		obs_source_t *source;
+		obs_sceneitem_t *item;
+	} ctx = {source, nullptr};
+
+	obs_scene_atomic_update(
+		scene,
+		[](void *param, obs_scene_t *target) {
+			auto *ctx = static_cast<add_ctx *>(param);
+			ctx->item = obs_scene_add(target, ctx->source);
+			if (!ctx->item)
+				return;
+			/* obs_scene_add() の戻り値は参照カウントを持たないので、後で解放できるよう揃える */
+			obs_sceneitem_addref(ctx->item);
+			obs_sceneitem_set_visible(ctx->item, false);
+		},
+		&ctx);
+
+	return ctx.item;
+}
+
+/**
  * @brief シーンの中から、指定したソースが置かれているシーンアイテムを探す。
  *
  * @details
@@ -251,6 +387,113 @@ obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
 		&ctx);
 
 	return ctx.found;
+}
+
+/**
+ * @brief 表示中の画像を差し替えるときの、待ち中の情報。
+ *
+ * @details
+ * 差し替えは「フェードアウト → 画像を差し替え → フェードイン」の順に行う。
+ * フェードアウトが終わるまで待つ間、ここに差し替え先の画像を持っておく。
+ */
+struct PendingSwap {
+	/// @brief 差し替え中のシーンアイテム(参照カウント付き)。待ちがなければ nullptr。
+	obs_sceneitem_t *item = nullptr;
+	/// @brief フェードアウトが終わったら表示する画像。
+	SavedImage image;
+};
+
+/// @brief 待ち中の差し替え。同時に 1 つだけ持つ。
+PendingSwap pending_swap;
+
+/// @brief フェードアウトが終わるのを待つタイマー。最初に使うときに作る。
+QTimer *swap_timer = nullptr;
+
+/// @brief フェードアウトの時間に足す余裕(ミリ秒)。フェードが終わり切る前に差し替えて、途中の画像がちらつくのを防ぐ。
+constexpr int SWAP_MARGIN_MS = 50;
+
+/**
+ * @brief 画像ファイルを差し替え、表示サイズを決め直して、表示する(フェードイン)。
+ *
+ * @param item  対象のシーンアイテム。
+ * @param image 表示する画像の情報。
+ */
+void show_new_image(obs_sceneitem_t *item, const SavedImage &image)
+{
+	set_image_file(obs_sceneitem_get_source(item), image.path.c_str());
+	apply_display_size(item, image);
+	obs_sceneitem_set_visible(item, true);
+	obs_log(LOG_INFO, "display: showing %s", image.path.c_str());
+}
+
+/**
+ * @brief 待ち中の差し替えを取り消す。待ちがなければ何もしない。
+ */
+void cancel_swap()
+{
+	if (swap_timer)
+		swap_timer->stop();
+	if (pending_swap.item) {
+		obs_sceneitem_release(pending_swap.item);
+		pending_swap.item = nullptr;
+		obs_log(LOG_INFO, "display: pending swap canceled");
+	}
+}
+
+/**
+ * @brief フェードアウトが終わったときの処理。新しい画像に差し替えて、フェードインさせる。
+ *
+ * @note 呼び出し元: Qt(swap_timer の timeout)。
+ * @note スレッド: UI スレッド。
+ */
+void finish_swap()
+{
+	obs_sceneitem_t *item = pending_swap.item;
+	if (!item)
+		return;
+	pending_swap.item = nullptr;
+
+	show_new_image(item, pending_swap.image);
+	obs_sceneitem_release(item);
+}
+
+/**
+ * @brief 表示中の画像を、フェードアウト → 差し替え → フェードイン で入れ替える。
+ *
+ * @details
+ * フェードアウトにかかる時間(非表示トランジションの長さ)だけ待ってから差し替える。
+ * 待っている間にもう一度貼られた場合は、待ち時間はそのままで、差し替え先だけを最新の画像にする
+ * (最後に貼った画像が表示される。途中の画像が一瞬出たりはしない)。
+ *
+ * @param item  表示中のシーンアイテム。
+ * @param image 新しく表示する画像の情報。
+ */
+void start_swap(obs_sceneitem_t *item, const SavedImage &image)
+{
+	if (pending_swap.item) {
+		pending_swap.image = image;
+		obs_log(LOG_INFO, "display: swap already in progress; next image updated");
+		return;
+	}
+
+	if (!swap_timer) {
+		swap_timer = new QTimer();
+		swap_timer->setSingleShot(true);
+		QObject::connect(swap_timer, &QTimer::timeout, finish_swap);
+	}
+
+	obs_sceneitem_addref(item);
+	pending_swap.item = item;
+	pending_swap.image = image;
+
+	/* 非表示トランジションがあればその長さだけ待つ。なければすぐ消えるので待たない */
+	const bool has_fade = obs_sceneitem_get_transition(item, false) != nullptr;
+	const int wait_ms =
+		has_fade ? static_cast<int>(obs_sceneitem_get_transition_duration(item, false)) + SWAP_MARGIN_MS : 0;
+
+	obs_sceneitem_set_visible(item, false); /* フェードアウト開始 */
+	swap_timer->start(wait_ms);
+	obs_log(LOG_INFO, "display: swapping image (fade out %d ms)", wait_ms);
 }
 
 } // namespace
@@ -286,7 +529,8 @@ bool show_image_on_current_scene(const SavedImage &image)
 		/* 既にある: 配信者が動かした位置を尊重し、位置は変えない */
 		obs_log(LOG_INFO, "display: reusing item in scene \"%s\"", obs_source_get_name(scene_source));
 	} else {
-		item = obs_scene_add(scene, source);
+		/* 非表示で追加し、後でフェードインさせる(初回だけいきなり出るのを防ぐ) */
+		item = add_hidden_scene_item(scene, source);
 		if (!item) {
 			obs_log(LOG_WARNING, "display: failed to add source to scene \"%s\"",
 				obs_source_get_name(scene_source));
@@ -294,22 +538,86 @@ bool show_image_on_current_scene(const SavedImage &image)
 			obs_source_release(scene_source);
 			return false;
 		}
-		/* obs_scene_add() の戻り値は参照カウントを持たないので、後で解放できるよう揃える */
-		obs_sceneitem_addref(item);
+		/* 初めて追加したときだけの設定: 位置(画面中央)と、表示・非表示のフェード。以降は設定し直さない */
 		apply_default_position(item);
+		set_initial_fade_transitions(item);
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
 
-	/* 画像ごとに大きさが違うので、貼るたびに表示サイズを決め直す */
-	apply_display_size(item, image);
+	/* 後から追加されたソースに隠れないよう、最前面に移す(「常に手前に表示する」がオンのとき) */
+	if (ALWAYS_ON_TOP)
+		obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
 
-	/* 他のソースに隠れないよう最前面に移し、表示状態にする */
-	obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
-	obs_sceneitem_set_visible(item, true);
-	obs_log(LOG_INFO, "display: showing %s", image.path.c_str());
+	if (obs_sceneitem_visible(item) || pending_swap.item == item) {
+		/* 表示中(または差し替え中): フェードアウト → 差し替え → フェードイン */
+		start_swap(item, image);
+	} else {
+		/* 非表示: 画像を設定してフェードイン */
+		show_new_image(item, image);
+	}
 
 	obs_sceneitem_release(item);
 	obs_source_release(source);
 	obs_source_release(scene_source);
 	return true;
+}
+
+/**
+ * @brief 全シーンの Clipboard Image を非表示にする。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ *
+ * @note 呼び出し元: auto-hide.cpp の on_hide_timer()(フェードあり)、
+ *       plugin-main.cpp の on_frontend_event()(起動時などにフェードなし)。
+ * @note スレッド: UI スレッド。
+ */
+void hide_clipboard_image(bool fade)
+{
+	/* 差し替えの途中なら取り消す(フェードアウト後に勝手に表示し直さないように) */
+	cancel_swap();
+
+	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	if (!source) {
+		obs_log(LOG_INFO, "display: nothing to hide (no \"%s\")", SOURCE_NAME);
+		return;
+	}
+
+	/* シーン一覧を取り、それぞれのシーンに置かれた Clipboard Image を非表示にする */
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+
+	int hidden = 0;
+	for (size_t i = 0; i < scenes.sources.num; i++) {
+		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
+		if (!scene)
+			continue;
+
+		obs_sceneitem_t *item = find_scene_item(scene, source);
+		if (!item)
+			continue;
+
+		/* 表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
+		if (obs_sceneitem_visible(item)) {
+			const bool changed = fade ? obs_sceneitem_set_visible(item, false) : hide_item_instantly(item);
+			if (changed)
+				hidden++;
+		}
+		obs_sceneitem_release(item);
+	}
+
+	obs_frontend_source_list_free(&scenes);
+	obs_source_release(source);
+	obs_log(LOG_INFO, "display: hidden in %d scene(s) (%s)", hidden, fade ? "fade" : "instant");
+}
+
+/**
+ * @brief 表示処理で使っているタイマーなどを片付ける。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+void image_display_shutdown()
+{
+	cancel_swap();
+	delete swap_timer;
+	swap_timer = nullptr;
 }
