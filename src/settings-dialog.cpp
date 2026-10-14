@@ -143,8 +143,6 @@ void make_muted(QLabel *label)
 struct SettingsWidgets {
 	/// @brief 表示時間(秒)。
 	QSpinBox *display_seconds = nullptr;
-	/// @brief 大きい画像を画面に収めるか。
-	QCheckBox *fit_large_images = nullptr;
 	/// @brief 最大サイズの割合(%)。
 	QSpinBox *max_size_percent = nullptr;
 	/// @brief 常に手前に表示する。
@@ -157,9 +155,7 @@ struct SettingsWidgets {
 	void show_values(const PluginSettings &settings) const
 	{
 		display_seconds->setValue(settings.display_seconds);
-		fit_large_images->setChecked(settings.fit_large_images);
 		max_size_percent->setValue(settings.max_size_percent);
-		max_size_percent->setEnabled(settings.fit_large_images);
 		always_on_top->setChecked(settings.always_on_top);
 	}
 
@@ -171,7 +167,6 @@ struct SettingsWidgets {
 	{
 		PluginSettings settings;
 		settings.display_seconds = display_seconds->value();
-		settings.fit_large_images = fit_large_images->isChecked();
 		settings.max_size_percent = max_size_percent->value();
 		settings.always_on_top = always_on_top->isChecked();
 		return settings;
@@ -232,11 +227,11 @@ void open_settings_dialog()
 	layout->addWidget(make_note("Settings.DisplayTime.Note"));
 
 	/*
-	 * 大きい画像を収める: 「[✓] 画像をキャンバスサイズの [60]% に収める (1152 × 648 px)」。
-	 * 割合はオンのときだけ変えられる。ピクセル数は割合を変えるたびに計算し直し、薄い文字で表示する
+	 * 最大サイズ: 「画像をキャンバスサイズの [60]% に収める (1152 × 648 px)」。
+	 * オン/オフはない(大きさを自分で決めたい配信者は境界の種類を変える)。
+	 * ピクセル数は割合を変えるたびに計算し直し、薄い文字で表示する
 	 */
 	auto *fit_row = new QHBoxLayout();
-	widgets.fit_large_images = new QCheckBox(text("Settings.FitLarge.Before"));
 	widgets.max_size_percent = new QSpinBox();
 	widgets.max_size_percent->setObjectName(PERCENT_SPIN_NAME);
 	widgets.max_size_percent->setRange(MAX_SIZE_PERCENT_MIN, MAX_SIZE_PERCENT_MAX);
@@ -244,7 +239,7 @@ void open_settings_dialog()
 	auto *pixels = new QLabel();
 	pixels->setObjectName(PIXELS_LABEL_NAME);
 	make_muted(pixels);
-	fit_row->addWidget(widgets.fit_large_images);
+	fit_row->addWidget(new QLabel(text("Settings.FitLarge.Before")));
 	fit_row->addWidget(widgets.max_size_percent);
 	fit_row->addWidget(new QLabel(text("Settings.FitLarge.After")));
 	fit_row->addWidget(pixels);
@@ -254,9 +249,6 @@ void open_settings_dialog()
 	layout->addSpacing(8);
 	layout->addLayout(fit_row);
 	layout->addWidget(make_note("Settings.FitLarge.Note"));
-	QObject::connect(widgets.fit_large_images, &QCheckBox::toggled, widgets.max_size_percent,
-			 &QSpinBox::setEnabled);
-
 	/* 常に手前に表示する */
 	widgets.always_on_top = new QCheckBox(text("Settings.AlwaysOnTop"));
 	layout->addSpacing(8);

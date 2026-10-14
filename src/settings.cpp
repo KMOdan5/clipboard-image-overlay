@@ -47,8 +47,6 @@ constexpr const char *SETTINGS_FILE = "settings.json";
  * @warning 変更すると、保存済みの設定が読めなくなる(既定値に戻る)。
  */
 constexpr const char *KEY_DISPLAY_SECONDS = "display_seconds";
-/// @brief 設定ファイルのキー名(大きい画像を画面に収めるか)。
-constexpr const char *KEY_FIT_LARGE_IMAGES = "fit_large_images";
 /// @brief 設定ファイルのキー名(最大サイズの割合)。
 constexpr const char *KEY_MAX_SIZE_PERCENT = "max_size_percent";
 /// @brief 設定ファイルのキー名(常に手前に表示する)。
@@ -118,21 +116,18 @@ void settings_load()
 
 	/* キーがない(古いバージョンで保存した)項目は既定値になるよう、既定値を登録してから読む */
 	obs_data_set_default_int(data, KEY_DISPLAY_SECONDS, defaults.display_seconds);
-	obs_data_set_default_bool(data, KEY_FIT_LARGE_IMAGES, defaults.fit_large_images);
 	obs_data_set_default_int(data, KEY_MAX_SIZE_PERCENT, defaults.max_size_percent);
 	obs_data_set_default_bool(data, KEY_ALWAYS_ON_TOP, defaults.always_on_top);
 
 	PluginSettings loaded;
 	loaded.display_seconds = static_cast<int>(obs_data_get_int(data, KEY_DISPLAY_SECONDS));
-	loaded.fit_large_images = obs_data_get_bool(data, KEY_FIT_LARGE_IMAGES);
 	loaded.max_size_percent = static_cast<int>(obs_data_get_int(data, KEY_MAX_SIZE_PERCENT));
 	loaded.always_on_top = obs_data_get_bool(data, KEY_ALWAYS_ON_TOP);
 	obs_data_release(data);
 
 	current = clamp_settings(loaded);
-	obs_log(LOG_INFO, "settings: loaded (display %d s, fit %s %d%%, always on top %s)", current.display_seconds,
-		current.fit_large_images ? "on" : "off", current.max_size_percent,
-		current.always_on_top ? "on" : "off");
+	obs_log(LOG_INFO, "settings: loaded (display %d s, max size %d%%, always on top %s)", current.display_seconds,
+		current.max_size_percent, current.always_on_top ? "on" : "off");
 }
 
 /**
@@ -151,16 +146,14 @@ bool settings_save(const PluginSettings &settings)
 
 	obs_data_t *data = obs_data_create();
 	obs_data_set_int(data, KEY_DISPLAY_SECONDS, current.display_seconds);
-	obs_data_set_bool(data, KEY_FIT_LARGE_IMAGES, current.fit_large_images);
 	obs_data_set_int(data, KEY_MAX_SIZE_PERCENT, current.max_size_percent);
 	obs_data_set_bool(data, KEY_ALWAYS_ON_TOP, current.always_on_top);
 	const bool saved = obs_data_save_json_safe(data, path.c_str(), "tmp", "bak");
 	obs_data_release(data);
 
 	if (saved) {
-		obs_log(LOG_INFO, "settings: saved (display %d s, fit %s %d%%, always on top %s)",
-			current.display_seconds, current.fit_large_images ? "on" : "off", current.max_size_percent,
-			current.always_on_top ? "on" : "off");
+		obs_log(LOG_INFO, "settings: saved (display %d s, max size %d%%, always on top %s)",
+			current.display_seconds, current.max_size_percent, current.always_on_top ? "on" : "off");
 	} else {
 		obs_log(LOG_WARNING, "settings: failed to save %s", path.c_str());
 	}

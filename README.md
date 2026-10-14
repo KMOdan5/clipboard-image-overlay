@@ -52,40 +52,40 @@ Built for just-chatting streams, where you want to say "look at this" without br
 - Removing `Clipboard Image` from a scene (or deleting the source) counts as hiding it. The pause is released once
   the image is no longer shown in any scene.
 
-### 表示と自動で消える動き(日本語)
+### 表示と自動で非表示になる動き(日本語)
 
-- 画像は**フェードイン**し、**7秒**(設定で変更できます)表示したあと、自動で**フェードアウト**して消えます。
+- 画像は**フェードイン**し、**7秒**(設定で変更できます)表示したあと、自動で**フェードアウト**して非表示になります。
 - 表示中にもう一度ホットキーを押すと、今の画像が**フェードアウト**し、新しくコピーした画像が**フェードイン**します。7秒は**最初から数え直します**(延長)。
 - 時間が来ると、**すべてのシーン**の `Clipboard Image` を非表示にします。途中でシーンを切り替えても、画像が出しっぱなしになりません。
 - 画像の表示中に OBS を終了した場合は、次に OBS を起動したとき(シーンコレクションを切り替えたときも)すぐに非表示にします。
 - フェードには、ソースの「**表示トランジション**」「**非表示トランジション**」を使っています(`Clipboard Image` を右クリック)。
   プラグインがフェードを設定するのは、**シーンに初めて追加したときだけ**です。その後は一切変えないので、
   別のトランジションや「なし」に変えた場合は、その設定がずっと使われます。
-- 表示時間は設定で変えられます(0秒にすると、自分で消すまで表示し続けます)。
+- 表示時間は設定で変更可能です(0秒にすると非表示にせず表示し続けます)。
   フェードの長さは、OBS の「表示トランジション」「非表示トランジション」の画面で変えられます。
 
-### 一時停止と手動で消す方法(日本語)
+### 一時停止と手動で非表示にする方法(日本語)
 
-- 「設定」→「ホットキー」の **「自動で消すタイマーを一時停止/再開」**: 画像の表示中に押すとカウントが止まり、
+- 「設定」→「ホットキー」の **「自動で非表示にするタイマーを一時停止/再開」**: 画像の表示中に押すとカウントが止まり、
   もう一度押すと残り時間から再開します。画像が出ていないときは何もしません。
 - 新しい画像を貼ると、残り時間はいつも7秒に戻ります。一時停止中に貼った場合は**一時停止のまま**です(画像だけ差し替わり、出たままになります)。
-- 自分で消したいときは、OBS 標準の機能を使ってください。ソース一覧の**目のアイコン**か、「設定」→「ホットキー」の
+- 手動で非表示にしたいときは、OBS 標準の機能を使ってください。ソース一覧の**目のアイコン**か、「設定」→「ホットキー」の
   **「'Clipboard Image' を非表示」**です(OBS ではシーンごとに並ぶので、使うシーンそれぞれで割り当ててください)。
-- 画像が非表示になると(手動でも自動でも)、一時停止は解除されます。次に貼った画像は、普段どおり7秒で消えます。
+- 画像が非表示になると(手動でも自動でも)、一時停止は解除されます。次に貼った画像は、普段どおり7秒で非表示になります。
   OBS を起動し直したときも、一時停止していない状態から始まります。
 - 自分で `Clipboard Image` を表示した場合(目のアイコンや、OBS 標準の「'Clipboard Image' を表示」ホットキー)や、
-  表示した状態でシーンに追加した場合も、貼ったときと同じ扱いです。7秒で消え、一時停止ホットキーも使えます。
+  表示した状態でシーンに追加した場合も、貼ったときと同じ扱いです。7秒で非表示になり、一時停止ホットキーも使えます。
 - シーンから `Clipboard Image` を削除した場合(ソースごと削除した場合も)は、非表示と同じ扱いです。
   どのシーンにも表示されなくなった時点で、一時停止は解除されます。
 
 ## Settings
 
-Open **Tools → Clipboard Image Settings...** in OBS.
+Open **Tools → Clipboard Image → Settings...** in OBS.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Display time | 7 s | Images disappear automatically after this time. **0** keeps them shown until you hide them yourself (the pause hotkey then does nothing). |
-| Fit images within N% of the canvas size | On, 60% | Images larger than N% of the canvas width or height are scaled down to fit (the size in pixels is shown next to N; smaller images are not enlarged). Works only while the **Bounds Type** of `Clipboard Image` is **Automatic**. When off, the plugin never changes the size, so the scale of the previous image is also used for the next image. |
+| Display time | 7 s | Images are hidden automatically after the set time. **0** keeps them shown (the pause hotkey then does nothing). |
+| Fit images within N% of the canvas size | 60% | Images larger than this size are scaled down automatically (the size in pixels is shown next to N). Works only while the **Bounds Type** of `Clipboard Image` is **Automatic**. |
 | Always show on top | On | Moves `Clipboard Image` to the top of the sources every time you paste. When off, the plugin never changes the layer order. |
 
 - **Apply** saves without closing the window, so you can keep OBS in use and paste images to try the settings.
@@ -96,12 +96,12 @@ Open **Tools → Clipboard Image Settings...** in OBS.
 
 ### 設定(日本語)
 
-OBS の「**ツール**」→「**Clipboard Image の設定...**」で開きます。
+OBS の「**ツール**」→「**Clipboard Image**」→「**設定...**」で開きます。
 
 | 項目 | 既定 | 内容 |
 |---|---|---|
-| 表示時間 | 7秒 | この時間がたつと自動で消えます。**0** にすると自動で消さず、自分で消すまで表示し続けます(一時停止ホットキーは何もしません)。 |
-| 画像をキャンバスサイズの N% に収める | オン・60% | キャンバスの幅・高さの N% を超える画像を、収まるように縮小します(N の横にその大きさをピクセルで表示。小さい画像は拡大しません)。`Clipboard Image` の**境界の種類が「自動」**のときだけ働きます。オフにすると大きさを一切変えないので、前の画像の縮小・拡大の比率が次の画像にもそのまま使われます。 |
+| 表示時間 | 7秒 | 設定時間が経過すると自動で非表示になります。**0** にすると非表示にせず表示し続けます(一時停止ホットキーは何もしません)。 |
+| 画像をキャンバスサイズの N% に収める | 60% | このサイズを超える画像は自動縮小します(N の横にそのサイズをピクセルで表示)。`Clipboard Image` の**境界設定が「自動」**のときだけ動作します。 |
 | 常に手前に表示する | オン | 貼るたびに `Clipboard Image` を一番手前に移します。オフにすると重なり順を一切変えません。 |
 
 - 「**適用**」を押すと、画面を開いたまま保存します。開いたまま OBS を操作したり画像を貼ったりできるので、試しながら調整できます。
@@ -118,7 +118,7 @@ The first time it is added to a scene, it is placed in the center of the screen.
 **Size:** each time you paste, the plugin looks at the image size.
 Images larger than **60% of the canvas width or height** are scaled down to fit (the aspect ratio is kept).
 Smaller images are shown at their original size (they are never enlarged).
-The limit (60% by default) and whether to fit images at all can be changed in the settings.
+The limit (60% by default) can be changed in the settings.
 
 **What the plugin changes after the first time:** the image file, the size (while Bounds Type is Automatic),
 the layer order (moved to the top on every paste, see below), and visibility. Position, bounds, and transitions
@@ -134,8 +134,8 @@ Resizing the source by dragging only affects the image currently shown; the next
 
 **Bounds:** the plugin creates the source with **Automatic** bounds, the same as OBS's default
 (right-click → Transform → Edit Transform → Bounds). The 60% sizing only works while the bounds
-type is **Automatic**. If you change it to another type (for example **Fit**), the plugin no longer
-changes the size and OBS sizes every image by the bounding box. Set it back to **Automatic** to use the 60% sizing again.
+type is **Automatic**. To set the size yourself, change it to another type (for example **Fit**);
+the bounding box then decides the size. Set it back to **Automatic** to use automatic scaling again.
 
 ### 表示位置・大きさの変え方(日本語)
 
@@ -149,13 +149,13 @@ changes the size and OBS sizes every image by the bounding box. Set it back to *
   重なり順を自分で管理したい場合は、設定で「**常に手前に表示する**」をオフにしてください。重なり順を一切変えなくなります。
 
 - **大きさ**: 貼るたびに画像の大きさを見て、**画面の幅・高さの60%** を超える画像だけ、収まるように縮小します(縦横比は保ちます)。
-  小さい画像は元の大きさのまま表示します(拡大はしません)。割合(既定60%)と、収めるかどうかは設定で変えられます。
+  小さい画像は元の大きさのまま表示します(拡大はしません)。割合(既定60%)は設定で変更可能です。
 - **位置**: プレビュー上で `Clipboard Image` を好きな場所に動かしてください。以降に貼る画像も、その位置に表示されます。
   ドラッグで大きさを変えた場合は、今表示している画像だけが変わります。次の画像は、また60%のルールで大きさが決まります。
 - **境界**: プラグインは、OBS の既定と同じ「**自動**」でソースを作ります(右クリック →「変換」→「変換の編集」→「境界」)。
-  **60%に収める大きさの調整は、境界が「自動」のときだけ働きます。**
-  「内側に合わせる」など別の境界に変えると、プラグインは大きさを変えなくなり、すべての画像が境界の枠で大きさを決められます。
-  60%の調整に戻したいときは、境界を「自動」に戻してください。
+  **自動縮小は、境界設定が「自動」のときだけ動作します。**
+  大きさを自分で決めたい場合は、境界設定を「内側に合わせる」などに変えてください。その枠で大きさが決まります。
+  自動縮小に戻したいときは、「自動」に戻してください。
 
 ## Building
 

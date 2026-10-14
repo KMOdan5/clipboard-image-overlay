@@ -38,7 +38,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   倍率で、「変換の編集」の「大きさ」(幅・高さ)は 元の画像の大きさ × 倍率 で計算された表示用の値のため。
  * - 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)で表示する。
  * - 境界が「自動」以外のときは表示サイズを変えない(境界の枠が大きさを決めるため)。
- * - 設定画面で「大きい画像を画面に収める」をオフにしたときも、表示サイズを変えない。
  *
  * 表示と非表示:
  * - 表示中に新しい画像を貼ったときは、フェードアウト → 差し替え → フェードイン の順に入れ替える
@@ -246,7 +245,6 @@ void apply_default_position(obs_sceneitem_t *item)
  * ログにも実際と違う大きさが出て調査の妨げになる。境界の種類はシーンアイテムの設定値として
  * 確実に取得できるので、それで判定する。
  *
- * 設定画面で「大きい画像を画面に収める」がオフのときも何もしない(配信者が設定した大きさをそのまま使う)。
  *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報(幅・高さを使う)。
@@ -254,10 +252,6 @@ void apply_default_position(obs_sceneitem_t *item)
 void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 {
 	const PluginSettings &settings = settings_get();
-	if (!settings.fit_large_images) {
-		obs_log(LOG_INFO, "display: fitting large images is off; size is not changed");
-		return;
-	}
 	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
 		obs_log(LOG_INFO, "display: bounds type is not automatic; size is decided by the bounding box");
 		return;
