@@ -16,19 +16,21 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
-/*
- * 【このファイルの役割】
- * プラグインの入口。OBS がプラグインを読み込む/外すときの処理と、
- * ユーザー操作の受け口(ツールメニュー・ホットキー)をまとめている。
+/**
+ * @file plugin-main.cpp
+ * @brief プラグインの入口。読み込み/解放の処理と、ユーザー操作(ツールメニュー・ホットキー)の受け口。
  *
+ * @details
  * 処理の流れ:
+ * @code
  *   ツールメニュー クリック ─┐
  *                              ├→ on_show_requested() → save_clipboard_image()
  *   ホットキー 押下 ──────────┘     (UI スレッド)        (clipboard-capture.cpp)
+ * @endcode
  *
  * 関連ファイル:
- *   - clipboard-capture.cpp … クリップボードから画像を取り出して保存する
- *   - data/locale/ の .ini … メニュー名・ホットキー名の表示文字列
+ * - clipboard-capture.cpp … クリップボードから画像を取り出して保存する
+ * - data/locale/ の .ini … メニュー名・ホットキー名の表示文字列
  */
 
 #include <obs-module.h>
@@ -42,23 +44,30 @@ OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 namespace {
 
-/* ホットキーの内部名。OBS の設定ファイルに保存されるため、変更すると既存の割り当てが消える */
+/**
+ * @brief ホットキーの内部名。
+ * @warning OBS の設定ファイルに保存されるため、変更すると既存の割り当てが消える。
+ */
 constexpr const char *HOTKEY_NAME = "obs_clipboard_image.show";
 
-/* シーンコレクションの保存データ内で、このプラグインが使うキー名 */
+/// @brief シーンコレクションの保存データ内で、このプラグインが使うキー名。
 constexpr const char *SAVE_KEY = "obs-clipboard-image";
+
+/// @brief SAVE_KEY の中で、ホットキーの割り当てを保存するキー名。
 constexpr const char *SAVE_HOTKEY_KEY = "show_hotkey";
 
-/* 登録したホットキーの ID。登録前・解除後は OBS_INVALID_HOTKEY_ID */
+/// @brief 登録したホットキーの ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
 obs_hotkey_id show_hotkey_id = OBS_INVALID_HOTKEY_ID;
 
-/*
- * 「クリップボードの画像を表示」の共通処理。
+/**
+ * @brief 「クリップボードの画像を表示」の共通処理。
  *
- * 呼び出し元: on_tools_menu_clicked(), on_hotkey_pressed()
- * スレッド  : 必ず UI スレッド(Qt のクリップボードは UI スレッドからしか触れないため)
- * 引数      : trigger … どこから呼ばれたか("menu" / "hotkey")。ログ用
- * 失敗時    : 画像が取れなければ、理由をログに残して何もしない
+ * @details 画像が取れなければ、理由をログに残して何もしない。
+ *
+ * @param trigger どこから呼ばれたか("menu" / "hotkey")。ログ用。
+ *
+ * @note スレッド: 必ず UI スレッドで呼ぶこと(Qt のクリップボードは UI スレッドからしか触れないため)。
+ * @see on_tools_menu_clicked(), on_hotkey_pressed()(呼び出し元)
  */
 void on_show_requested(const char *trigger)
 {
@@ -72,23 +81,24 @@ void on_show_requested(const char *trigger)
 	/* 保存した画像をシーンに表示する処理は #5 で実装する */
 }
 
-/*
- * ツールメニュー「クリップボードの画像を表示」がクリックされたときの処理。
+/**
+ * @brief ツールメニュー「クリップボードの画像を表示」がクリックされたときの処理。
  *
- * 呼び出し元: OBS(obs_module_load() で登録したメニュー項目)
- * スレッド  : UI スレッド(メニュー操作は UI スレッドで届く)
+ * @note 呼び出し元: OBS(obs_module_load() で登録したメニュー項目)。
+ * @note スレッド: UI スレッド(メニュー操作は UI スレッドで届く)。
  */
 void on_tools_menu_clicked(void *)
 {
 	on_show_requested("menu");
 }
 
-/*
- * ホットキーが押された/離されたときの処理。
+/**
+ * @brief ホットキーが押された/離されたときの処理。
  *
- * 呼び出し元: OBS(obs_module_load() で登録したホットキー)
- * スレッド  : ホットキー専用スレッド。UI スレッドではない
- * 引数      : pressed … 押したとき true、離したとき false
+ * @param pressed 押したとき true、離したとき false。
+ *
+ * @note 呼び出し元: OBS(obs_module_load() で登録したホットキー)。
+ * @note スレッド: ホットキー専用スレッド(UI スレッドではない)。そのため UI スレッドに処理を依頼する。
  */
 void on_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 {
@@ -100,21 +110,25 @@ void on_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 	obs_queue_task(OBS_TASK_UI, [](void *) { on_show_requested("hotkey"); }, nullptr, false);
 }
 
-/*
- * ホットキーの割り当てを保存/読み込みする。
+/**
+ * @brief ホットキーの割り当てを保存/読み込みする。
  *
- * 呼び出し元: OBS(シーンコレクションの保存時・読み込み時)
- * 引数      : save_data … シーンコレクションの保存データ
- *             saving    … 保存時 true、読み込み時 false
+ * @details
+ * プラグインが追加したホットキー(フロントエンド用)は、OBS が自動では保存しない。
+ * そのため他のフロントエンドプラグインと同じく、シーンコレクションのデータに自分で書き込む。
+ * 結果として、割り当てはシーンコレクションごとになる。
  *
- * なぜ必要か: プラグインが追加したホットキー(フロントエンド用)は、OBS が自動では
- * 保存しない。そのため他のフロントエンドプラグインと同じく、シーンコレクションの
- * データに自分で書き込む。結果として、割り当てはシーンコレクションごとになる。
+ * 保存形式: { "obs-clipboard-image": { "show_hotkey": [...] } }
+ *
+ * @param save_data シーンコレクションの保存データ。
+ * @param saving    保存時 true、読み込み時 false。
+ *
+ * @note 呼び出し元: OBS(シーンコレクションの保存時・読み込み時)。
  */
 void on_frontend_save(obs_data_t *save_data, bool saving, void *)
 {
 	if (saving) {
-		/* 保存: 現在の割り当てを { "obs-clipboard-image": { "show_hotkey": [...] } } の形で書き込む */
+		/* 保存: 現在の割り当てを書き込む */
 		obs_data_t *obj = obs_data_create();
 		obs_data_array_t *hotkey = obs_hotkey_save(show_hotkey_id);
 		obs_data_set_array(obj, SAVE_HOTKEY_KEY, hotkey);
@@ -138,11 +152,12 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
 
 } // namespace
 
-/*
- * プラグインの読み込み時の処理。OBS の起動時に 1 回呼ばれる。
+/**
+ * @brief プラグインの読み込み時の処理。OBS の起動時に 1 回呼ばれる。
  *
- * やること: ツールメニューの項目追加、ホットキー登録、保存処理の登録
- * 戻り値  : true で読み込み成功。false を返すと OBS はこのプラグインを使わない
+ * @details ツールメニューの項目追加、ホットキー登録、保存処理の登録を行う。
+ *
+ * @return true で読み込み成功。false を返すと OBS はこのプラグインを使わない。
  */
 bool obs_module_load(void)
 {
@@ -160,9 +175,10 @@ bool obs_module_load(void)
 	return true;
 }
 
-/*
- * プラグインの解放時の処理。OBS の終了時に 1 回呼ばれる。
- * obs_module_load() で登録したものを逆順に外す。
+/**
+ * @brief プラグインの解放時の処理。OBS の終了時に 1 回呼ばれる。
+ *
+ * @details obs_module_load() で登録したものを逆順に外す。
  */
 void obs_module_unload(void)
 {

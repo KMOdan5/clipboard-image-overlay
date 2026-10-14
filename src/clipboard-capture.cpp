@@ -16,20 +16,22 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
-/*
- * 【このファイルの役割】
- * クリップボードから画像を取り出し、プラグインの画像フォルダに保存する。
+/**
+ * @file clipboard-capture.cpp
+ * @brief クリップボードから画像を取り出し、プラグインの画像フォルダに保存する。
  *
+ * @details
  * 保存の方針:
- *   - コピーしたファイル … 原則、元ファイルを拡張子ごとそのままコピーする
- *                          (GIF のアニメーション、画質、ファイルサイズを保つため)
- *     ただし次の場合だけ PNG に変換する(OBS で確実に表示できるようにするため)
- *       - OBS の画像ソースが表示できない形式(webp・tiff・ico など)
- *       - 回転情報(EXIF)付きの写真(OBS はそのまま表示すると横倒しになる)
- *   - 画像データ       … 元のファイルがないので PNG で保存する
+ * - コピーしたファイル … 原則、元ファイルを拡張子ごとそのままコピーする
+ *   (GIF のアニメーション、画質、ファイルサイズを保つため)。
+ *   ただし次の場合だけ PNG に変換する(OBS で確実に表示できるようにするため)。
+ *   - OBS の画像ソースが表示できない形式(webp・tiff・ico など)
+ *   - 回転情報(EXIF)付きの写真(OBS はそのまま表示すると横倒しになる)
+ * - 画像データ … 元のファイルがないので PNG で保存する。
  *
- * 保存先: %APPDATA%\obs-studio\plugin_config\obs-clipboard-image\images\
- * ファイル名: yyyyMMdd-HHmmss-zzz.<拡張子>(保存した日時)
+ * 保存先(Windows): %APPDATA%/obs-studio/plugin_config/obs-clipboard-image/images/
+ *
+ * ファイル名: yyyyMMdd-HHmmss-zzz.拡張子(保存した日時)
  *
  * 公開している関数は save_clipboard_image() だけ(clipboard-capture.hpp)。
  * それ以外はこのファイル内だけで使う補助関数。
@@ -53,26 +55,31 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
-/* プラグイン設定フォルダの中に作る、画像の保存用フォルダ名 */
+/// @brief プラグイン設定フォルダの中に作る、画像の保存用フォルダ名。
 constexpr const char *IMAGE_FOLDER = "images";
 
-/*
- * OBS の画像ソースが表示できる形式(小文字の拡張子)。
- * ここに含まれるファイルは変換せずにそのまま保存する。
+/**
+ * @brief OBS の画像ソースが表示できる形式(小文字の拡張子)。
  *
+ * @details
+ * ここに含まれるファイルは変換せずにそのまま保存する。
  * webp を含めていない理由: OBS はアニメーション webp を読み込めず、
  * そのまま渡すと何も表示されないため。PNG(静止画)に変換して確実に表示させる。
- * 将来 OBS が新しい形式に対応したら、ここに拡張子を追加する。
+ *
+ * @note 将来 OBS が新しい形式に対応したら、ここに拡張子を追加する。
  */
 const QStringList OBS_IMAGE_FORMATS = {
 	QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
 	QStringLiteral("gif"), QStringLiteral("bmp"), QStringLiteral("tga"),
 };
 
-/*
- * 画像の保存先フォルダのパスを返す。
- * 例: %APPDATA%\obs-studio\plugin_config\obs-clipboard-image\images
- * フォルダの作成はしない(new_image_path() で行う)。
+/**
+ * @brief 画像の保存先フォルダのパスを返す。
+ *
+ * @details 例(Windows): %APPDATA%/obs-studio/plugin_config/obs-clipboard-image/images
+ *
+ * @return 保存先フォルダのパス。取得できなければ空文字。
+ * @note フォルダの作成はしない(new_image_path() で行う)。
  */
 QString image_folder()
 {
@@ -83,12 +90,11 @@ QString image_folder()
 	return folder;
 }
 
-/*
- * 新しく保存するファイルのパスを決める。
+/**
+ * @brief 新しく保存するファイルのパスを決める。保存先フォルダがなければここで作る。
  *
- * 引数  : extension … 拡張子(ドットなし。例: "png")
- * 戻り値: 保存先フォルダ + 日時のファイル名。フォルダが作れなければ空文字
- * 補足  : 保存先フォルダがなければここで作る
+ * @param extension 拡張子(ドットなし。例: "png")。
+ * @return 保存先フォルダ + 日時のファイル名。フォルダが作れなければ空文字。
  */
 QString new_image_path(const QString &extension)
 {
@@ -104,13 +110,13 @@ QString new_image_path(const QString &extension)
 	return QDir(folder).filePath(name);
 }
 
-/*
- * 保存成功時の後処理。ログを出し、呼び出し元に返すパスを作る。
+/**
+ * @brief 保存成功時の後処理。ログを出し、呼び出し元に返すパスを作る。
  *
- * 引数  : path … 保存したファイルのパス
- *         size … 画像の幅と高さ(ログ用)
- *         how  … 保存のしかた。"copied original"(そのままコピー)か "encoded png"(PNG に変換)
- * 戻り値: OS 標準の区切り文字(Windows なら \)にした UTF-8 のパス
+ * @param path 保存したファイルのパス。
+ * @param size 画像の幅と高さ(ログ用)。
+ * @param how  保存のしかた。"copied original"(そのままコピー)か "encoded png"(PNG に変換)。
+ * @return OS 標準の区切り文字(Windows なら \\)にした UTF-8 のパス。
  */
 std::optional<std::string> saved(const QString &path, const QSize &size, const char *how)
 {
@@ -119,12 +125,14 @@ std::optional<std::string> saved(const QString &path, const QSize &size, const c
 	return native.toUtf8().toStdString();
 }
 
-/*
- * 画像を PNG ファイルとして保存する。
+/**
+ * @brief 画像を PNG ファイルとして保存する。
  *
- * 呼び出し元: save_local_file()(変換が必要なファイル)
- *             save_clipboard_image()(画像データ)
- * 戻り値    : 保存したパス。失敗したら std::nullopt
+ * @param image 保存する画像。
+ * @return 保存したパス。
+ * @retval std::nullopt 保存に失敗した。
+ *
+ * @see save_local_file()(変換が必要なファイル)、save_clipboard_image()(画像データ)… 呼び出し元
  */
 std::optional<std::string> save_as_png(const QImage &image)
 {
@@ -139,17 +147,20 @@ std::optional<std::string> save_as_png(const QImage &image)
 	return saved(path, image.size(), "encoded png");
 }
 
-/*
- * コピーされたファイル 1 つを保存する。
+/**
+ * @brief コピーされたファイル 1 つを保存する。
  *
- * 呼び出し元: save_clipboard_image()
- * 引数      : source … コピーされたファイルのパス
- * 戻り値    : 保存したパス。画像ファイルでない・読めない・保存失敗なら std::nullopt
- *
+ * @details
  * 判断の流れ:
- *   1. Qt で画像として読めるか確認 → 読めなければ対象外(exe など)
- *   2. OBS で表示できる形式で、回転も不要 → 元ファイルをそのままコピー
- *   3. それ以外 → 画像を読み込んで PNG に変換
+ * 1. Qt で画像として読めるか確認 → 読めなければ対象外(exe など)
+ * 2. OBS で表示できる形式で、回転も不要 → 元ファイルをそのままコピー
+ * 3. それ以外 → 画像を読み込んで PNG に変換
+ *
+ * @param source コピーされたファイルのパス。
+ * @return 保存したパス。
+ * @retval std::nullopt 画像ファイルでない・読めない・保存に失敗した。
+ *
+ * @see save_clipboard_image()(呼び出し元)
  */
 std::optional<std::string> save_local_file(const QString &source)
 {
@@ -199,11 +210,13 @@ std::optional<std::string> save_local_file(const QString &source)
 
 } // namespace
 
-/*
- * クリップボードの画像を保存する(公開関数。詳しい仕様は clipboard-capture.hpp)。
+/**
+ * @brief クリップボードの画像を保存する。
  *
- * 呼び出し元: plugin-main.cpp の on_show_requested()
- * スレッド  : UI スレッド
+ * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。
+ *
+ * @note 呼び出し元: plugin-main.cpp の on_show_requested()。
+ * @note スレッド: UI スレッド。
  */
 std::optional<std::string> save_clipboard_image()
 {
