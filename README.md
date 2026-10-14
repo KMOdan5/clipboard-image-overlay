@@ -57,9 +57,13 @@ Images larger than **60% of the canvas width or height** are scaled down to fit 
 Smaller images are shown at their original size (they are never enlarged).
 The 60% limit is fixed for now and will be configurable in the settings dialog.
 
-**What the plugin changes after the first time:** only the image file, the size (while Bounds is Automatic),
-and visibility. Position, layer order, bounds, and transitions are set once when the source is first added
-to a scene and are never changed again.
+**What the plugin changes after the first time:** the image file, the size (while Bounds is Automatic),
+the layer order (moved to the top on every paste, see below), and visibility. Position, bounds, and transitions
+are set once when the source is first added to a scene and are never changed again.
+
+**Layer order:** `Clipboard Image` is moved to the **top** every time you paste, so it is never hidden behind
+sources you add later (OBS puts new sources on top). An option to turn this off ("Always show on top")
+will come with the settings dialog for streamers who manage their layer order themselves.
 
 **Position:** move `Clipboard Image` in the OBS preview to wherever you like.
 The plugin keeps your position for every image you paste afterwards.
@@ -74,8 +78,12 @@ changes the size and OBS sizes every image by the bounding box. Set it back to *
 
 画像は **`Clipboard Image`** という1つの画像ソースで表示されます。シーンに初めて追加されたときは、画面中央に置かれます。
 
-**初回以降にプラグインが変えるのは、画像・表示サイズ(境界が「自動」のときだけ)・表示/非表示だけです。**
-位置・重なり順・境界・トランジションは、シーンに初めて追加したときに設定するだけで、その後は変えません。
+**初回以降にプラグインが変えるのは、画像・表示サイズ(境界が「自動」のときだけ)・重なり順(下記)・表示/非表示だけです。**
+位置・境界・トランジションは、シーンに初めて追加したときに設定するだけで、その後は変えません。
+
+- **重なり順**: 貼るたびに `Clipboard Image` を**一番手前**に移します。OBS では後から追加したソースが一番上に置かれるため、
+  テロップや枠を後で追加しても画像がその下に隠れないようにするためです。
+  重なり順を自分で管理したい人向けに、設定画面で「常に手前に表示する」をオフにできるようにする予定です。
 
 - **大きさ**: 貼るたびに画像の大きさを見て、**画面の幅・高さの60%** を超える画像だけ、収まるように縮小します(縦横比は保ちます)。
   小さい画像は元の大きさのまま表示します(拡大はしません)。60%は今は固定で、設定画面ができたら変えられるようにします。

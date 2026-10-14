@@ -50,8 +50,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 初めて追加したあとにプラグインが変えるもの:
  * - 画像ファイル(貼った画像に差し替える)
  * - 表示サイズ(境界が「自動」のときだけ)
+ * - 重なり順(「常に手前に表示する」がオンのとき、貼るたびに最前面へ。既定オン)
  * - 表示/非表示(表示する・消す)
- * 位置・重なり順・境界・トランジションなど、それ以外の設定は変えない。
+ * 位置・境界・トランジションなど、それ以外の設定は変えない。
  * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
  *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
  *
@@ -89,6 +90,19 @@ constexpr uint32_t FADE_DURATION_MS = 400;
 
 /// @brief OBS 標準のフェードトランジションの内部 ID。
 constexpr const char *FADE_TRANSITION_ID = "fade_transition";
+
+/**
+ * @brief 貼るたびに Clipboard Image を最前面(一番手前)に移すかどうか。
+ *
+ * @details
+ * OBS では後から追加したソースが一番上に置かれる。初回だけ最前面にしても、配信者が後で
+ * テロップや枠を追加すると、その下に隠れて「貼ったのに出ない」ことになる。
+ * このプラグインは「みんなに見せる」ためのものなので、既定では貼るたびに最前面に移す。
+ *
+ * @note #8 の設定画面で「常に手前に表示する」(既定オン)として切り替えられるようにする。
+ *       重なり順を自分で管理したい配信者はオフにする。MVP では既定のオンで固定。
+ */
+constexpr bool ALWAYS_ON_TOP = true;
 
 /**
  * @brief 画像の最大の大きさ(画面の幅・高さに対する割合)。これを超える画像だけ縮小する。
@@ -524,14 +538,15 @@ bool show_image_on_current_scene(const SavedImage &image)
 			obs_source_release(scene_source);
 			return false;
 		}
-		/*
-		 * 初めて追加したときだけの設定: 位置(画面中央)と、表示・非表示のフェード。
-		 * 重なり順は obs_scene_add() で最前面になる。以降はどれも設定し直さない。
-		 */
+		/* 初めて追加したときだけの設定: 位置(画面中央)と、表示・非表示のフェード。以降は設定し直さない */
 		apply_default_position(item);
 		set_initial_fade_transitions(item);
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
+
+	/* 後から追加されたソースに隠れないよう、最前面に移す(「常に手前に表示する」がオンのとき) */
+	if (ALWAYS_ON_TOP)
+		obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
 
 	if (obs_sceneitem_visible(item) || pending_swap.item == item) {
 		/* 表示中(または差し替え中): フェードアウト → 差し替え → フェードイン */
