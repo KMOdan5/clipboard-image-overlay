@@ -34,7 +34,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   OBS の普段の操作と違って分かりにくいため。
  * - 代わりに貼るたびに画像の幅・高さを見て拡大率を設定し、大きい画像を
  *   画面の幅・高さの MAX_SIZE_RATIO(60%)に収める。小さい画像は等倍(拡大しない)。
- * - 配信者が自分で境界を設定している場合は、その設定に任せて拡大率は変えない。
+ * - 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)で表示する。
  *
  * 公開している関数は show_image_on_current_scene() だけ(image-display.hpp)。
  */
@@ -171,38 +171,38 @@ void apply_default_position(obs_sceneitem_t *item)
  * - 2000x500 の画像  → 0.576 倍(幅で決まる)
  * - 400x300 の画像   → 1 倍(そのまま)
  *
- * 配信者が境界(自動以外)を設定している場合は、境界が大きさを決めるので何もしない。
+ * 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)にする。
+ * 前の画像の拡大率を引き継ぐと、表示される大きさが前の画像次第で変わってしまうため。
+ *
+ * @note 配信者が境界(自動以外)を設定している場合、OBS は拡大率ではなく境界で大きさを決めるので、
+ *       ここで設定した拡大率は実質的に効かない。自動調整のオン/オフは #8 の設定画面で用意する。
  *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報(幅・高さを使う)。
  */
 void apply_fit_scale(obs_sceneitem_t *item, const SavedImage &image)
 {
-	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
-		obs_log(LOG_INFO, "display: bounds set by user; scale left as is");
-		return;
-	}
-	if (image.width <= 0 || image.height <= 0) {
-		obs_log(LOG_WARNING, "display: unknown image size; scale left as is");
-		return;
-	}
-
+	float factor = 1.0f;
 	float canvas_w = 0.0f;
 	float canvas_h = 0.0f;
-	if (!get_canvas_size(canvas_w, canvas_h))
-		return;
 
-	const float max_w = canvas_w * MAX_SIZE_RATIO;
-	const float max_h = canvas_h * MAX_SIZE_RATIO;
-	const float fit = std::min(max_w / static_cast<float>(image.width), max_h / static_cast<float>(image.height));
-	const float factor = std::min(1.0f, fit);
+	if (image.width <= 0 || image.height <= 0) {
+		obs_log(LOG_WARNING, "display: unknown image size; showing at original size");
+	} else if (get_canvas_size(canvas_w, canvas_h)) {
+		const float max_w = canvas_w * MAX_SIZE_RATIO;
+		const float max_h = canvas_h * MAX_SIZE_RATIO;
+		const float fit =
+			std::min(max_w / static_cast<float>(image.width), max_h / static_cast<float>(image.height));
+		factor = std::min(1.0f, fit);
+		obs_log(LOG_INFO, "display: scale %.3f for %dx%d (max %.0fx%.0f)", factor, image.width, image.height,
+			max_w, max_h);
+	} else {
+		obs_log(LOG_WARNING, "display: unknown canvas size; showing at original size");
+	}
 
 	vec2 scale;
 	vec2_set(&scale, factor, factor);
 	obs_sceneitem_set_scale(item, &scale);
-
-	obs_log(LOG_INFO, "display: scale %.3f for %dx%d (max %.0fx%.0f)", factor, image.width, image.height, max_w,
-		max_h);
 }
 
 /**

@@ -39,9 +39,9 @@ The plugin keeps your position for every image you paste afterwards.
 Resizing the source by dragging only affects the image currently shown; the next image is sized by the 60% rule again.
 
 **Bounds:** the plugin creates the source with **Automatic** bounds, the same as OBS's default
-(right-click → Transform → Edit Transform → Bounds). If you set another bounds type yourself
-(for example **Fit**, or **Scale to inner bounds** in OBS 31), the plugin leaves the size to the bounding box
-and does not change the scale.
+(right-click → Transform → Edit Transform → Bounds). If you change it to another bounds type,
+OBS sizes images by the bounding box instead. A switch to turn automatic sizing on or off
+will come with the settings dialog.
 
 ### 表示位置・大きさの変え方(日本語)
 
@@ -52,7 +52,8 @@ and does not change the scale.
 - **位置**: プレビュー上で `Clipboard Image` を好きな場所に動かしてください。以降に貼る画像も、その位置に表示されます。
   ドラッグで大きさを変えた場合は、今表示している画像だけが変わります。次の画像は、また60%のルールで大きさが決まります。
 - **境界**: プラグインは、OBS の既定と同じ「**自動**」でソースを作ります(右クリック →「変換」→「変換の編集」→「境界」)。
-  自分で「内側に合わせる」など別の境界を設定した場合は、その枠に大きさを任せ、プラグインは大きさを変えません。
+  「内側に合わせる」など別の境界に変えると、OBS は境界の枠で大きさを決めるようになります。
+  大きさの自動調整のオン・オフは、設定画面で切り替えられるようにする予定です。
 
 ## Building
 
