@@ -20,6 +20,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
 
+#include "clipboard-capture.hpp"
+
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
@@ -39,6 +41,12 @@ obs_hotkey_id show_hotkey_id = OBS_INVALID_HOTKEY_ID;
 void on_show_requested(const char *trigger)
 {
 	obs_log(LOG_INFO, "show requested (trigger: %s)", trigger);
+
+	const auto path = save_clipboard_image();
+	if (!path)
+		return;
+
+	/* Showing the saved image on the scene comes in #5. */
 }
 
 void on_tools_menu_clicked(void *)
