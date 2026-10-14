@@ -16,19 +16,27 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
+/*
+ * 【このファイルの役割】
+ * クリップボードの画像を取り出して保存する機能の公開窓口。
+ * 実装は clipboard-capture.cpp。呼び出し元は plugin-main.cpp の on_show_requested()。
+ */
+
 #pragma once
 
 #include <optional>
 #include <string>
 
 /*
- * Reads an image from the system clipboard and saves it as a PNG file in the
- * plugin's image folder.
+ * クリップボードの画像を、プラグインの画像フォルダに保存する。
  *
- * Accepts either image data (browser "Copy image", Win+Shift+S) or a copied
- * local image file (Explorer). Must be called on the UI thread.
+ * 対応する入力(優先順):
+ *   1. コピーした画像ファイル(エクスプローラーで Ctrl+C)
+ *      … 原則は元ファイルをそのままコピー。OBS で表示できない場合だけ PNG に変換
+ *   2. 画像データ(ブラウザの「画像をコピー」、Win+Shift+S)… PNG で保存
  *
- * Returns the UTF-8 path of the saved PNG, or std::nullopt if the clipboard
- * holds no usable image (the reason is written to the OBS log).
+ * スレッド: 必ず UI スレッドから呼ぶこと(Qt のクリップボードの制約)
+ * 戻り値  : 保存したファイルのパス(UTF-8、OS 標準の区切り文字)
+ *           画像がない・保存に失敗した場合は std::nullopt。理由は OBS のログに出る
  */
 std::optional<std::string> save_clipboard_image();
