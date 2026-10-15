@@ -8,16 +8,18 @@ An OBS plugin that shows a copied image on your stream with a single hotkey. The
 
 ## Features
 
-### Show a copied image without saving it
+### Show a copied image directly on your stream
 
-Copy an image and press the hotkey to show it on your stream. There is no need to save it as a file.
+Copy an image and press the hotkey to show it on your stream.
+
+For example, you can show images like these:
 
 - Images copied from a browser or chat app
 - Screenshots taken with `Win+Shift+S`
 - Selections copied from paint tools (transparent areas stay transparent)
 - Image files copied in File Explorer (GIF animations are played)
 
-Large images are scaled down automatically to fit 60% of the canvas (changeable in the settings).
+In addition, large images are scaled down automatically so they do not go off the screen.
 
 ### Hidden automatically after a while
 
