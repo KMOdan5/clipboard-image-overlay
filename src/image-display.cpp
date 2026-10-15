@@ -68,6 +68,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 片付け(シーンコレクションの切り替え・終了)より前に回した通知は、片付けた後には処理しない(watch_generation)。
  * - 差し替えを待つ間にアイテム・ソース・シーンが削除されたら、差し替えを取り消す。
  *
+ * グループ(#18):
+ * - Clipboard Image を探すときは、グループの中も探す(collect_items())。表示・非表示・差し替えは、
+ *   グループの外に置いたときと同じように動く
+ * - 通知はシーンにだけ登録し、グループには登録しない。グループの中で手動で表示/非表示を切り替えても
+ *   気づけないため、手動で表示したときはカウントが始まらない(既知の制限)
+ * - グループの表示/非表示・位置・大きさは変えない。表示サイズはグループの拡大率に関係なく、キャンバスを基準に決める
+ * - 「常に最前面に表示する」は、グループの中での最前面になる
+ *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
  * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、
  * image_display_shutdown()(image-display.hpp)。
@@ -394,70 +402,49 @@ obs_sceneitem_t *add_hidden_scene_item(obs_scene_t *scene, obs_source_t *source)
 }
 
 /**
- * @brief シーンの中から、指定したソースが置かれているシーンアイテムを探す。
- *
- * @details
- * OBS 31 で obs_scene_sceneitem_from_source() が非推奨になったため、
- * シーンアイテムを順に調べる obs_scene_enum_items() で探す。
- *
- * @param scene  探す対象のシーン。
- * @param source 探すソース。
- * @return 見つかったシーンアイテム(参照カウント付き。使い終わったら obs_sceneitem_release() で解放する)。
- * @retval nullptr シーンに置かれていない。
- */
-obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
-{
-	struct search {
-		obs_source_t *source;
-		obs_sceneitem_t *found;
-	} ctx = {source, nullptr};
-
-	obs_scene_enum_items(
-		scene,
-		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-			auto *ctx = static_cast<search *>(param);
-			if (obs_sceneitem_get_source(item) != ctx->source)
-				return true; /* 違うソース: 次を調べる */
-			obs_sceneitem_addref(item);
-			ctx->found = item;
-			return false; /* 見つかった: 探索を終える */
-		},
-		&ctx);
-
-	return ctx.found;
-}
-
-/**
- * @brief シーンの中から、指定したソースが置かれているシーンアイテムをすべて集める。
+ * @brief シーンの中から、指定したソースが置かれているシーンアイテムをすべて集める。グループの中も探す。
  *
  * @details
  * 配信者が同じシーンに Clipboard Image を 2 つ以上置いている場合もあるため、
  * 非表示にするときや「どこかに表示されているか」を調べるときは、最初の 1 つだけでなく全部を見る。
  * 集めたあとで操作するのは、obs_scene_enum_items() の途中(シーンをロック中)に表示を切り替えないようにするため。
  *
+ * グループ(#18): グループの中に置かれたものも、シーンに置かれたものと同じように集める。
+ * - 探さないと、貼るたびにグループの外へもう 1 つ追加され、自動で非表示にもならないため
+ * - OBS ではグループの中にグループを入れられないので、中を探すのは 1 段だけで足りる
+ * - グループの中を探すのは、シーンの探索中(シーンをロック中)に行う。OBS 本体も同じ順(シーン → グループ)でロックしている
+ * - 通知(表示/非表示・追加・削除)はグループには登録しない。そのため、グループの中で手動で表示/非表示を
+ *   切り替えたことには気づけない(既知の制限)。グループの表示/非表示や大きさ・位置も変えない
+ *
+ * OBS 31 で obs_scene_sceneitem_from_source() が非推奨になったため、
+ * シーンアイテムを順に調べる obs_scene_enum_items() で探す。
+ *
  * @param scene  探す対象のシーン。
  * @param source 探すソース。
  * @return 見つかったシーンアイテム(それぞれ参照カウント付き。release_items() で解放する)。
+ *         並びは OBS のソース一覧の下から順(グループの中のものは、グループの位置に入る)。
  */
 std::vector<obs_sceneitem_t *> collect_items(obs_scene_t *scene, obs_source_t *source)
 {
 	struct search {
 		obs_source_t *source;
 		std::vector<obs_sceneitem_t *> found;
-	} ctx = {source, {}};
 
-	obs_scene_enum_items(
-		scene,
-		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		/// @brief 1 つのアイテムを調べる。グループなら中のアイテムも同じ関数で調べる。
+		static bool visit(obs_scene_t *, obs_sceneitem_t *item, void *param)
+		{
 			auto *ctx = static_cast<search *>(param);
 			if (obs_sceneitem_get_source(item) == ctx->source) {
 				obs_sceneitem_addref(item);
 				ctx->found.push_back(item);
+			} else if (obs_sceneitem_is_group(item)) {
+				obs_sceneitem_group_enum_items(item, visit, param);
 			}
 			return true; /* 全部集めるので最後まで調べる */
-		},
-		&ctx);
+		}
+	} ctx = {source, {}};
 
+	obs_scene_enum_items(scene, search::visit, &ctx);
 	return ctx.found;
 }
 
@@ -467,6 +454,29 @@ void release_items(std::vector<obs_sceneitem_t *> &items)
 	for (obs_sceneitem_t *item : items)
 		obs_sceneitem_release(item);
 	items.clear();
+}
+
+/**
+ * @brief シーンの中から、指定したソースが置かれているシーンアイテムを 1 つ探す。グループの中も探す。
+ *
+ * @details
+ * collect_items() で集めたうちの最初の 1 つを返す(探し方とグループの扱いは collect_items() と同じ)。
+ *
+ * @param scene  探す対象のシーン。
+ * @param source 探すソース。
+ * @return 見つかったシーンアイテム(参照カウント付き。使い終わったら obs_sceneitem_release() で解放する)。
+ * @retval nullptr シーン(グループの中を含む)に置かれていない。
+ */
+obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
+{
+	std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
+	if (items.empty())
+		return nullptr;
+
+	obs_sceneitem_t *first = items.front();
+	items.erase(items.begin());
+	release_items(items);
+	return first;
 }
 
 /**
@@ -928,11 +938,18 @@ bool show_image_on_current_scene(const SavedImage &image)
 		return false;
 	}
 
-	/* 現在のシーンに専用ソースが置かれているか探す。なければ追加して画面中央に置く */
+	/* 現在のシーンに専用ソースが置かれているか探す(グループの中も含む)。なければ追加して画面中央に置く */
 	obs_sceneitem_t *item = find_scene_item(scene, source);
 	if (item) {
 		/* 既にある: 配信者が動かした位置を尊重し、位置は変えない */
-		obs_log(LOG_INFO, "display: reusing item in scene \"%s\"", obs_source_get_name(scene_source));
+		/* グループの中にあるかをログに残す(不具合調査用)。戻り値は参照カウントを持たないので解放しない */
+		obs_sceneitem_t *group = obs_sceneitem_get_group(scene, item);
+		if (group)
+			obs_log(LOG_INFO, "display: reusing item in group \"%s\" of scene \"%s\"",
+				obs_source_get_name(obs_sceneitem_get_source(group)),
+				obs_source_get_name(scene_source));
+		else
+			obs_log(LOG_INFO, "display: reusing item in scene \"%s\"", obs_source_get_name(scene_source));
 	} else {
 		/* 非表示で追加し、後でフェードインさせる(初回だけいきなり出るのを防ぐ) */
 		item = add_hidden_scene_item(scene, source);
@@ -1008,7 +1025,7 @@ void hide_clipboard_image(bool fade)
 		if (!scene)
 			continue;
 
-		/* 同じシーンに 2 つ以上置かれていることもあるので、全部を対象にする */
+		/* 同じシーンに 2 つ以上置かれていることもあるので、全部を対象にする(グループの中も含む) */
 		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
 		for (obs_sceneitem_t *item : items) {
 			/* 表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
