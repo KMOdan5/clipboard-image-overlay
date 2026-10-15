@@ -50,7 +50,7 @@ struct PluginSettings {
 	 * @brief 画像を表示してから自動で非表示にするまでの秒数。
 	 * @details 0 なら自動で非表示にせず、表示し続ける(一時停止ホットキーも何もしない)。
 	 */
-	int display_seconds = 7;
+	int display_seconds = 10;
 
 	/**
 	 * @brief 画像の最大の大きさ(キャンバスの幅・高さに対する割合、%)。これを超える画像は縮小する。
