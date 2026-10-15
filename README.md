@@ -23,8 +23,8 @@ Large images are scaled down automatically to fit 60% of the canvas (changeable 
 
 Images fade in and fade out after the display time (10 seconds by default), so you never have to worry about forgetting to hide them.
 
-- Showing another image while one is on screen switches the image and restarts the display time
 - Press the pause hotkey to keep the image on screen
+- You can switch to another image even before the display time is up
 - The transition effect (fade, etc.) can be changed with OBS's built-in Show/Hide Transition
 
 ### Show images again from the history (coming soon)
