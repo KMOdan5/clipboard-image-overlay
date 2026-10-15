@@ -23,22 +23,25 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @details
  * 処理の流れ:
  * @code
- *   ツールメニュー クリック ─┐
- *                              ├→ on_show_requested() ─→ save_clipboard_image()         画像を保存
- *   表示ホットキー 押下 ──────┘     (UI スレッド)     │   (clipboard-capture.cpp)
- *                                                      ├→ show_image_on_current_scene()  シーンに表示
- *                                                      │   (image-display.cpp)
- *                                                      └→ auto_hide_restart()           数秒後に自動で消す
- *                                                          (auto-hide.cpp)
+ *   ツール > Clipboard Image > 画像を表示 ─┐
+ *                                          ├→ on_show_requested()
+ *   表示ホットキー 押下 ──────────────────┘     (UI スレッド)
+ *        ├→ save_clipboard_image()         画像を保存(clipboard-capture.cpp)
+ *        ├→ show_image_on_current_scene()  シーンに表示(image-display.cpp)
+ *        └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
  *
- *   一時停止ホットキー 押下 ──→ auto_hide_toggle_pause()  自動で消すタイマーの一時停止/再開
+ *   一時停止ホットキー 押下 ──→ auto_hide_toggle_pause()  自動で非表示にするタイマーの一時停止/再開
  *                                (auto-hide.cpp)
+ *
+ *   ツール > Clipboard Image > 設定... ─→ open_settings_dialog()  設定画面(settings-dialog.cpp)
  * @endcode
  *
  * 関連ファイル:
  * - clipboard-capture.cpp … クリップボードから画像を取り出して保存する
  * - image-display.cpp … 保存した画像を現在のシーンに表示する/消す
  * - auto-hide.cpp … 表示した画像を一定時間後に自動で消すタイマーと、その一時停止
+ * - settings.cpp … 設定値の読み込み・保存(起動時に settings_load() で読む)
+ * - settings-dialog.cpp … 設定画面
  * - data/locale/ の .ini … メニュー名・ホットキー名の表示文字列
  */
 
@@ -49,6 +52,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "auto-hide.hpp"
 #include "clipboard-capture.hpp"
 #include "image-display.hpp"
+#include "settings-dialog.hpp"
+#include "settings.hpp"
+
+#include <QAction>
+#include <QMenu>
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -102,7 +110,7 @@ bool scenes_ready = false;
  * @param trigger どこから呼ばれたか("menu" / "hotkey")。ログ用。
  *
  * @note スレッド: 必ず UI スレッドで呼ぶこと(Qt のクリップボードは UI スレッドからしか触れないため)。
- * @see on_tools_menu_clicked(), on_hotkey_pressed()(呼び出し元)
+ * @see add_tools_submenu(), on_hotkey_pressed()(呼び出し元)
  */
 void on_show_requested(const char *trigger)
 {
@@ -130,14 +138,33 @@ void on_show_requested(const char *trigger)
 }
 
 /**
- * @brief ツールメニュー「クリップボードの画像を表示」がクリックされたときの処理。
+ * @brief 「ツール」メニューに「Clipboard Image」のサブメニューを追加する。
  *
- * @note 呼び出し元: OBS(obs_module_load() で登録したメニュー項目)。
- * @note スレッド: UI スレッド(メニュー操作は UI スレッドで届く)。
+ * @details
+ * 1 つのプラグインがツールメニューに項目をいくつも並べると、他のプラグインの項目と混ざって探しにくい。
+ * そこで項目は 1 つだけにして、その中に「画像を表示」「設定...」を並べる。
+ * - 画像を表示 → on_show_requested()(ホットキーと同じ処理)
+ * - 設定...    → open_settings_dialog()(settings-dialog.cpp)
+ *
+ * サブメニューの親は OBS のメイン画面にする(OBS の終了時に一緒に解放されるように)。
+ *
+ * @note 呼び出し元: obs_module_load()。
+ * @note スレッド: UI スレッド(メニューの操作も UI スレッドで届く)。
  */
-void on_tools_menu_clicked(void *)
+void add_tools_submenu()
 {
-	on_show_requested("menu");
+	auto *root = static_cast<QAction *>(obs_frontend_add_tools_menu_qaction(obs_module_text("Menu.Root")));
+	if (!root) {
+		obs_log(LOG_WARNING, "failed to add Tools menu item");
+		return;
+	}
+
+	auto *menu = new QMenu(static_cast<QWidget *>(obs_frontend_get_main_window()));
+	QAction *show = menu->addAction(QString::fromUtf8(obs_module_text("Menu.ShowClipboardImage")));
+	QObject::connect(show, &QAction::triggered, []() { on_show_requested("menu"); });
+	QAction *settings = menu->addAction(QString::fromUtf8(obs_module_text("Menu.Settings")));
+	QObject::connect(settings, &QAction::triggered, []() { open_settings_dialog(); });
+	root->setMenu(menu);
 }
 
 /**
@@ -254,8 +281,8 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  *   切り替えの途中でタイマーが発火し、片付け中のシーンを触るのを防ぐため。
  * - シーン一覧の変更時(SCENE_LIST_CHANGED): 追加されたシーンの通知も登録する。
  *   読み込み・切り替え・終了の途中は登録しない(scenes_ready)。
- * - 終了時(EXIT): 自動で消すタイマーと、画像差し替えのタイマーを止める。終了処理の途中でタイマーが発火し、
- *   片付け中のシーンやソースを触るのを防ぐため。
+ * - 終了時(EXIT): 設定画面が開いていれば閉じ、自動で消すタイマーと、画像差し替えのタイマーを止める。
+ *   終了処理の途中でタイマーが発火し、片付け中のシーンやソースを触るのを防ぐため。
  *
  * @param event 発生したイベント。
  *
@@ -288,6 +315,7 @@ void on_frontend_event(obs_frontend_event event, void *)
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
 		scenes_ready = false;
+		close_settings_dialog();
 		auto_hide_shutdown();
 		image_display_shutdown();
 		break;
@@ -307,7 +335,10 @@ void on_frontend_event(obs_frontend_event event, void *)
  */
 bool obs_module_load(void)
 {
-	obs_frontend_add_tools_menu_item(obs_module_text("Menu.ShowClipboardImage"), on_tools_menu_clicked, nullptr);
+	/* 表示時間などの設定を、表示処理より先に読み込んでおく */
+	settings_load();
+
+	add_tools_submenu();
 
 	show_hotkey_id = obs_hotkey_register_frontend(HOTKEY_NAME, obs_module_text("Hotkey.ShowClipboardImage"),
 						      on_hotkey_pressed, nullptr);
@@ -335,6 +366,7 @@ bool obs_module_load(void)
 void obs_module_unload(void)
 {
 	/* 終了イベントで止まっているはずだが、念のためここでも止める(何度呼んでもよい) */
+	close_settings_dialog();
 	auto_hide_shutdown();
 	image_display_shutdown();
 

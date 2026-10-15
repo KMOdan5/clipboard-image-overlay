@@ -24,11 +24,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 状態の移り変わり:
  * @code
  *   [非表示] ──貼る/手動で表示──→ [カウント中] ──時間切れ/手動で非表示──→ [非表示]
- *                        │    ↑ 貼る: 残り時間を 7 秒に戻す(延長)
+ *                        │    ↑ 貼る: 残り時間を表示時間に戻す(延長)
  *       一時停止ホットキー │    │ 一時停止ホットキー(残り時間から再開)
  *                        ↓    │
  *                     [一時停止中] ──手動で非表示──→ [非表示](一時停止は解除)
- *                          ↑ 貼る: 一時停止のまま、残り時間を 7 秒に戻す
+ *                          ↑ 貼る: 一時停止のまま、残り時間を表示時間に戻す
  * @endcode
  *
  * タイマーは 1 つだけ持ち、使い回す。表示のたびに新しいタイマーを作ると、
@@ -45,6 +45,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "auto-hide.hpp"
 #include "image-display.hpp"
+#include "settings.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -52,13 +53,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QTimer>
 
 namespace {
-
-/**
- * @brief 画像を表示してから自動で消すまでの秒数。
- * @note MVP では固定(雑談で見せる想定の 5〜10 秒の間)。#8 の設定画面で変更できるようにする。
- *       0 なら自動で消さない(手動で消すまで表示し続ける)。
- */
-constexpr int AUTO_HIDE_SECONDS = 7;
 
 /// @brief 自動で消すためのタイマー。最初に使うときに作り、auto_hide_shutdown() で片付ける。
 QTimer *hide_timer = nullptr;
@@ -112,26 +106,31 @@ void clear_pause()
  */
 void auto_hide_restart()
 {
-	/* 表示時間 0 は「自動で消さない」(#8 で設定できるようにする) */
-	if (AUTO_HIDE_SECONDS <= 0) {
+	/* 表示時間は設定画面で変えられる。読むのは表示するたび(変更は次に表示したときから反映) */
+	const int seconds = settings_get().display_seconds;
+
+	/* 表示時間 0 は「自動で消さない」。一時停止も意味がなくなるので解除する
+	   (残しておくと、表示時間を戻したあとに貼った画像が一時停止のまま消えなくなる) */
+	if (seconds <= 0) {
+		clear_pause();
 		if (hide_timer)
 			hide_timer->stop();
 		obs_log(LOG_INFO, "auto-hide: disabled (stays until hidden manually)");
 		return;
 	}
 
-	const int full_ms = AUTO_HIDE_SECONDS * 1000;
+	const int full_ms = seconds * 1000;
 
 	if (paused) {
 		/* 一時停止のまま、残り時間だけ表示時間に戻す */
 		remaining_ms = full_ms;
-		obs_log(LOG_INFO, "auto-hide: paused; remaining time reset to %d seconds", AUTO_HIDE_SECONDS);
+		obs_log(LOG_INFO, "auto-hide: paused; remaining time reset to %d seconds", seconds);
 		return;
 	}
 
 	/* start() は動いている途中でも呼べて、その場合は最初からやり直す。これが「延長」になる */
 	ensure_timer()->start(full_ms);
-	obs_log(LOG_INFO, "auto-hide: will hide in %d seconds", AUTO_HIDE_SECONDS);
+	obs_log(LOG_INFO, "auto-hide: will hide in %d seconds", seconds);
 }
 
 /**
@@ -141,11 +140,6 @@ void auto_hide_restart()
  */
 void auto_hide_toggle_pause()
 {
-	if (AUTO_HIDE_SECONDS <= 0) {
-		obs_log(LOG_INFO, "auto-hide: pause ignored (auto-hide is disabled)");
-		return;
-	}
-
 	/* 一時停止は表示中だけ。表示されていなければ何もしない(残っていた一時停止は解除する) */
 	if (!is_clipboard_image_showing()) {
 		clear_pause();
@@ -162,6 +156,7 @@ void auto_hide_toggle_pause()
 		return;
 	}
 
+	/* 表示時間 0(自動で消さない)のときは、タイマーが動いていないのでここで何もしない */
 	if (!hide_timer || !hide_timer->isActive()) {
 		obs_log(LOG_INFO, "auto-hide: pause ignored (timer is not running)");
 		return;

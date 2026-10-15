@@ -44,6 +44,10 @@ target_sources(
     src/clipboard-capture.hpp
     src/image-display.cpp
     src/image-display.hpp
+    src/settings.cpp
+    src/settings.hpp
+    src/settings-dialog.cpp
+    src/settings-dialog.hpp
 )
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
