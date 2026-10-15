@@ -15,7 +15,7 @@ Just copy an image and press the hotkey to show it on your stream.
 For example, you can show images like these:
 
 - Images copied from a browser or chat app
-- Screenshots taken with `Win+Shift+S`
+- Screenshots taken with `Win + Shift + S`
 - Selections copied from paint tools (transparent areas stay transparent)
 - Image files copied in File Explorer (GIF animations are played)
 
