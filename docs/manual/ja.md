@@ -8,7 +8,7 @@
 2. OBS を終了します。
 3. `Win + R` を押して「ファイル名を指定して実行」を開き、`%ProgramData%\obs-studio` と入力して Enter を押します。
 4. 開いたフォルダに「plugins」フォルダがなければ作成します。
-5. 展開した「clipboard-image-overlay」フォルダを「plugins」フォルダの中に置きます。
+5. 展開したフォルダの中にある「clipboard-image-overlay」フォルダを「plugins」フォルダの中に置きます。
    置いたあとは `plugins\clipboard-image-overlay\bin\64bit\clipboard-image-overlay.dll` という構成になります。
 6. OBS を起動し、「ツール」メニューに「Clipboard Image」があればインストール完了です。
 
