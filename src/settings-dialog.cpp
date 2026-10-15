@@ -293,10 +293,17 @@ void open_settings_dialog()
 
 	layout->addWidget(group);
 
-	/* 枠の外の案内: フェードはプラグインの設定ではないこと、反映のタイミング */
+	/*
+	 * 枠の外の案内: フェードはプラグインの設定ではないこと、反映のタイミング。
+	 * 項目の補足ではなく画面全体への案内なので、薄くせず通常の濃さで表示する
+	 * (薄い文字は、そばに濃い項目名がある枠の中の説明だけに使う)
+	 */
 	layout->addSpacing(NOTES_SPACING);
-	layout->addWidget(make_note("Settings.FadeNote"));
-	layout->addWidget(make_note("Settings.ApplyNote"));
+	for (const char *key : {"Settings.FadeNote", "Settings.ApplyNote"}) {
+		auto *note = new QLabel(text(key));
+		note->setWordWrap(true);
+		layout->addWidget(note);
+	}
 
 	/*
 	 * OK: 保存して閉じる / キャンセル: 保存せずに閉じる / 適用: 保存して開いたまま /
