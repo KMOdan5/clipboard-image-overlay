@@ -9,6 +9,7 @@ An OBS plugin that shows a copied image on your stream with a single hotkey. The
 ## Features
 
 - Shows images copied from a browser or chat app, or screenshots taken with `Win+Shift+S`, with a hotkey
+- Selections copied from paint tools can be shown as they are (transparent areas stay transparent)
 - Images fade in and fade out after the display time (10 seconds by default)
 - Showing another image while one is on screen switches the image and restarts the display time
 - A pause hotkey keeps the image on screen
