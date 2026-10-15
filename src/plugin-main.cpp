@@ -28,6 +28,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   表示ホットキー 押下 ──────────────────┘     (UI スレッド)
  *        ├→ save_clipboard_image()         画像を保存(clipboard-capture.cpp)
  *        ├→ show_image_on_current_scene()  シーンに表示(image-display.cpp)
+ *        ├→ cleanup_saved_images()         古い画像を掃除(clipboard-capture.cpp)
  *        └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
  *
  *   一時停止ホットキー 押下 ──→ auto_hide_toggle_pause()  自動で非表示にするタイマーの一時停止/再開
@@ -129,8 +130,17 @@ void on_show_requested(const char *trigger)
 	if (!is_clipboard_image_showing())
 		auto_hide_on_image_hidden();
 
-	/* 保存した画像を現在のシーンに表示する。表示できなければタイマーも動かさない */
-	if (!show_image_on_current_scene(*image))
+	/* 保存した画像を現在のシーンに表示する */
+	const bool shown = show_image_on_current_scene(*image);
+
+	/*
+	 * 保存するたびに古い画像を掃除する(#9)。長い配信で何枚も貼っても、保存フォルダがたまり続けないように。
+	 * 表示を始めた後に行うのは、今表示する画像と差し替え待ちの画像を「使用中」として確実に残すため
+	 */
+	cleanup_saved_images(clipboard_images_in_use());
+
+	/* 表示できなければタイマーも動かさない */
+	if (!shown)
 		return;
 
 	/* 一定時間後に自動で消す(既に動いていれば延長) */
@@ -276,7 +286,7 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  *   OBS は終了処理の最初にシーンコレクションを保存し、EXIT イベントはその後に来る。
  *   そのため表示中に終了すると「表示中」のまま保存され、次の起動時に出たままになる。
  *   保存より前に届くイベントはないので、読み込んだ直後に片付ける。
- *   その後、全シーンの通知(表示/非表示・追加・削除)を登録する。
+ *   その後、全シーンの通知(表示/非表示・追加・削除)を登録し、保存フォルダの古い画像を掃除する(#9)。
  * - シーンコレクション切り替えの開始時(SCENE_COLLECTION_CHANGING): タイマーと通知の登録を先に片付ける。
  *   切り替えの途中でタイマーが発火し、片付け中のシーンを触るのを防ぐため。
  * - シーン一覧の変更時(SCENE_LIST_CHANGED): 追加されたシーンの通知も登録する。
@@ -301,6 +311,8 @@ void on_frontend_event(obs_frontend_event event, void *)
 		/* 片付けた後で通知を登録する(起動直後に手動で表示・追加した場合もカウントできるように) */
 		image_display_watch_scenes();
 		scenes_ready = true;
+		/* 前回までにたまった古い画像を掃除する(#9)。読み込んだコレクションで使用中の画像は残す */
+		cleanup_saved_images(clipboard_images_in_use());
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
 		/* 切り替えの途中でタイマーが発火し、片付け中のシーンを触らないように先に止める */

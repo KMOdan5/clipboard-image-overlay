@@ -92,6 +92,7 @@ Open **Tools → Clipboard Image → Settings...** in OBS.
 - Settings are applied from the next image you show (an image already on screen keeps its timer and size).
 - Settings are shared by all scene collections and saved in the plugin's config folder
   (Windows: `%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json`).
+- Pasted images are saved in the plugin's folder (`%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/images`). The newest 50 are kept, and older ones are deleted automatically.
 - Image transition effects (fade, etc.) can be changed with the Show/Hide Transition of `Clipboard Image`.
 
 ### 設定(日本語)
@@ -108,6 +109,7 @@ OBS の「**ツール**」→「**Clipboard Image**」→「**設定...**」で�
 - 設定内容は、次に画像を表示したタイミングで適用されます(表示中の画像のタイマーや大きさは変わりません)。
 - 設定はすべてのシーンコレクションで共通です。プラグインの設定フォルダに保存されます
   (Windows: `%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json`)。
+- 貼った画像はプラグインのフォルダ(`%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/images`)に保存されます。新しい順に50枚まで残り、それより古い画像は自動で削除されます。
 - 画像の切り替え効果(フェードなど)は、「Clipboard Image」の表示/非表示トランジションで変更可能です。
 
 ## Adjusting where images appear

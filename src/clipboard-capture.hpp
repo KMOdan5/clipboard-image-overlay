@@ -20,13 +20,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @file clipboard-capture.hpp
  * @brief クリップボードの画像を取り出して保存する機能の公開窓口。
  *
- * @details 実装は clipboard-capture.cpp。呼び出し元は plugin-main.cpp の on_show_requested()。
+ * @details 実装は clipboard-capture.cpp。呼び出し元は plugin-main.cpp
+ *          (on_show_requested() と、起動完了時の掃除)。
  */
 
 #pragma once
 
 #include <optional>
 #include <string>
+#include <vector>
 
 /**
  * @brief 保存した画像の情報。save_clipboard_image() の結果として返す。
@@ -57,3 +59,23 @@ struct SavedImage {
  * @note スレッド: 必ず UI スレッドから呼ぶこと(Qt のクリップボードの制約)。
  */
 std::optional<SavedImage> save_clipboard_image();
+
+/**
+ * @brief 保存フォルダの古い画像を削除し、新しい順に 50 枚だけ残す(#9)。
+ *
+ * @details
+ * 画像は貼るたびに保存フォルダにたまっていくので、上限を超えた古いものを削除する。
+ * - 対象は保存フォルダの中で、このプラグインが付けた名前の形(yyyyMMdd-HHmmss-zzz.拡張子)のファイルだけ。
+ *   配信者が自分で置いたファイルなど、それ以外は触らない
+ * - 新しい・古いはファイル名の日時で判断する(ファイルの更新日時は、コピー元のものが残ることがあるため)
+ * - in_use に含まれるファイル(表示中・差し替え待ちの画像)は、古くても削除しない
+ * - 削除した枚数と、削除できなかったファイルはログに出す。削除に失敗しても処理は続ける
+ *
+ * 上限の 50 枚は固定(設定画面で変えられるようにするかは #23 で検討)。
+ *
+ * @param in_use 削除してはいけないファイルのパス(UTF-8)。
+ *
+ * @note 呼び出し元: plugin-main.cpp(OBS の起動完了時と、画像を保存して表示したあと)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+void cleanup_saved_images(const std::vector<std::string> &in_use);
