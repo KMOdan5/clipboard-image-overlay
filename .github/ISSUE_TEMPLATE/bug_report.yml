@@ -53,8 +53,8 @@ body:
       label: ログ / Log
       description: |
         OBS の「ヘルプ」→「ログファイル」→「現在のログをアップロード」で表示される URL を貼ってください。
-        または、ログの中の `[obs-clipboard-image]` で始まる行を貼ってください。
-        Paste the URL from Help → Log Files → Upload Current Log File, or the lines starting with `[obs-clipboard-image]`.
+        または、ログの中の `[clipboard-image-overlay]` で始まる行を貼ってください。
+        Paste the URL from Help → Log Files → Upload Current Log File, or the lines starting with `[clipboard-image-overlay]`.
       render: text
   - type: checkboxes
     id: checks

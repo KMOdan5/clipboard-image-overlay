@@ -16,4 +16,4 @@ If you find a security issue, **please do not open a public issue**.
 Use **"Report a vulnerability"** in the Security tab of this repository to report it privately.
 The report stays private until a fix is released.
 
-https://github.com/KMOdan5/obs-clipboard-image/security/advisories/new
+https://github.com/KMOdan5/clipboard-image-overlay/security/advisories/new

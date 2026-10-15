@@ -1,5 +1,5 @@
 /*
-obs-clipboard-image
+clipboard-image-overlay
 Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
 
 This program is free software; you can redistribute it and/or modify
@@ -51,7 +51,7 @@ struct SavedImage {
  *    … 原則は元ファイルをそのままコピー。OBS で表示できない場合だけ PNG に変換。
  * 2. 画像データ(ブラウザの「画像をコピー」、Win+Shift+S)… PNG で保存。
  *
- * 保存先(Windows): %APPDATA%/obs-studio/plugin_config/obs-clipboard-image/images/
+ * 保存先(Windows): %APPDATA%/obs-studio/plugin_config/clipboard-image-overlay/images/
  *
  * @return 保存した画像の情報(パスと幅・高さ)。表示するときの大きさの計算に使う。
  * @retval std::nullopt 画像がない、または保存に失敗した。理由は OBS のログに出る。

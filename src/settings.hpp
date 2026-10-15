@@ -1,5 +1,5 @@
 /*
-obs-clipboard-image
+clipboard-image-overlay
 Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
 
 This program is free software; you can redistribute it and/or modify
@@ -25,7 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 自動で消す処理(auto-hide.cpp)と表示処理(image-display.cpp)が読む。
  *
  * 保存先: プラグインの設定フォルダの settings.json
- * (Windows: %APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json)。
+ * (Windows: %APPDATA%/obs-studio/plugin_config/clipboard-image-overlay/settings.json)。
  * シーンコレクションではなくプラグイン全体の設定なので、どのシーンコレクションでも同じ値を使う。
  *
  * 変更は、次に画像を表示したときから反映する(表示中のタイマーや画像の大きさは変えない)。

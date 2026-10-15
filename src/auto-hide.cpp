@@ -1,5 +1,5 @@
 /*
-obs-clipboard-image
+clipboard-image-overlay
 Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
 
 This program is free software; you can redistribute it and/or modify

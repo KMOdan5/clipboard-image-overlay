@@ -33,13 +33,13 @@
     },
     "platformConfig": {
         "macos": {
-            "bundleId": "io.github.kmodan5.obs-clipboard-image"
+            "bundleId": "io.github.kmodan5.clipboard-image-overlay"
         }
     },
-    "name": "obs-clipboard-image",
-    "displayName": "Clipboard Image for OBS",
+    "name": "clipboard-image-overlay",
+    "displayName": "Clipboard Image Overlay",
     "version": "0.1.0",
     "author": "KMOdan5",
-    "website": "https://github.com/KMOdan5/obs-clipboard-image",
+    "website": "https://github.com/KMOdan5/clipboard-image-overlay",
     "email": "dan5gaogao@gmail.com"
 }

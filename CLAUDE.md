@@ -1,4 +1,4 @@
-# obs-clipboard-image — プロジェクトの前提
+# clipboard-image-overlay — プロジェクトの前提
 
 ## 目的
 コピーした画像(クリップボード)を、ホットキー1つでOBSの配信画面に表示するプラグイン。
@@ -20,10 +20,12 @@
 - ベースは obsproject/obs-plugintemplate。ビルド設定・CIはテンプレートに従い、大きく改変しない
 - 対象OBS: 31.1.1 以降(buildspec.json 準拠)。動作確認は 32 系で行う
 - 対象OS: まず Windows。macOS / Linux はビルドが通る状態を維持するが、動作保証は後回し
-- 生成した画像はプラグイン設定フォルダ(`obs_module_config_path("images")`、Windows では `%APPDATA%\obs-studio\plugin_config\obs-clipboard-image\images`)に保存し、古いものは自動削除する
+- 生成した画像はプラグイン設定フォルダ(`obs_module_config_path("images")`、Windows では `%APPDATA%\obs-studio\plugin_config\clipboard-image-overlay\images`)に保存し、古いものは自動削除する
 - OBS は Ctrl+V を「ソースの貼り付け」に使っているため奪わない。操作はホットキー(OBSの設定 > ホットキーで割り当て)とメニューから行う
 - OBS の非推奨(deprecated)API は使わない。ビルドで警告がエラー扱いになり CI が落ちる(例: `obs_scene_sceneitem_from_source` は OBS 31 で非推奨)
 - ライセンス: GPL-2.0(OBS本体に合わせる)
+- 名前・表示名・アイコンなどに OBS の名前やロゴを使わない(OBS の「Forum Resource and IP Policy」)。
+  「OBS Studio 用のプラグイン」のように説明文で触れるのはよい
 
 ## 開発の進め方
 - 1 Issue = 1 PR。依頼された Issue の範囲だけを実装する

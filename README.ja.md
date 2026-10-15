@@ -1,4 +1,4 @@
-# obs-clipboard-image
+# clipboard-image-overlay
 
 [English](README.md) | **日本語**
 
@@ -52,7 +52,7 @@ macOS・Linux 向けのファイルもありますが、動作は確認してい
 
 ## 不具合の報告・要望
 
-[Issues](https://github.com/KMOdan5/obs-clipboard-image/issues/new/choose) のテンプレートからお知らせください。セキュリティに関わる問題は [SECURITY.md](SECURITY.md) の方法で報告してください。
+[Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose) のテンプレートからお知らせください。セキュリティに関わる問題は [SECURITY.md](SECURITY.md) の方法で報告してください。
 
 ## ライセンス
 
