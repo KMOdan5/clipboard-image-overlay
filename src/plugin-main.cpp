@@ -1,5 +1,5 @@
 /*
-obs-clipboard-image
+clipboard-image-overlay
 Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
 
 This program is free software; you can redistribute it and/or modify
@@ -68,10 +68,10 @@ namespace {
  * @brief ホットキーの内部名。
  * @warning OBS の設定ファイルに保存されるため、変更すると既存の割り当てが消える。
  */
-constexpr const char *HOTKEY_NAME = "obs_clipboard_image.show";
+constexpr const char *HOTKEY_NAME = "clipboard_image_overlay.show";
 
 /// @brief シーンコレクションの保存データ内で、このプラグインが使うキー名。
-constexpr const char *SAVE_KEY = "obs-clipboard-image";
+constexpr const char *SAVE_KEY = "clipboard-image-overlay";
 
 /// @brief SAVE_KEY の中で、表示ホットキーの割り当てを保存するキー名。
 constexpr const char *SAVE_HOTKEY_KEY = "show_hotkey";
@@ -80,7 +80,7 @@ constexpr const char *SAVE_HOTKEY_KEY = "show_hotkey";
  * @brief 一時停止ホットキーの内部名。
  * @warning OBS の設定ファイルに保存されるため、変更すると既存の割り当てが消える。
  */
-constexpr const char *PAUSE_HOTKEY_NAME = "obs_clipboard_image.toggle_pause";
+constexpr const char *PAUSE_HOTKEY_NAME = "clipboard_image_overlay.toggle_pause";
 
 /// @brief SAVE_KEY の中で、一時停止ホットキーの割り当てを保存するキー名。
 constexpr const char *SAVE_PAUSE_HOTKEY_KEY = "pause_hotkey";
@@ -247,7 +247,7 @@ void load_hotkey(obs_data_t *obj, const char *key, obs_hotkey_id id)
  * そのため他のフロントエンドプラグインと同じく、シーンコレクションのデータに自分で書き込む。
  * 結果として、割り当てはシーンコレクションごとになる。
  *
- * 保存形式: { "obs-clipboard-image": { "show_hotkey": [...], "pause_hotkey": [...] } }
+ * 保存形式: { "clipboard-image-overlay": { "show_hotkey": [...], "pause_hotkey": [...] } }
  *
  * @param save_data シーンコレクションの保存データ。
  * @param saving    保存時 true、読み込み時 false。

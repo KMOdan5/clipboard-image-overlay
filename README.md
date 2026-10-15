@@ -1,4 +1,4 @@
-# obs-clipboard-image
+# clipboard-image-overlay
 
 **English** | [日本語](README.ja.md)
 
@@ -52,7 +52,7 @@ See the [manual (Japanese)](docs/manual/ja.md). An English manual will be added 
 
 ## Bug reports and feature requests
 
-Please use the templates in [Issues](https://github.com/KMOdan5/obs-clipboard-image/issues/new/choose). For security issues, follow the instructions in [SECURITY.md](SECURITY.md).
+Please use the templates in [Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose). For security issues, follow the instructions in [SECURITY.md](SECURITY.md).
 
 ## License
 

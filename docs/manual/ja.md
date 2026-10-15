@@ -1,20 +1,20 @@
-# obs-clipboard-image マニュアル
+# clipboard-image-overlay マニュアル
 
 コピーした画像をホットキー 1 つで OBS の配信画面に表示するプラグインの使い方です。
 
 ## 1. インストール方法
 
-1. [リリース](https://github.com/KMOdan5/obs-clipboard-image/releases) から `obs-clipboard-image-(版)-windows-x64.zip` をダウンロードし、展開します。
+1. [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases) から `clipboard-image-overlay-(版)-windows-x64.zip` をダウンロードし、展開します。
 2. OBS を終了します。
 3. `Win + R` を押して「ファイル名を指定して実行」を開き、`%ProgramData%\obs-studio` と入力して Enter を押します。
 4. 開いたフォルダに「plugins」フォルダがなければ作成します。
-5. 展開した「obs-clipboard-image」フォルダを「plugins」フォルダの中に置きます。
-   置いたあとは `plugins\obs-clipboard-image\bin\64bit\obs-clipboard-image.dll` という構成になります。
+5. 展開した「clipboard-image-overlay」フォルダを「plugins」フォルダの中に置きます。
+   置いたあとは `plugins\clipboard-image-overlay\bin\64bit\clipboard-image-overlay.dll` という構成になります。
 6. OBS を起動し、「ツール」メニューに「Clipboard Image」があればインストール完了です。
 
-**更新するとき**: OBS を終了し、新しい「obs-clipboard-image」フォルダで上書きします。設定はそのまま引き継がれます。
+**更新するとき**: OBS を終了し、新しい「clipboard-image-overlay」フォルダで上書きします。設定はそのまま引き継がれます。
 
-**アンインストールするとき**: OBS を終了し、手順 3 と同じ方法で開いたフォルダの「plugins」にある「obs-clipboard-image」フォルダを削除します。
+**アンインストールするとき**: OBS を終了し、手順 3 と同じ方法で開いたフォルダの「plugins」にある「clipboard-image-overlay」フォルダを削除します。
 
 ## 2. はじめての使い方
 
@@ -86,7 +86,7 @@
 
 表示した画像は次のフォルダに保存されます。
 
-`%APPDATA%\obs-studio\plugin_config\obs-clipboard-image\images`
+`%APPDATA%\obs-studio\plugin_config\clipboard-image-overlay\images`
 
 新しい順に 50 枚まで残り、古い画像は自動で削除されます。表示中の画像は削除されません。
 
@@ -100,7 +100,7 @@
 
 ### ログの見方
 
-「ヘルプ」→「ログファイル」→「現在のログファイルをアップロード」で URL を取得できます。不具合を報告するときはこの URL を添えてください。このプラグインのログは `[obs-clipboard-image]` で始まります。
+「ヘルプ」→「ログファイル」→「現在のログファイルをアップロード」で URL を取得できます。不具合を報告するときはこの URL を添えてください。このプラグインのログは `[clipboard-image-overlay]` で始まります。
 
 ### 既知の制限
 
@@ -109,4 +109,4 @@
 
 ## 9. 不具合の報告・要望
 
-[Issues](https://github.com/KMOdan5/obs-clipboard-image/issues/new/choose) のテンプレートからお知らせください(GitHub のアカウントが必要です)。ベータ版のテスターの方は配布時にご案内したフォームからも送れます。
+[Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose) のテンプレートからお知らせください(GitHub のアカウントが必要です)。ベータ版のテスターの方は配布時にご案内したフォームからも送れます。

@@ -6,10 +6,10 @@ Thank you for your interest in this plugin.
 
 ## 不具合・要望 / Bugs and ideas
 
-不具合の報告や機能の要望は、[Issue](https://github.com/KMOdan5/obs-clipboard-image/issues/new/choose) から送ってください。
+不具合の報告や機能の要望は、[Issue](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose) から送ってください。
 テンプレートに沿って書いていただけると、早く対応できます。日本語・英語のどちらでも構いません。
 
-Please use [Issues](https://github.com/KMOdan5/obs-clipboard-image/issues/new/choose) for bug reports and feature requests.
+Please use [Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose) for bug reports and feature requests.
 Following the template helps us respond faster. Japanese or English is fine.
 
 ## プルリクエスト / Pull requests

@@ -1,5 +1,5 @@
 /*
-obs-clipboard-image
+clipboard-image-overlay
 Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
 
 This program is free software; you can redistribute it and/or modify
@@ -29,7 +29,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   - 回転情報(EXIF)付きの写真(OBS はそのまま表示すると横倒しになる)
  * - 画像データ … 元のファイルがないので PNG で保存する。
  *
- * 保存先(Windows): %APPDATA%/obs-studio/plugin_config/obs-clipboard-image/images/
+ * 保存先(Windows): %APPDATA%/obs-studio/plugin_config/clipboard-image-overlay/images/
  *
  * ファイル名: yyyyMMdd-HHmmss-zzz.拡張子(保存した日時)
  *
@@ -88,7 +88,7 @@ const QStringList OBS_IMAGE_FORMATS = {
 /**
  * @brief 画像の保存先フォルダのパスを返す。
  *
- * @details 例(Windows): %APPDATA%/obs-studio/plugin_config/obs-clipboard-image/images
+ * @details 例(Windows): %APPDATA%/obs-studio/plugin_config/clipboard-image-overlay/images
  *
  * @return 保存先フォルダのパス。取得できなければ空文字。
  * @note フォルダの作成はしない(new_image_path() で行う)。
