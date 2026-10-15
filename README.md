@@ -39,6 +39,13 @@ You will be able to show an image again from a list of images you have shown.
 - Displayed images are saved only in the plugin's folder on your computer.
 - AI is used as an aid in developing the system, but this plugin has no AI features and never uses images to train AI.
 
+## Terms of Use
+
+- Free to use for both individuals and companies, including monetized streams.
+- No credit is required. If you like it, I would be happy if you mention it on your stream or social media.
+- Please make sure you have the rights (such as copyright) to the images you show.
+- Modifications and redistribution must follow GPL-2.0.
+
 ## Requirements
 
 - Windows 10 / 11
