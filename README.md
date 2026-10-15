@@ -84,15 +84,15 @@ Open **Tools → Clipboard Image → Settings...** in OBS.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Display time | 10 s | Images are hidden automatically after the set time. **0** keeps them shown (the pause hotkey then does nothing). |
-| Fit images within N% of the canvas size | 60% | Images larger than this size are scaled down automatically (the size in pixels is shown next to N). Works only while the **Bounds Type** of `Clipboard Image` is **Automatic**. |
-| Always show on top | On | Moves `Clipboard Image` to the front every time an image is shown from the clipboard. When off, the order of your sources is kept. |
+| Display time | 10 s | Images are hidden automatically after the set time. At **0 s**, images are hidden only manually (the pause hotkey then does nothing). |
+| Maximum size | 60% | Percentage of the canvas (the size in pixels is shown next to it). Images larger than this are scaled down automatically. Works only while the **Bounds Type** of `Clipboard Image` is **Automatic**. |
+| Always show on top | On | Moves `Clipboard Image` to the front every time an image is shown. When off, the order of your sources is kept. |
 
 - **Apply** saves without closing the window, so you can keep OBS in use and paste images to try the settings.
-- Changes apply from the next image you show (an image already on screen keeps its timer and size).
+- Settings are applied from the next image you show (an image already on screen keeps its timer and size).
 - Settings are shared by all scene collections and saved in the plugin's config folder
   (Windows: `%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json`).
-- How `Clipboard Image` is shown and hidden (fade, etc.) can be changed with its Show/Hide Transition.
+- How images fade in and out can be changed with the Show/Hide Transition of `Clipboard Image`.
 
 ### 設定(日本語)
 
@@ -100,15 +100,15 @@ OBS の「**ツール**」→「**Clipboard Image**」→「**設定...**」で�
 
 | 項目 | 既定 | 内容 |
 |---|---|---|
-| 表示時間 | 10秒 | 設定時間が経過すると自動で非表示になります。**0** にすると非表示にせず表示し続けます(一時停止ホットキーは何もしません)。 |
-| 画像をキャンバスサイズの N% に収める | 60% | このサイズを超える画像は自動縮小します(N の横にそのサイズをピクセルで表示)。`Clipboard Image` の**境界設定が「自動」**のときだけ動作します。 |
-| 常に最前面に表示する | オン | クリップボードから画像を表示するたびに `Clipboard Image` を最前面に移動します。オフにするとソースの表示順序を維持します。 |
+| 表示時間 | 10秒 | 設定時間が経過すると自動で非表示になります。**0秒**にすると、画像は手動でのみ非表示になります(一時停止ホットキーは何もしません)。 |
+| 最大サイズ | 60% | キャンバスに対する割合です(横にそのサイズをピクセルで表示)。設定値を超える画像は自動縮小します。`Clipboard Image` の**境界設定が「自動」**のときのみ有効です。 |
+| 常に最前面に表示する | オン | 画像を表示するたびに `Clipboard Image` を最前面へ移動します。オフにするとソースの表示順序を維持します。 |
 
 - 「**適用**」を押すと、画面を開いたまま保存します。開いたまま OBS を操作したり画像を貼ったりできるので、試しながら調整できます。
-- 変更は、次に画像を表示したときから反映されます(表示中の画像のタイマーや大きさは変わりません)。
+- 設定内容は、次に画像を表示したタイミングで適用されます(表示中の画像のタイマーや大きさは変わりません)。
 - 設定はすべてのシーンコレクションで共通です。プラグインの設定フォルダに保存されます
   (Windows: `%APPDATA%/obs-studio/plugin_config/obs-clipboard-image/settings.json`)。
-- 表示・非表示の切り替え方(フェードなど)は、「Clipboard Image」の表示/非表示トランジションで変更可能です。
+- フェードなどの切り替え方は、「Clipboard Image」の表示/非表示トランジションで変更可能です。
 
 ## Adjusting where images appear
 

@@ -39,6 +39,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPalette>
@@ -47,13 +49,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
+#include <initializer_list>
+
 namespace {
 
-/// @brief 説明文を、上の項目より字下げして表示するときの左の余白(ピクセル)。
-constexpr int NOTE_INDENT = 24;
-
 /// @brief ダイアログの最小の幅(ピクセル)。説明文が細かく折り返されて読みにくくならないように。
-constexpr int DIALOG_MIN_WIDTH = 440;
+constexpr int DIALOG_MIN_WIDTH = 480;
+
+/// @brief 画面下の案内文の上に空ける余白(ピクセル)。枠の中の項目と区別するため。
+constexpr int NOTES_SPACING = 6;
+
+/// @brief ボタンの上に空ける余白(ピクセル)。案内文とボタンが詰まって見えないように。
+constexpr int BUTTONS_SPACING = 12;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
 constexpr const char *PERCENT_SPIN_NAME = "maxSizePercent";
@@ -72,9 +79,26 @@ QString text(const char *key)
 }
 
 /**
- * @brief 項目の下に置く説明文のラベルを作る。
+ * @brief 補足の数字などを、ほかの文字より薄い色で表示するようにする。
  *
- * @details 折り返して表示し、項目より少し字下げする。
+ * @details
+ * OBS のテーマには、薄い文字の見た目(text-muted という class)が用意されているので、それを付ける。
+ * テーマにない場合に備えて、Qt の配色(入力欄の薄い案内文字の色)も合わせて設定しておく。
+ *
+ * @param label 対象のラベル。
+ */
+void make_muted(QLabel *label)
+{
+	label->setProperty("class", QStringLiteral("text-muted"));
+	QPalette palette = label->palette();
+	palette.setColor(QPalette::WindowText, palette.color(QPalette::PlaceholderText));
+	label->setPalette(palette);
+}
+
+/**
+ * @brief 説明文のラベルを作る。
+ *
+ * @details 折り返して表示し、項目名や入力欄と区別できるよう薄い文字にする。
  *
  * @param key 説明文の ini のキー。
  * @return 作ったラベル(レイアウトに追加すると、ダイアログが解放する)。
@@ -83,8 +107,42 @@ QLabel *make_note(const char *key)
 {
 	auto *note = new QLabel(text(key));
 	note->setWordWrap(true);
-	note->setContentsMargins(NOTE_INDENT, 0, 0, 0);
+	make_muted(note);
 	return note;
+}
+
+/**
+ * @brief 入力欄(右の列)と、その下の説明文をひとまとめにする。
+ *
+ * @param control 入力欄、または入力欄を並べたレイアウトを持つウィジェット。
+ * @param note_key 説明文の ini のキー。
+ * @return まとめたウィジェット(QFormLayout の右の列に置く)。
+ */
+QWidget *make_field(QWidget *control, const char *note_key)
+{
+	auto *field = new QWidget();
+	auto *column = new QVBoxLayout(field);
+	column->setContentsMargins(0, 0, 0, 0);
+	column->addWidget(control);
+	column->addWidget(make_note(note_key));
+	return field;
+}
+
+/**
+ * @brief 入力欄を左寄せで置いたウィジェットを作る(入力欄が右の列いっぱいに広がらないように)。
+ *
+ * @param widgets 左から順に並べるウィジェット。
+ * @return 並べたウィジェット。
+ */
+QWidget *make_row(std::initializer_list<QWidget *> widgets)
+{
+	auto *row = new QWidget();
+	auto *layout = new QHBoxLayout(row);
+	layout->setContentsMargins(0, 0, 0, 0);
+	for (QWidget *widget : widgets)
+		layout->addWidget(widget);
+	layout->addStretch();
+	return row;
 }
 
 /**
@@ -115,23 +173,6 @@ void update_pixel_label(QDialog *dialog)
 	const int height = static_cast<int>(ovi.base_height * ratio + 0.5);
 	label->setText(text("Settings.MaxSize.Pixels").arg(width).arg(height));
 	label->show();
-}
-
-/**
- * @brief 補足の数字などを、ほかの文字より薄い色で表示するようにする。
- *
- * @details
- * OBS のテーマには、薄い文字の見た目(text-muted という class)が用意されているので、それを付ける。
- * テーマにない場合に備えて、Qt の配色(入力欄の薄い案内文字の色)も合わせて設定しておく。
- *
- * @param label 対象のラベル。
- */
-void make_muted(QLabel *label)
-{
-	label->setProperty("class", QStringLiteral("text-muted"));
-	QPalette palette = label->palette();
-	palette.setColor(QPalette::WindowText, palette.color(QPalette::PlaceholderText));
-	label->setPalette(palette);
 }
 
 /**
@@ -212,26 +253,28 @@ void open_settings_dialog()
 	dialog->setMinimumWidth(DIALOG_MIN_WIDTH);
 	settings_dialog = dialog;
 
+	/*
+	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
+	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く
+	 */
 	auto *layout = new QVBoxLayout(dialog);
 	SettingsWidgets widgets;
+	auto *group = new QGroupBox(text("Settings.Group.Display"));
+	auto *form = new QFormLayout(group);
+	form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-	/* 表示時間: 「表示時間 [7] 秒」 */
-	auto *time_row = new QHBoxLayout();
-	time_row->addWidget(new QLabel(text("Settings.DisplayTime")));
+	/* 表示時間: [10 秒] */
 	widgets.display_seconds = new QSpinBox();
 	widgets.display_seconds->setRange(DISPLAY_SECONDS_MIN, DISPLAY_SECONDS_MAX);
 	widgets.display_seconds->setSuffix(text("Settings.Seconds"));
-	time_row->addWidget(widgets.display_seconds);
-	time_row->addStretch();
-	layout->addLayout(time_row);
-	layout->addWidget(make_note("Settings.DisplayTime.Note"));
+	form->addRow(text("Settings.DisplayTime"),
+		     make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
 
 	/*
-	 * 最大サイズ: 「画像をキャンバスサイズの [60]% に収める (1152 × 648 px)」。
-	 * オン/オフはない(大きさを自分で決めたい配信者は境界の種類を変える)。
+	 * 最大サイズ: [60%] (1152 × 648 px)。オン/オフはない(大きさを自分で決めたい配信者は境界の種類を変える)。
 	 * ピクセル数は割合を変えるたびに計算し直し、薄い文字で表示する
 	 */
-	auto *fit_row = new QHBoxLayout();
 	widgets.max_size_percent = new QSpinBox();
 	widgets.max_size_percent->setObjectName(PERCENT_SPIN_NAME);
 	widgets.max_size_percent->setRange(MAX_SIZE_PERCENT_MIN, MAX_SIZE_PERCENT_MAX);
@@ -239,30 +282,21 @@ void open_settings_dialog()
 	auto *pixels = new QLabel();
 	pixels->setObjectName(PIXELS_LABEL_NAME);
 	make_muted(pixels);
-	fit_row->addWidget(new QLabel(text("Settings.MaxSize.Before")));
-	fit_row->addWidget(widgets.max_size_percent);
-	fit_row->addWidget(new QLabel(text("Settings.MaxSize.After")));
-	fit_row->addWidget(pixels);
-	fit_row->addStretch();
+	form->addRow(text("Settings.MaxSize"),
+		     make_field(make_row({widgets.max_size_percent, pixels}), "Settings.MaxSize.Note"));
 	QObject::connect(widgets.max_size_percent, &QSpinBox::valueChanged, dialog,
 			 [dialog]() { update_pixel_label(dialog); });
-	layout->addSpacing(8);
-	layout->addLayout(fit_row);
-	layout->addWidget(make_note("Settings.MaxSize.Note"));
-	/* 常に最前面に表示する */
-	widgets.always_on_top = new QCheckBox(text("Settings.AlwaysOnTop"));
-	layout->addSpacing(8);
-	layout->addWidget(widgets.always_on_top);
-	layout->addWidget(make_note("Settings.AlwaysOnTop.Note"));
 
-	/* フェードの長さはプラグインの設定ではないことと、反映のタイミングを案内する */
-	layout->addSpacing(8);
-	auto *fade_note = new QLabel(text("Settings.FadeNote"));
-	fade_note->setWordWrap(true);
-	layout->addWidget(fade_note);
-	auto *apply_note = new QLabel(text("Settings.ApplyNote"));
-	apply_note->setWordWrap(true);
-	layout->addWidget(apply_note);
+	/* 常に最前面に表示する(チェックボックスなので項目名の列は空ける) */
+	widgets.always_on_top = new QCheckBox(text("Settings.AlwaysOnTop"));
+	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note"));
+
+	layout->addWidget(group);
+
+	/* 枠の外の案内: フェードはプラグインの設定ではないこと、反映のタイミング */
+	layout->addSpacing(NOTES_SPACING);
+	layout->addWidget(make_note("Settings.FadeNote"));
+	layout->addWidget(make_note("Settings.ApplyNote"));
 
 	/*
 	 * OK: 保存して閉じる / キャンセル: 保存せずに閉じる / 適用: 保存して開いたまま /
@@ -275,7 +309,7 @@ void open_settings_dialog()
 	buttons->button(QDialogButtonBox::Cancel)->setText(text("Settings.Cancel"));
 	buttons->button(QDialogButtonBox::Apply)->setText(text("Settings.Apply"));
 	buttons->button(QDialogButtonBox::RestoreDefaults)->setText(text("Settings.RestoreDefaults"));
-	layout->addSpacing(8);
+	layout->addSpacing(BUTTONS_SPACING);
 	layout->addWidget(buttons);
 
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, widgets]() {
