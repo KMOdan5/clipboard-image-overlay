@@ -1,0 +1,65 @@
+name: 不具合の報告 / Bug report
+description: 思ったとおりに動かないときはこちら / Something does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。分かる範囲で書いてください。
+        Thank you for the report. Please fill in what you can.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 何が起きたか / What happened
+      description: 実際に起きたことと、本来こうなってほしかったことを書いてください。 / What happened, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現する手順 / Steps to reproduce
+      description: どんな操作をしたら起きたか、順番に書いてください。 / The steps that lead to the problem.
+      placeholder: |
+        1. ブラウザで画像をコピー
+        2. ホットキーを押す
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: obs-version
+    attributes:
+      label: OBS のバージョン / OBS version
+      description: OBS の「ヘルプ」→「OBS Studio について」で確認できます。 / Help → About.
+      placeholder: "32.0.1"
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: プラグインのバージョン / Plugin version
+      placeholder: "0.1.0-beta1"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: ログ / Log
+      description: |
+        OBS の「ヘルプ」→「ログファイル」→「現在のログをアップロード」で表示される URL を貼ってください。
+        または、ログの中の `[obs-clipboard-image]` で始まる行を貼ってください。
+        Paste the URL from Help → Log Files → Upload Current Log File, or the lines starting with `[obs-clipboard-image]`.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 確認 / Checklist
+      options:
+        - label: 同じ内容の Issue がないか検索しました / I searched for existing issues.
+          required: true

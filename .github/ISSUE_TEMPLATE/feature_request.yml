@@ -1,0 +1,28 @@
+name: 機能の要望 / Feature request
+description: こんな機能がほしい、という提案はこちら / Suggest an idea
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: やりたいこと / What you want to do
+      description: どんなことができるようになってほしいか書いてください。 / What you would like to be able to do.
+    validations:
+      required: true
+  - type: textarea
+    id: situation
+    attributes:
+      label: 使う場面 / When you would use it
+      description: 配信のどんな場面で使いたいかを書いてもらえると、作り方を考えやすくなります。 / Describe the situation on stream.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 今どうしているか / Current workaround
+      description: 今は代わりにどうしているか(あれば)。 / How you handle it today, if at all.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 確認 / Checklist
+      options:
+        - label: 同じ内容の Issue がないか検索しました / I searched for existing issues.
+          required: true
