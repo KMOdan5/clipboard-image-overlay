@@ -27,6 +27,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "clipboard-capture.hpp"
 
+#include <string>
+#include <vector>
+
 /**
  * @brief 画像ファイルを、現在のシーン(配信に出ているシーン)に表示する。
  *
@@ -111,6 +114,21 @@ void image_display_watch_scenes();
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 bool is_clipboard_image_showing();
+
+/**
+ * @brief 'Clipboard Image' が今使っている画像ファイルのパスを返す。
+ *
+ * @details
+ * 古い画像を掃除するとき(#9)に、消してはいけないファイルを知るために使う。
+ * - 'Clipboard Image' に設定されている画像ファイル(表示中、または最後に表示した画像)
+ * - 差し替え待ちの画像(フェードアウトが終わったら表示する画像)
+ *
+ * @return 画像ファイルのパス(UTF-8)。'Clipboard Image' がなければ差し替え待ちの分だけ(なければ空)。
+ *
+ * @note 呼び出し元: plugin-main.cpp(cleanup_saved_images() に渡す)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+std::vector<std::string> clipboard_images_in_use();
 
 /**
  * @brief 表示処理で使っているタイマーや通知の登録を片付ける。何度呼んでもよい。

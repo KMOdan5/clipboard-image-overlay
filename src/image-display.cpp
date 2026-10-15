@@ -69,7 +69,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 差し替えを待つ間にアイテム・ソース・シーンが削除されたら、差し替えを取り消す。
  *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
- * image_display_watch_scenes()、is_clipboard_image_showing()、image_display_shutdown()(image-display.hpp)。
+ * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、
+ * image_display_shutdown()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
@@ -1069,4 +1070,29 @@ bool is_clipboard_image_showing()
 	if (pending_swap.item)
 		return true; /* 差し替え中: いったん非表示にしているが、すぐまた表示する */
 	return is_visible_in_any_scene();
+}
+
+/**
+ * @brief 'Clipboard Image' が今使っている画像ファイルのパスを返す。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+std::vector<std::string> clipboard_images_in_use()
+{
+	std::vector<std::string> paths;
+
+	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	if (source) {
+		obs_data_t *settings = obs_source_get_settings(source);
+		const char *file = obs_data_get_string(settings, "file");
+		if (file && *file)
+			paths.emplace_back(file);
+		obs_data_release(settings);
+		obs_source_release(source);
+	}
+
+	if (pending_swap.item && !pending_swap.image.path.empty())
+		paths.push_back(pending_swap.image.path);
+
+	return paths;
 }

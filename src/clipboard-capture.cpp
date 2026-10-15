@@ -33,7 +33,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * ファイル名: yyyyMMdd-HHmmss-zzz.拡張子(保存した日時)
  *
- * 公開している関数は save_clipboard_image() だけ(clipboard-capture.hpp)。
+ * 古い画像の掃除(#9): 新しい順に MAX_SAVED_IMAGES 枚だけ残し、それより古いものを削除する
+ * (cleanup_saved_images())。ファイル名の形と保存フォルダを知っているのがこのファイルなので、ここで行う。
+ *
+ * 公開している関数は save_clipboard_image() と cleanup_saved_images()(clipboard-capture.hpp)。
  * それ以外はこのファイル内だけで使う補助関数。
  */
 
@@ -51,12 +54,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QImage>
 #include <QImageReader>
 #include <QMimeData>
+#include <QRegularExpression>
 #include <QUrl>
+
+#include <algorithm>
 
 namespace {
 
 /// @brief プラグイン設定フォルダの中に作る、画像の保存用フォルダ名。
 constexpr const char *IMAGE_FOLDER = "images";
+
+/**
+ * @brief 保存フォルダに残す画像の枚数。これより古い画像は cleanup_saved_images() で削除する。
+ * @note MVP では固定。枚数・容量の上限を設定画面で変えられるようにするかは #23 で検討する。
+ */
+constexpr int MAX_SAVED_IMAGES = 50;
 
 /**
  * @brief OBS の画像ソースが表示できる形式(小文字の拡張子)。
@@ -258,4 +270,58 @@ std::optional<SavedImage> save_clipboard_image()
 	obs_log(LOG_INFO, "clipboard: no image found (formats: %s)",
 		mime->formats().join(QStringLiteral(", ")).toUtf8().constData());
 	return std::nullopt;
+}
+
+/**
+ * @brief 保存フォルダの古い画像を削除し、新しい順に MAX_SAVED_IMAGES 枚だけ残す。
+ *
+ * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。
+ */
+void cleanup_saved_images(const std::vector<std::string> &in_use)
+{
+	const QString folder = image_folder();
+	const QDir dir(folder);
+	if (folder.isEmpty() || !dir.exists())
+		return;
+
+	/*
+	 * このプラグインが付けた名前の形のファイルだけを対象にする(配信者が置いたファイルを消さないため)。
+	 * 名前は日時なので、名前の降順に並べると新しい順になる
+	 */
+	static const QRegularExpression pattern(QStringLiteral("^\\d{8}-\\d{6}-\\d{3}\\.(png|jpg|jpeg|gif|bmp|tga)$"),
+						QRegularExpression::CaseInsensitiveOption);
+	QStringList names;
+	for (const QString &name : dir.entryList(QDir::Files, QDir::Name | QDir::Reversed)) {
+		if (pattern.match(name).hasMatch())
+			names.append(name);
+	}
+	if (names.size() <= MAX_SAVED_IMAGES)
+		return;
+
+	/* 表示中・差し替え待ちの画像は、古くても消さない(消すと OBS の表示が崩れるため) */
+	QList<QFileInfo> keep;
+	for (const std::string &path : in_use)
+		keep.append(QFileInfo(QString::fromStdString(path)));
+
+	int removed = 0;
+	int skipped = 0;
+	int failed = 0;
+	for (qsizetype i = MAX_SAVED_IMAGES; i < names.size(); i++) {
+		const QFileInfo info(dir.filePath(names[i]));
+		if (std::any_of(keep.cbegin(), keep.cend(), [&info](const QFileInfo &k) { return k == info; })) {
+			skipped++;
+			continue;
+		}
+		if (QFile::remove(info.filePath())) {
+			removed++;
+		} else {
+			failed++;
+			obs_log(LOG_WARNING, "cleanup: failed to remove %s", info.filePath().toUtf8().constData());
+		}
+	}
+
+	/* 使用中で残しただけのときは、貼るたびに同じ行が出ないようログを省く */
+	if (removed > 0 || failed > 0)
+		obs_log(LOG_INFO, "cleanup: removed %d old image(s), kept newest %d (in use: %d, failed: %d)", removed,
+			MAX_SAVED_IMAGES, skipped, failed);
 }
