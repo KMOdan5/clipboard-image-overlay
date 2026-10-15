@@ -15,6 +15,12 @@ An OBS plugin that shows a copied image on your stream with a single hotkey. The
 - A pause hotkey keeps the image on screen
 - Large images are scaled down automatically to fit 60% of the canvas (changeable in the settings)
 
+## Privacy
+
+- This plugin does not connect to the internet.
+- Displayed images are saved in the plugin's folder on your computer and are handled only on your computer.
+- Images are never sent anywhere or used to train AI.
+
 ## Requirements
 
 - Windows 10 / 11
