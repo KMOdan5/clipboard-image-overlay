@@ -49,7 +49,7 @@ constexpr const char *SETTINGS_FILE = "settings.json";
 constexpr const char *KEY_DISPLAY_SECONDS = "display_seconds";
 /// @brief 設定ファイルのキー名(最大サイズの割合)。
 constexpr const char *KEY_MAX_SIZE_PERCENT = "max_size_percent";
-/// @brief 設定ファイルのキー名(常に手前に表示する)。
+/// @brief 設定ファイルのキー名(常に最前面に表示する)。
 constexpr const char *KEY_ALWAYS_ON_TOP = "always_on_top";
 
 /// @brief 今の設定値。settings_load() で読み込み、settings_save() で変更する。

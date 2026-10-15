@@ -113,7 +113,7 @@ void update_pixel_label(QDialog *dialog)
 	const double ratio = spin->value() / 100.0;
 	const int width = static_cast<int>(ovi.base_width * ratio + 0.5);
 	const int height = static_cast<int>(ovi.base_height * ratio + 0.5);
-	label->setText(text("Settings.FitLarge.Pixels").arg(width).arg(height));
+	label->setText(text("Settings.MaxSize.Pixels").arg(width).arg(height));
 	label->show();
 }
 
@@ -145,7 +145,7 @@ struct SettingsWidgets {
 	QSpinBox *display_seconds = nullptr;
 	/// @brief 最大サイズの割合(%)。
 	QSpinBox *max_size_percent = nullptr;
-	/// @brief 常に手前に表示する。
+	/// @brief 常に最前面に表示する。
 	QCheckBox *always_on_top = nullptr;
 
 	/**
@@ -239,17 +239,17 @@ void open_settings_dialog()
 	auto *pixels = new QLabel();
 	pixels->setObjectName(PIXELS_LABEL_NAME);
 	make_muted(pixels);
-	fit_row->addWidget(new QLabel(text("Settings.FitLarge.Before")));
+	fit_row->addWidget(new QLabel(text("Settings.MaxSize.Before")));
 	fit_row->addWidget(widgets.max_size_percent);
-	fit_row->addWidget(new QLabel(text("Settings.FitLarge.After")));
+	fit_row->addWidget(new QLabel(text("Settings.MaxSize.After")));
 	fit_row->addWidget(pixels);
 	fit_row->addStretch();
 	QObject::connect(widgets.max_size_percent, &QSpinBox::valueChanged, dialog,
 			 [dialog]() { update_pixel_label(dialog); });
 	layout->addSpacing(8);
 	layout->addLayout(fit_row);
-	layout->addWidget(make_note("Settings.FitLarge.Note"));
-	/* 常に手前に表示する */
+	layout->addWidget(make_note("Settings.MaxSize.Note"));
+	/* 常に最前面に表示する */
 	widgets.always_on_top = new QCheckBox(text("Settings.AlwaysOnTop"));
 	layout->addSpacing(8);
 	layout->addWidget(widgets.always_on_top);
