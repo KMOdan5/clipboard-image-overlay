@@ -17,10 +17,9 @@ An OBS plugin that shows a copied image on your stream with a single hotkey. The
 
 ## Privacy Policy
 
-- This plugin does not connect to the internet.
-- Displayed images are saved in the plugin's folder on your computer and are handled only on your computer.
-- Images are never sent anywhere or used to train AI.
-- This plugin has no AI features. AI is used as an aid in developing the system.
+- This plugin does not connect to the internet and never sends images anywhere.
+- Displayed images are saved only in the plugin's folder on your computer.
+- AI is used as an aid in developing the system, but this plugin has no AI features and never uses images to train AI.
 
 ## Requirements
 
