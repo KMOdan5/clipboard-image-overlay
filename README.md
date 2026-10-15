@@ -10,7 +10,7 @@ An OBS plugin that shows a copied image on your stream with a single hotkey. The
 
 ### Show a copied image directly on your stream
 
-Copy an image and press the hotkey to show it on your stream.
+Just copy an image and press the hotkey to show it on your stream.
 
 For example, you can show images like these:
 
