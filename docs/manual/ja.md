@@ -4,17 +4,17 @@
 
 ## 1. インストール方法
 
-1. [リリース](https://github.com/KMOdan5/obs-clipboard-image/releases) から `obs-clipboard-image-(版)-windows-x64.zip` をダウンロードします。
+1. [リリース](https://github.com/KMOdan5/obs-clipboard-image/releases) から `obs-clipboard-image-(版)-windows-x64.zip` をダウンロードし、展開します。
 2. OBS を終了します。
-3. zip を展開し、中の「obs-clipboard-image」フォルダを `C:\ProgramData\obs-studio\plugins\` に置きます。`plugins` フォルダがない場合は作成してください。
-   置いたあとは `C:\ProgramData\obs-studio\plugins\obs-clipboard-image\bin\64bit\obs-clipboard-image.dll` という構成になります。
-4. OBS を起動し、「ツール」メニューに「Clipboard Image」があればインストール完了です。
-
-`ProgramData` は隠しフォルダです。エクスプローラーのアドレスバーに上のパスを貼り付けると開けます。
+3. `Win + R` を押して「ファイル名を指定して実行」を開き、`%ProgramData%\obs-studio` と入力して Enter を押します。
+4. 開いたフォルダに「plugins」フォルダがなければ作成します。
+5. 展開した「obs-clipboard-image」フォルダを「plugins」フォルダの中に置きます。
+   置いたあとは `plugins\obs-clipboard-image\bin\64bit\obs-clipboard-image.dll` という構成になります。
+6. OBS を起動し、「ツール」メニューに「Clipboard Image」があればインストール完了です。
 
 **更新するとき**: OBS を終了し、新しい「obs-clipboard-image」フォルダで上書きします。設定はそのまま引き継がれます。
 
-**アンインストールするとき**: OBS を終了し、`C:\ProgramData\obs-studio\plugins\obs-clipboard-image` を削除します。
+**アンインストールするとき**: OBS を終了し、手順 3 と同じ方法で開いたフォルダの「plugins」にある「obs-clipboard-image」フォルダを削除します。
 
 ## 2. はじめての使い方
 
