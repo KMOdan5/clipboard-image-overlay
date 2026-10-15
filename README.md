@@ -21,7 +21,7 @@ Large images are scaled down automatically to fit 60% of the canvas (changeable 
 
 ### Hidden automatically after a while
 
-Images fade in and fade out after the display time (10 seconds by default), so they are never left on screen.
+Images fade in and fade out after the display time (10 seconds by default), so you never have to worry about forgetting to hide them.
 
 - Showing another image while one is on screen switches the image and restarts the display time
 - Press the pause hotkey to keep the image on screen
