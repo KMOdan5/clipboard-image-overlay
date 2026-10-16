@@ -18,7 +18,7 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64.zip`
 </div>
 
 > [!NOTE]
-> **Beta testing is in progress.** If you find bugs, have requests, or notice anything, please let us know via [Bug reports and feature requests](#bug-reports-and-feature-requests).
+> **Beta testing is in progress.** If you find bugs, have requests, or notice anything, please let us know via [Bug reports and requests](#bug-reports-and-requests).
 
 ## Features
 
@@ -79,9 +79,9 @@ Files for macOS and Linux are also provided, but they have not been tested.
 
 Download the latest version from [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases). For installation and usage, see the [manual (Japanese)](docs/manual/ja.md). An English manual will be added in version 1.0.
 
-## Bug reports and feature requests
+## Bug reports and requests
 
-Please use the templates in [Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose). For security issues, follow the instructions in [SECURITY.md](SECURITY.md).
+Please use the [bug report and request form](https://docs.google.com/forms/d/e/1FAIpQLSeOoU9HNzkLZx70GtSAoAbp-y8T491vJsohMwMT1NJjwKI_xA/viewform?usp=pp_url&entry.11414643=Clipboard+Image+Overlay) (in Japanese). If you use GitHub, you can also use [Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose). For security issues, follow the instructions in [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -18,7 +18,7 @@ Windows は `clipboard-image-overlay-(版)-windows-x64.zip`
 </div>
 
 > [!NOTE]
-> **現在ベータテスト中です。** 不具合や要望、気づいたことがあれば、[不具合の報告・要望](#不具合の報告要望)からお知らせください。
+> **現在ベータテスト中です。** 不具合や要望、気づいたことがあれば、[不具合・ご要望](#不具合ご要望)からお知らせください。
 
 ## できること
 
@@ -79,9 +79,9 @@ macOS・Linux 向けのファイルもありますが、動作は確認してい
 
 最新版は[リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases)からダウンロードできます。インストール方法は[マニュアル](docs/manual/ja.md)をご覧ください。
 
-## 不具合の報告・要望
+## 不具合・ご要望
 
-[Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose) のテンプレートからお知らせください。セキュリティに関わる問題は [SECURITY.md](SECURITY.md) の方法で報告してください。
+[不具合・ご要望フォーム](https://docs.google.com/forms/d/e/1FAIpQLSeOoU9HNzkLZx70GtSAoAbp-y8T491vJsohMwMT1NJjwKI_xA/viewform?usp=pp_url&entry.11414643=Clipboard+Image+Overlay)からお知らせください。GitHub をお使いの方は [Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose) からも報告できます。セキュリティに関わる問題は [SECURITY.md](SECURITY.md) の方法で報告してください。
 
 ## ライセンス
 
