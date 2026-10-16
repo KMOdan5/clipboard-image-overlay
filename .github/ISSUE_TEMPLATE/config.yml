@@ -1,1 +1,5 @@
 blank_issues_enabled: false
+contact_links:
+  - name: 不具合・ご要望フォーム / Bug report and request form
+    url: https://docs.google.com/forms/d/e/1FAIpQLSeOoU9HNzkLZx70GtSAoAbp-y8T491vJsohMwMT1NJjwKI_xA/viewform?usp=pp_url&entry.11414643=Clipboard+Image+Overlay
+    about: GitHub のアカウントがなくても匿名で送れます / Anonymous, no GitHub account needed (in Japanese)

@@ -24,7 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * Qt のウィジェットを組み合わせて作る(.ui ファイルや Q_OBJECT は使わない。項目が少ないため)。
  * 表示する文字列はすべて data/locale の ini から読む。
  * 「OK」「適用」で settings_save()(settings.cpp)を呼び、変更は次に画像を表示したときから反映される。
- * 画面の一番下に、バージョンと、マニュアル・不具合の報告先へのリンクを表示する(make_about_label())。
+ * 画面の一番下に、バージョンと、マニュアル・不具合・ご要望のフォームへのリンクを表示する(make_about_label())。
  * 開いたまま OBS を操作できる画面(モードレス)で、同時に開くのは 1 つだけ。
  *
  * 公開している関数の説明は settings-dialog.hpp を参照。
@@ -49,6 +49,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStringList>
+#include <QSysInfo>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <initializer_list>
@@ -98,13 +100,43 @@ void make_muted(QLabel *label)
 }
 
 /**
+ * @brief 不具合・ご要望のフォームを開く URL を作る。
+ *
+ * @details
+ * ini の Settings.ReportIssueUrl は、Google フォームの「事前入力した URL」の値の部分を %1〜%3 にしたもの。
+ * %1 にプラグインの版(画面の表示と同じ「v0.1.0-beta」)、%2 に配信ソフトとバージョン(「OBS Studio 32.0.1」)、
+ * %3 に OS(Qt が返す名前。例: 「Windows 11 Version 24H2」)を入れる。ツール名は ini の URL に入れてある。
+ * 利用者が環境を調べて書く手間をなくし、報告に必要な情報を確実に集めるため(#49)。
+ * - 値はフォームの入力欄に入るだけで、利用者は送信前に確認・書き換えができる。プラグイン自身は何も送信しない
+ * - 値には URL で使えない文字(空白など)が入るので、パーセントエンコードする
+ * - %1〜%3 は 1 回の arg() でまとめて置き換える(入れた値の中の % が、続く置き換えの対象にならないように)
+ * - 質問の番号(entry.〜)はフォームごとに決まっているため、言語ごとのフォームに合わせて ini に書く
+ *
+ * @return フォームの URL。
+ *
+ * @note 呼び出し元: make_about_label()。
+ */
+QString report_url()
+{
+	auto encode = [](const QString &value) {
+		return QString::fromLatin1(QUrl::toPercentEncoding(value));
+	};
+	const QString version = text("Settings.Version").arg(QString::fromUtf8(PLUGIN_DISPLAY_VERSION));
+	/* フォームに入れる値で、画面に出す文言ではないため ini には置かない */
+	const QString streaming_app = QStringLiteral("OBS Studio %1").arg(QString::fromUtf8(obs_get_version_string()));
+	const QString os = QSysInfo::prettyProductName();
+	return text("Settings.ReportIssueUrl").arg(encode(version), encode(streaming_app), encode(os));
+}
+
+/**
  * @brief 画面の一番下に置く、バージョンとリンクの 1 行を作る。
  *
  * @details
- * 例: 「v0.1.0 · マニュアル · 不具合の報告・要望」。困ったときにその場でマニュアルや報告先を開けるようにし、
- * 不具合の報告で使っている版を伝えてもらいやすくするため。
+ * 例: 「v0.1.0 · マニュアル · 不具合・ご要望」。困ったときにその場でマニュアルや報告先を開けるようにし、
+ * 不具合の報告で使っている版や環境を伝えてもらいやすくするため。
  * - 文字は枠の中の説明文と同じ薄い文字にし、リンクは OBS の標準の見た目(テーマのリンク色)のままにする
  * - リンク先は言語ごとに ini で決める(日本語は日本語のマニュアル、英語は英語の README)
+ * - 不具合・ご要望のリンクは、使っている環境を入力した状態でフォームを開く(report_url())
  * - クリックすると既定のブラウザで開く。プラグイン自身が通信するわけではない
  * - 版は PLUGIN_DISPLAY_VERSION。テスト版は「v0.1.0-beta」、完成版は「v0.1.0」と表示する(buildspec.json の beta で切り替え)
  *
@@ -113,13 +145,12 @@ void make_muted(QLabel *label)
 QLabel *make_about_label()
 {
 	/* ini の文字列をそのまま HTML に入れると、記号が書式として解釈されることがあるため、文字として扱う */
-	auto link = [](const char *url_key, const char *text_key) {
-		return QStringLiteral("<a href=\"%1\">%2</a>")
-			.arg(text(url_key).toHtmlEscaped(), text(text_key).toHtmlEscaped());
+	auto link = [](const QString &url, const char *text_key) {
+		return QStringLiteral("<a href=\"%1\">%2</a>").arg(url.toHtmlEscaped(), text(text_key).toHtmlEscaped());
 	};
 	const QString version = text("Settings.Version").arg(QString::fromUtf8(PLUGIN_DISPLAY_VERSION)).toHtmlEscaped();
-	const QStringList parts = {version, link("Settings.ManualUrl", "Settings.Manual"),
-				   link("Settings.ReportIssueUrl", "Settings.ReportIssue")};
+	const QStringList parts = {version, link(text("Settings.ManualUrl"), "Settings.Manual"),
+				   link(report_url(), "Settings.ReportIssue")};
 
 	auto *label = new QLabel(parts.join(QStringLiteral(" \u00b7 ")));
 	label->setTextFormat(Qt::RichText);
