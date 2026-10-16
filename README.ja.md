@@ -1,11 +1,23 @@
+<div align="center">
+
 # clipboard-image-overlay
 
 [English](README.md) | **日本語**
 
-コピーした画像をホットキー 1 つで OBS の配信画面に表示するプラグインです。表示した画像は数秒後に自動で非表示になります。雑談配信で「これ見て」と画像を見せたいときに、保存の手間なく使えます。
+コピーした画像をホットキー 1 つで OBS の配信画面に表示するプラグインです。<br>
+表示した画像は数秒後に自動で非表示になります。<br>
+雑談配信で「これ見て」と画像を見せたいときに、保存の手間なく使えます。
 
-**[最新版のダウンロード](https://github.com/KMOdan5/clipboard-image-overlay/releases)**(Windows は `clipboard-image-overlay-(版)-windows-x64.zip`)
+<!-- 画像: 動作の GIF(docs/images/demo.gif)。画像を置いたら、次の行のコメントの記号を消す -->
+<!-- <img src="docs/images/demo.gif" width="720" alt="コピーした画像をホットキーで表示し、自動で非表示にする様子"> -->
 
+### **[最新版のダウンロード](https://github.com/KMOdan5/clipboard-image-overlay/releases)**
+
+Windows は `clipboard-image-overlay-(版)-windows-x64.zip`
+
+</div>
+
+> [!NOTE]
 > **現在ベータテスト中です。** 不具合や要望、気づいたことがあれば、[不具合の報告・要望](#不具合の報告要望)からお知らせください。
 
 ## できること
@@ -37,13 +49,17 @@
 
 ## 正式版までのロードマップ
 
+<!-- 画像: ロードマップの絵(docs/images/roadmap.png)。文字を入れない絵だけの画像で、日本語と英語の README で共有する。画像を置いたら、次の行のコメントの記号を消す -->
+<!-- <p align="center"><img src="docs/images/roadmap.png" width="720" alt="正式版までのロードマップ"></p> -->
+
 | 公開時期 | 版 | 内容 |
 |---|---|---|
 | 2026 年 10 月 | 0.1(beta) | 第 1 回ベータテスト。基本機能と環境ごとの動作確認 |
 | 2026 年 11 月 | 0.2(beta) | 第 2 回ベータテスト。履歴ドックとインストーラーの追加 |
 | 2026 年 12 月上旬 | 1.0(正式版) | テスト結果の反映とマニュアルの充実 |
 
-※ ベータ版をダウンロードすることで、どなたでもテストに参加できます。
+> [!TIP]
+> ベータ版をダウンロードすることで、どなたでもテストに参加できます。
 
 公開時期は変わることがあります。新しい版は [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases) で公開します。
 

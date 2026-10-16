@@ -1,11 +1,23 @@
+<div align="center">
+
 # clipboard-image-overlay
 
 **English** | [日本語](README.ja.md)
 
-An OBS plugin that shows a copied image on your stream with a single hotkey. The image is hidden automatically after a few seconds. Made for just-chatting streams, so you can say "look at this" without saving the file first.
+An OBS plugin that shows a copied image on your stream with a single hotkey.<br>
+The image is hidden automatically after a few seconds.<br>
+Made for just-chatting streams, so you can say "look at this" without saving the file first.
 
-**[Download the latest version](https://github.com/KMOdan5/clipboard-image-overlay/releases)** (for Windows: `clipboard-image-overlay-(version)-windows-x64.zip`)
+<!-- Image: demo GIF (docs/images/demo.gif). After adding the image, remove the comment markers around the next line -->
+<!-- <img src="docs/images/demo.gif" width="720" alt="Showing a copied image with a hotkey and hiding it automatically"> -->
 
+### **[Download the latest version](https://github.com/KMOdan5/clipboard-image-overlay/releases)**
+
+For Windows: `clipboard-image-overlay-(version)-windows-x64.zip`
+
+</div>
+
+> [!NOTE]
 > **Beta testing is in progress.** If you find bugs, have requests, or notice anything, please let us know via [Bug reports and feature requests](#bug-reports-and-feature-requests).
 
 ## Features
@@ -37,13 +49,17 @@ You will be able to show an image again from a list of images you have shown.
 
 ## Roadmap to 1.0
 
+<!-- Image: roadmap illustration (docs/images/roadmap.png), shared with the Japanese README. After adding the image, remove the comment markers around the next line -->
+<!-- <p align="center"><img src="docs/images/roadmap.png" width="720" alt="Roadmap to 1.0"></p> -->
+
 | Release | Version | What's included |
 |---|---|---|
 | October 2026 | 0.1 (beta) | First beta test: checking the core features on different environments |
 | November 2026 | 0.2 (beta) | Second beta test: adding the history dock and an installer |
 | Early December 2026 | 1.0 | Official release: reflecting the test results and improving the manual |
 
-\* Anyone can join the test by downloading the beta version.
+> [!TIP]
+> Anyone can join the test by downloading the beta version.
 
 Release dates may change. New versions are published on the [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases) page.
 
