@@ -182,7 +182,10 @@ QLabel *make_about_label()
 /**
  * @brief 説明文のラベルを作る。
  *
- * @details 折り返して表示し、項目名や入力欄と区別できるよう薄い文字にする。
+ * @details
+ * 折り返して表示し、項目名や入力欄と区別できるよう薄い文字にする。
+ * 文字は上に寄せる。折り返す文章は、レイアウトが見積もる高さが実際の行数より大きくなることがあり、
+ * 既定の上下中央寄せだと、余った高さの分だけ文字が下にずれて入力欄から離れて見えるため。
  *
  * @param key 説明文の ini のキー。
  * @return 作ったラベル(レイアウトに追加すると、ダイアログが解放する)。
@@ -191,6 +194,7 @@ QLabel *make_note(const char *key)
 {
 	auto *note = new QLabel(text(key));
 	note->setWordWrap(true);
+	note->setAlignment(Qt::AlignLeft | Qt::AlignTop);
 	make_muted(note);
 	return note;
 }
@@ -504,6 +508,20 @@ void open_settings_dialog()
 	 * テーマによって部品の大きさが違うため、実際に表示された値を見て計算を決める。調整が終わったら消す
 	 */
 	QTimer::singleShot(0, dialog, [checkbox = widgets.always_on_top, spin = widgets.max_size_percent]() {
+		auto note_of = [](QWidget *control) -> QWidget * {
+			QWidget *field = control->parentWidget();
+			auto *column = field ? qobject_cast<QVBoxLayout *>(field->layout()) : nullptr;
+			return column && column->count() > 1 ? column->itemAt(1)->widget() : nullptr;
+		};
+		auto note_info = [&note_of](QWidget *control) {
+			QWidget *note = note_of(control);
+			return note ? QStringLiteral("%1/%2")
+					       .arg(note->height())
+					       .arg(note->heightForWidth(note->width()))
+				    : QStringLiteral("-");
+		};
+		obs_log(LOG_INFO, "[layout] note height/heightForWidth: checkbox=%s spin=%s",
+			note_info(checkbox).toUtf8().constData(), note_info(spin->parentWidget()).toUtf8().constData());
 		auto gap_below = [](QWidget *control) {
 			QWidget *field = control->parentWidget();
 			auto *column = field ? qobject_cast<QVBoxLayout *>(field->layout()) : nullptr;
