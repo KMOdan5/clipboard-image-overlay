@@ -50,6 +50,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QSpinBox>
 #include <QStringList>
 #include <QStyle>
+#include <QTimer>
 #include <QSysInfo>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -497,6 +498,26 @@ void open_settings_dialog()
 	update_pixel_label(dialog);
 
 	dialog->show();
+
+	/*
+	 * #68 の余白の調整用の一時的なログ。チェックボックスと説明文の実際の位置を記録する。
+	 * テーマによって部品の大きさが違うため、実際に表示された値を見て計算を決める。調整が終わったら消す
+	 */
+	QTimer::singleShot(0, dialog, [checkbox = widgets.always_on_top, spin = widgets.max_size_percent]() {
+		auto gap_below = [](QWidget *control) {
+			QWidget *field = control->parentWidget();
+			auto *column = field ? qobject_cast<QVBoxLayout *>(field->layout()) : nullptr;
+			QWidget *note = column && column->count() > 1 ? column->itemAt(1)->widget() : nullptr;
+			return note ? note->y() - (control->y() + control->height()) : -999;
+		};
+		const int indicator = checkbox->style()->pixelMetric(QStyle::PM_IndicatorHeight, nullptr, checkbox);
+		obs_log(LOG_INFO,
+			"[layout] checkbox hint=%d actual=%d font=%d indicator=%d spacing=%d gap=%d / spin parent hint=%d actual=%d gap=%d",
+			checkbox->sizeHint().height(), checkbox->height(), checkbox->fontMetrics().height(), indicator,
+			checkbox->parentWidget()->layout()->spacing(), gap_below(checkbox),
+			spin->parentWidget()->sizeHint().height(), spin->parentWidget()->height(),
+			gap_below(spin->parentWidget()));
+	});
 	obs_log(LOG_INFO, "settings dialog opened");
 }
 
