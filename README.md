@@ -4,6 +4,8 @@
 
 An OBS plugin that shows a copied image on your stream with a single hotkey. The image is hidden automatically after a few seconds. Made for just-chatting streams, so you can say "look at this" without saving the file first.
 
+**[Download the latest version](https://github.com/KMOdan5/clipboard-image-overlay/releases)** (for Windows: `clipboard-image-overlay-(version)-windows-x64.zip`)
+
 > **This is a beta version.** If you find bugs, have requests, or notice anything, please let us know via [Bug reports and feature requests](#bug-reports-and-feature-requests).
 
 ## Features
@@ -67,7 +69,7 @@ Files for macOS and Linux are also provided, but they have not been tested.
 
 ## Installation and usage
 
-See the [manual (Japanese)](docs/manual/ja.md). An English manual will be added in version 1.0.
+Download the latest version from [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases). For installation and usage, see the [manual (Japanese)](docs/manual/ja.md). An English manual will be added in version 1.0.
 
 ## Bug reports and feature requests
 
