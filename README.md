@@ -26,11 +26,15 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64.zip`
 |---|---|---|
 | Just copy an image and press the hotkey to show it on your stream. | Images fade out and are hidden after a while, so you never have to worry about forgetting to hide them. | Choose an image from the list of images you have shown to show it again. |
 
-<details>
+<details open>
 <summary>Details</summary>
 
 - Large images are scaled down automatically so they do not go off the screen
-- Examples of images you can show: images copied from a browser or chat app, screenshots taken with `Win + Shift + S`, selections copied from paint tools (with transparency), image files copied in File Explorer (GIF animations are played)
+- Examples of images you can show
+  - Images copied from a browser or chat app
+  - Screenshots taken with `Win + Shift + S`
+  - Selections copied from paint tools (with transparency)
+  - Image files copied in File Explorer (GIF animations are played)
 - Press the pause hotkey to keep the image on screen
 - You can switch to another image even before the display time is up
 - The transition effect (fade, etc.) can be changed with OBS's built-in Show/Hide Transition
