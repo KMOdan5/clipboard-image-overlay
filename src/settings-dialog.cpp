@@ -106,7 +106,7 @@ void make_muted(QLabel *label)
  * - 文字は枠の中の説明文と同じ薄い文字にし、リンクは OBS の標準の見た目(テーマのリンク色)のままにする
  * - リンク先は言語ごとに ini で決める(日本語は日本語のマニュアル、英語は英語の README)
  * - クリックすると既定のブラウザで開く。プラグイン自身が通信するわけではない
- * - 版は buildspec.json の version(X.Y.Z)。ベータ版の「-betaN」はプログラムに入らないため表示しない
+ * - 版は PLUGIN_DISPLAY_VERSION。テスト版は「v0.1.0-beta」、完成版は「v0.1.0」と表示する(buildspec.json の beta で切り替え)
  *
  * @return 作ったラベル(レイアウトに追加すると、ダイアログが解放する)。
  */
@@ -117,7 +117,7 @@ QLabel *make_about_label()
 		return QStringLiteral("<a href=\"%1\">%2</a>")
 			.arg(text(url_key).toHtmlEscaped(), text(text_key).toHtmlEscaped());
 	};
-	const QString version = text("Settings.Version").arg(QString::fromUtf8(PLUGIN_VERSION)).toHtmlEscaped();
+	const QString version = text("Settings.Version").arg(QString::fromUtf8(PLUGIN_DISPLAY_VERSION)).toHtmlEscaped();
 	const QStringList parts = {version, link("Settings.ManualUrl", "Settings.Manual"),
 				   link("Settings.ReportIssueUrl", "Settings.ReportIssue")};
 

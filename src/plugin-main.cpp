@@ -366,7 +366,7 @@ bool obs_module_load(void)
 	obs_frontend_add_save_callback(on_frontend_save, nullptr);
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
 
-	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
+	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_DISPLAY_VERSION);
 	return true;
 }
 
