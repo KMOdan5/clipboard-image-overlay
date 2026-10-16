@@ -33,6 +33,16 @@ Images fade in and fade out after the display time (10 seconds by default), so y
 
 You will be able to show an image again from a list of images you have shown.
 
+## Roadmap
+
+| When | Version | What's included |
+|---|---|---|
+| Late October 2026 | 0.1 (beta) | First beta test: showing images and hiding them automatically |
+| Late November 2026 | 0.2 (beta) | Second beta test: adds the history dock |
+| Late December 2026 | 1.0 | Official release: adds an installer and an English manual |
+
+Plans may change. New versions are published on the [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases) page.
+
 ## Privacy Policy
 
 - This plugin does not connect to the internet and never sends images anywhere.
