@@ -6,7 +6,7 @@
 
 **[最新版のダウンロード](https://github.com/KMOdan5/clipboard-image-overlay/releases)**(Windows は `clipboard-image-overlay-(版)-windows-x64.zip`)
 
-> **ベータ版です。** 不具合や要望、気づいたことがあれば、[不具合の報告・要望](#不具合の報告要望)からお知らせください。
+> **現在ベータテスト中です。** 不具合や要望、気づいたことがあれば、[不具合の報告・要望](#不具合の報告要望)からお知らせください。
 
 ## できること
 

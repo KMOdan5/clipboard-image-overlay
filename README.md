@@ -6,7 +6,7 @@ An OBS plugin that shows a copied image on your stream with a single hotkey. The
 
 **[Download the latest version](https://github.com/KMOdan5/clipboard-image-overlay/releases)** (for Windows: `clipboard-image-overlay-(version)-windows-x64.zip`)
 
-> **This is a beta version.** If you find bugs, have requests, or notice anything, please let us know via [Bug reports and feature requests](#bug-reports-and-feature-requests).
+> **Beta testing is in progress.** If you find bugs, have requests, or notice anything, please let us know via [Bug reports and feature requests](#bug-reports-and-feature-requests).
 
 ## Features
 
