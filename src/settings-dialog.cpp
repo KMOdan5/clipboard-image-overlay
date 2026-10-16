@@ -501,7 +501,6 @@ void open_settings_dialog()
 	update_pixel_label(dialog);
 
 	dialog->show();
-
 	obs_log(LOG_INFO, "settings dialog opened");
 }
 
