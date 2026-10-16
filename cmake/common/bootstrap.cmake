@@ -70,6 +70,15 @@ else()
 endif()
 unset(_beta)
 unset(_beta_error)
+
+# clipboard-image-overlay: タグでビルドするとき(GitHub Actions)、タグと buildspec.json が食い違っていたら止める。
+# version や beta の直し忘れのまま配らないようにするため。
+if("$ENV{GITHUB_REF_TYPE}" STREQUAL "tag" AND NOT "$ENV{GITHUB_REF_NAME}" STREQUAL "${PLUGIN_DISPLAY_VERSION}")
+  message(
+    FATAL_ERROR
+    "Tag '$ENV{GITHUB_REF_NAME}' does not match buildspec.json (version + beta = '${PLUGIN_DISPLAY_VERSION}')"
+  )
+endif()
 set(MACOS_BUNDLEID ${_bundleId})
 
 string(REPLACE "." ";" _version_canonical "${_version}")

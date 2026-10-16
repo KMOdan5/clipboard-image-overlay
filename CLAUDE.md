@@ -79,6 +79,7 @@
 - タグを付ける前に、`buildspec.json` をタグに合わせる: `version` を `X.Y.Z` に、`beta` をテスト版なら `true`、完成版なら `false` にする
   - 画面とログには `vX.Y.Z-beta`(テスト版)/ `vX.Y.Z`(完成版)と表示される(`PLUGIN_DISPLAY_VERSION`)
   - `beta` はこのプロジェクトで足した欄で、`cmake/common/bootstrap.cmake` で読む(テンプレートから変えたのはこの部分だけ)
+  - タグでビルドしたとき、タグと `buildspec.json`(`version` と `beta`)が食い違っていると、ビルドが失敗する
 - タグは Claude が付けて push する。CI が各 OS 用のファイルとチェックサムを作り、リリースの**下書き**を作る。
   ユーザーが下書きの中身を確認して公開する
 - タグはルールで保護されている(作成・変更・削除はユーザーと Claude のアプリだけ)。Claude は既存のタグを変更・削除しない
