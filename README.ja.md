@@ -61,8 +61,6 @@ Windows は `clipboard-image-overlay-(版)-windows-x64.zip`
 > [!TIP]
 > ベータ版をダウンロードすることで、どなたでもテストに参加できます。
 
-公開時期は変わることがあります。新しい版は [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases) で公開します。
-
 ## プライバシーポリシー
 
 - このプラグインはインターネットに接続せず、画像を外部に送信することはありません。

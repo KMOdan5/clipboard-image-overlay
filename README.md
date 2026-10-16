@@ -61,8 +61,6 @@ You will be able to show an image again from a list of images you have shown.
 > [!TIP]
 > Anyone can join the test by downloading the beta version.
 
-Release dates may change. New versions are published on the [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases) page.
-
 ## Privacy Policy
 
 - This plugin does not connect to the internet and never sends images anywhere.
