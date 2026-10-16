@@ -61,24 +61,33 @@ namespace {
 constexpr int DIALOG_MIN_WIDTH = 480;
 
 /*
- * 余白は 8px を単位にそろえる(8 の倍数にすると、余白の大小の関係が見た目で分かりやすいため)。
- * 入力欄と説明文の間だけは、ひとまとまりに見せるため半分の 4px にする。
+ * 余白は 8 の倍数を基本にそろえる(余白の大小の関係が見た目で分かりやすいため)。
+ * 入力欄と説明文の間だけは、ひとまとまりに見せるため 8 より小さくする。
  */
 
-/// @brief 余白の基本の単位(ピクセル)。画面の縁・部品どうし・項目名と入力欄の間に使う。
+/// @brief 部品どうし・項目名と入力欄の間の余白(ピクセル)。
 constexpr int BASE_SPACING = 8;
 
-/// @brief 入力欄とその説明文の間の余白(ピクセル)。説明文が上の入力欄のものだと分かるよう、基本の単位の半分に詰める。
-constexpr int FIELD_NOTE_SPACING = BASE_SPACING / 2;
+/// @brief 画面の縁の余白(ピクセル)。
+constexpr int DIALOG_MARGIN = 16;
 
-/// @brief 枠の中の項目どうしの間の余白(ピクセル)。説明文が次の項目のものに見えないよう、基本の単位の 2 倍空ける。
-constexpr int ROW_SPACING = BASE_SPACING * 2;
+/// @brief 入力欄とその説明文の間の余白(ピクセル)。説明文が上の入力欄のものだと分かるよう詰める。
+constexpr int FIELD_NOTE_SPACING = 4;
+
+/**
+ * @brief チェックボックスとその説明文の間の余白(ピクセル)。
+ * @details チェックボックスは部品自体の上下に余白があり、入力欄と同じ余白では離れて見えるため、余白を足さない。
+ */
+constexpr int CHECKBOX_NOTE_SPACING = 0;
+
+/// @brief 枠の中の項目どうしの間の余白(ピクセル)。説明文が次の項目のものに見えないよう広く空ける。
+constexpr int ROW_SPACING = 16;
 
 /**
  * @brief まとまりどうし(2 つの枠・枠の外の案内・バージョンとリンク・ボタン)の間に足す余白(ピクセル)。
  * @details 部品どうしの余白(BASE_SPACING)に足すので、間は合わせて 16px になる。
  */
-constexpr int SECTION_SPACING = BASE_SPACING;
+constexpr int SECTION_SPACING = 8;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
 constexpr const char *PERCENT_SPIN_NAME = "maxSizePercent";
@@ -194,14 +203,15 @@ QLabel *make_note(const char *key)
  *
  * @param control 入力欄、または入力欄を並べたレイアウトを持つウィジェット。
  * @param note_key 説明文の ini のキー。
+ * @param spacing 入力欄と説明文の間の余白(ピクセル)。チェックボックスは CHECKBOX_NOTE_SPACING を渡す。
  * @return まとめたウィジェット(QFormLayout の右の列に置く)。
  */
-QWidget *make_field(QWidget *control, const char *note_key)
+QWidget *make_field(QWidget *control, const char *note_key, int spacing = FIELD_NOTE_SPACING)
 {
 	auto *field = new QWidget();
 	auto *column = new QVBoxLayout(field);
 	column->setContentsMargins(0, 0, 0, 0);
-	column->setSpacing(FIELD_NOTE_SPACING);
+	column->setSpacing(spacing);
 	column->addWidget(control);
 	column->addWidget(make_note(note_key));
 	return field;
@@ -361,7 +371,7 @@ void open_settings_dialog()
 	 * 枠は役割で 2 つに分ける: いつ非表示になるか(表示時間)と、表示するたびに自動で行うこと(大きさ・重なり順)(#68)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
-	layout->setContentsMargins(BASE_SPACING * 2, BASE_SPACING * 2, BASE_SPACING * 2, BASE_SPACING * 2);
+	layout->setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN);
 	layout->setSpacing(BASE_SPACING);
 	SettingsWidgets widgets;
 	QFormLayout *form = nullptr;
@@ -396,7 +406,7 @@ void open_settings_dialog()
 
 	/* 常に最前面に表示する(チェックボックスなので項目名の列は空ける) */
 	widgets.always_on_top = new QCheckBox(text("Settings.AlwaysOnTop"));
-	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note"));
+	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note", CHECKBOX_NOTE_SPACING));
 
 	layout->addWidget(adjust_group);
 
