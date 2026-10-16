@@ -49,10 +49,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStringList>
+#include <QStyle>
 #include <QSysInfo>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <initializer_list>
 
 namespace {
@@ -73,12 +75,6 @@ constexpr int DIALOG_MARGIN = 16;
 
 /// @brief 入力欄とその説明文の間の余白(ピクセル)。説明文が上の入力欄のものだと分かるよう詰める。
 constexpr int FIELD_NOTE_SPACING = 4;
-
-/**
- * @brief チェックボックスとその説明文の間の余白(ピクセル)。
- * @details チェックボックスは部品自体の上下に余白があり、入力欄と同じ余白では離れて見えるため、余白を足さない。
- */
-constexpr int CHECKBOX_NOTE_SPACING = 0;
 
 /// @brief 枠の中の項目どうしの間の余白(ピクセル)。説明文が次の項目のものに見えないよう広く空ける。
 constexpr int ROW_SPACING = 16;
@@ -203,7 +199,7 @@ QLabel *make_note(const char *key)
  *
  * @param control 入力欄、または入力欄を並べたレイアウトを持つウィジェット。
  * @param note_key 説明文の ini のキー。
- * @param spacing 入力欄と説明文の間の余白(ピクセル)。チェックボックスは CHECKBOX_NOTE_SPACING を渡す。
+ * @param spacing 入力欄と説明文の間の余白(ピクセル)。チェックボックスは checkbox_note_spacing() の値を渡す。
  * @return まとめたウィジェット(QFormLayout の右の列に置く)。
  */
 QWidget *make_field(QWidget *control, const char *note_key, int spacing = FIELD_NOTE_SPACING)
@@ -215,6 +211,47 @@ QWidget *make_field(QWidget *control, const char *note_key, int spacing = FIELD_
 	column->addWidget(control);
 	column->addWidget(make_note(note_key));
 	return field;
+}
+
+/**
+ * @brief チェックボックスとその説明文の間の余白を求める。
+ *
+ * @details
+ * チェックボックスは、四角と文字の上下に部品自体の余白があり(大きさはテーマで決まる)、
+ * 入力欄と同じ余白では説明文が離れて見える。そこで、四角と文字の下にある部品の余白の分だけ差し引く。
+ * テーマから余白を求めるので、テーマや画面の拡大率が変わっても、説明文が四角や文字に重ならない。
+ *
+ * @param checkbox 対象のチェックボックス。
+ * @return 余白(ピクセル)。マイナスになることがある。
+ */
+int checkbox_note_spacing(QCheckBox *checkbox)
+{
+	/* テーマのスタイルシートを当てた後の大きさで計算する */
+	checkbox->ensurePolished();
+	const int indicator_height = checkbox->style()->pixelMetric(QStyle::PM_IndicatorHeight, nullptr, checkbox);
+	const int content_height = std::max(checkbox->fontMetrics().height(), indicator_height);
+	const int padding_below = std::max(0, (checkbox->sizeHint().height() - content_height) / 2);
+	return FIELD_NOTE_SPACING - padding_below;
+}
+
+/**
+ * @brief 項目名のラベルの幅をそろえる。
+ *
+ * @details
+ * 枠ごとに項目名の列の幅が決まるため、項目名の長さが違うと、枠によって入力欄の左の位置がずれる。
+ * 一番長い項目名に合わせて最小の幅をそろえ、どの枠でも入力欄が同じ位置から始まるようにする。
+ *
+ * @param labels 幅をそろえるラベル。
+ */
+void align_label_widths(std::initializer_list<QLabel *> labels)
+{
+	int width = 0;
+	for (QLabel *label : labels) {
+		label->ensurePolished();
+		width = std::max(width, label->sizeHint().width());
+	}
+	for (QLabel *label : labels)
+		label->setMinimumWidth(width);
 }
 
 /**
@@ -381,8 +418,8 @@ void open_settings_dialog()
 	widgets.display_seconds = new QSpinBox();
 	widgets.display_seconds->setRange(DISPLAY_SECONDS_MIN, DISPLAY_SECONDS_MAX);
 	widgets.display_seconds->setSuffix(text("Settings.Seconds"));
-	form->addRow(text("Settings.DisplayTime"),
-		     make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
+	auto *display_label = new QLabel(text("Settings.DisplayTime"));
+	form->addRow(display_label, make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
 
 	layout->addWidget(hide_group);
 	layout->addSpacing(SECTION_SPACING);
@@ -399,16 +436,19 @@ void open_settings_dialog()
 	auto *pixels = new QLabel();
 	pixels->setObjectName(PIXELS_LABEL_NAME);
 	make_muted(pixels);
-	form->addRow(text("Settings.MaxSize"),
-		     make_field(make_row({widgets.max_size_percent, pixels}), "Settings.MaxSize.Note"));
+	auto *max_size_label = new QLabel(text("Settings.MaxSize"));
+	form->addRow(max_size_label, make_field(make_row({widgets.max_size_percent, pixels}), "Settings.MaxSize.Note"));
 	QObject::connect(widgets.max_size_percent, &QSpinBox::valueChanged, dialog,
 			 [dialog]() { update_pixel_label(dialog); });
 
 	/* 常に最前面に表示する(チェックボックスなので項目名の列は空ける) */
 	widgets.always_on_top = new QCheckBox(text("Settings.AlwaysOnTop"));
-	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note", CHECKBOX_NOTE_SPACING));
+	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note",
+					   checkbox_note_spacing(widgets.always_on_top)));
 
 	layout->addWidget(adjust_group);
+	/* 2 つの枠で入力欄の左の位置がそろうように */
+	align_label_widths({display_label, max_size_label});
 
 	/*
 	 * 枠の外の案内: フェードはプラグインの設定ではないこと、反映のタイミング。
