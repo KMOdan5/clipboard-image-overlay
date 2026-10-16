@@ -43,7 +43,7 @@ You will be able to show an image again from a list of images you have shown.
 
 \* Anyone can join the beta tests. Please share what you notice via [Bug reports and feature requests](#bug-reports-and-feature-requests).
 
-Plans may change. New versions are published on the [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases) page.
+Release dates may change. New versions are published on the [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases) page.
 
 ## Privacy Policy
 

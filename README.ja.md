@@ -43,7 +43,7 @@
 
 ※ ベータテストにはどなたでも参加できます。使ってみて気づいたことは[不具合の報告・要望](#不具合の報告要望)からお知らせください。
 
-予定は変わることがあります。新しい版は [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases) で公開します。
+公開時期は変わることがあります。新しい版は [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases) で公開します。
 
 ## プライバシーポリシー
 
