@@ -35,11 +35,13 @@ You will be able to show an image again from a list of images you have shown.
 
 ## Roadmap to 1.0
 
-| When | Version | What's included |
+| Release | Version | What's included |
 |---|---|---|
 | October 2026 | 0.1 (beta) | First beta test: checking the core features on different environments |
 | November 2026 | 0.2 (beta) | Second beta test: adding the history dock and an installer |
 | Early December 2026 | 1.0 | Official release: reflecting the test results and improving the manual |
+
+\* Anyone can join the beta tests. Please share what you notice via [Bug reports and feature requests](#bug-reports-and-feature-requests).
 
 Plans may change. New versions are published on the [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases) page.
 
