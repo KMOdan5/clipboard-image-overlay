@@ -63,6 +63,15 @@ constexpr int DIALOG_MIN_WIDTH = 480;
 /// @brief 画面下の案内文の上に空ける余白(ピクセル)。枠の中の項目と区別するため。
 constexpr int NOTES_SPACING = 6;
 
+/// @brief 入力欄とその説明文の間の余白(ピクセル)。説明文が上の入力欄のものだと分かるよう詰める。
+constexpr int FIELD_NOTE_SPACING = 2;
+
+/// @brief 枠の中の項目どうしの間の余白(ピクセル)。説明文が次の項目のものに見えないよう広く空ける。
+constexpr int ROW_SPACING = 14;
+
+/// @brief 2 つの枠の間に足す余白(ピクセル)。
+constexpr int GROUP_SPACING = 6;
+
 /// @brief ボタンの上に空ける余白(ピクセル)。案内文とボタンが詰まって見えないように。
 constexpr int BUTTONS_SPACING = 12;
 
@@ -187,9 +196,31 @@ QWidget *make_field(QWidget *control, const char *note_key)
 	auto *field = new QWidget();
 	auto *column = new QVBoxLayout(field);
 	column->setContentsMargins(0, 0, 0, 0);
+	column->setSpacing(FIELD_NOTE_SPACING);
 	column->addWidget(control);
 	column->addWidget(make_note(note_key));
 	return field;
+}
+
+/**
+ * @brief 見出し付きの枠と、その中の項目を並べるレイアウトを作る。
+ *
+ * @details
+ * 左の列に項目名(右揃え)、右の列に入力欄と説明文を置く(OBS の設定画面に合わせる)。
+ * 項目どうしの間は ROW_SPACING だけ空ける。
+ *
+ * @param title_key 枠の見出しの ini のキー。
+ * @param[out] form 枠の中のレイアウト。項目は addRow() で足す。
+ * @return 作った枠(レイアウトに追加すると、ダイアログが解放する)。
+ */
+QGroupBox *make_group(const char *title_key, QFormLayout *&form)
+{
+	auto *group = new QGroupBox(text(title_key));
+	form = new QFormLayout(group);
+	form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	form->setVerticalSpacing(ROW_SPACING);
+	return group;
 }
 
 /**
@@ -319,14 +350,13 @@ void open_settings_dialog()
 
 	/*
 	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
-	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く
+	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く。
+	 * 枠は役割で 2 つに分ける: いつ非表示になるか(表示時間)と、表示するたびに自動で行うこと(大きさ・重なり順)(#68)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
 	SettingsWidgets widgets;
-	auto *group = new QGroupBox(text("Settings.Group.Display"));
-	auto *form = new QFormLayout(group);
-	form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-	form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	QFormLayout *form = nullptr;
+	QGroupBox *hide_group = make_group("Settings.Group.HideTiming", form);
 
 	/* 表示時間: [10 秒] */
 	widgets.display_seconds = new QSpinBox();
@@ -334,6 +364,10 @@ void open_settings_dialog()
 	widgets.display_seconds->setSuffix(text("Settings.Seconds"));
 	form->addRow(text("Settings.DisplayTime"),
 		     make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
+
+	layout->addWidget(hide_group);
+	layout->addSpacing(GROUP_SPACING);
+	QGroupBox *adjust_group = make_group("Settings.Group.AutoAdjust", form);
 
 	/*
 	 * 最大サイズ: [60%] (1152 × 648 px)。オン/オフはない(大きさを自分で決めたい配信者は境界の種類を変える)。
@@ -355,7 +389,7 @@ void open_settings_dialog()
 	widgets.always_on_top = new QCheckBox(text("Settings.AlwaysOnTop"));
 	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note"));
 
-	layout->addWidget(group);
+	layout->addWidget(adjust_group);
 
 	/*
 	 * 枠の外の案内: フェードはプラグインの設定ではないこと、反映のタイミング。
