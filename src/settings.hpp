@@ -35,8 +35,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 /// @brief 表示時間(秒)の下限。0 は「自動で消さない」。
 constexpr int DISPLAY_SECONDS_MIN = 0;
-/// @brief 表示時間(秒)の上限(10 分)。
-constexpr int DISPLAY_SECONDS_MAX = 600;
+/// @brief 表示時間(秒)の上限。入力欄に 3 桁まで入れられる、と直感的に分かる値にする。
+constexpr int DISPLAY_SECONDS_MAX = 999;
 /// @brief 最大サイズ(画面に対する割合、%)の下限。
 constexpr int MAX_SIZE_PERCENT_MIN = 10;
 /// @brief 最大サイズ(画面に対する割合、%)の上限。

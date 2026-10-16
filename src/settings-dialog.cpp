@@ -49,10 +49,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStringList>
+#include <QStyle>
 #include <QSysInfo>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <initializer_list>
 
 namespace {
@@ -60,11 +62,28 @@ namespace {
 /// @brief ダイアログの最小の幅(ピクセル)。説明文が細かく折り返されて読みにくくならないように。
 constexpr int DIALOG_MIN_WIDTH = 480;
 
-/// @brief 画面下の案内文の上に空ける余白(ピクセル)。枠の中の項目と区別するため。
-constexpr int NOTES_SPACING = 6;
+/*
+ * 余白は 8 の倍数を基本にそろえる(余白の大小の関係が見た目で分かりやすいため)。
+ * 入力欄と説明文の間だけは、ひとまとまりに見せるため 8 より小さくする。
+ */
 
-/// @brief ボタンの上に空ける余白(ピクセル)。案内文とボタンが詰まって見えないように。
-constexpr int BUTTONS_SPACING = 12;
+/// @brief 部品どうし・項目名と入力欄の間の余白(ピクセル)。
+constexpr int BASE_SPACING = 8;
+
+/// @brief 画面の縁の余白(ピクセル)。
+constexpr int DIALOG_MARGIN = 16;
+
+/// @brief 入力欄とその説明文の間の余白(ピクセル)。説明文が上の入力欄のものだと分かるよう詰める。
+constexpr int FIELD_NOTE_SPACING = 4;
+
+/// @brief 枠の中の項目どうしの間の余白(ピクセル)。説明文が次の項目のものに見えないよう広く空ける。
+constexpr int ROW_SPACING = 16;
+
+/**
+ * @brief まとまりどうし(2 つの枠・枠の外の案内・バージョンとリンク・ボタン)の間に足す余白(ピクセル)。
+ * @details 部品どうしの余白(BASE_SPACING)に足すので、間は合わせて 16px になる。
+ */
+constexpr int SECTION_SPACING = 8;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
 constexpr const char *PERCENT_SPIN_NAME = "maxSizePercent";
@@ -162,7 +181,10 @@ QLabel *make_about_label()
 /**
  * @brief 説明文のラベルを作る。
  *
- * @details 折り返して表示し、項目名や入力欄と区別できるよう薄い文字にする。
+ * @details
+ * 折り返して表示し、項目名や入力欄と区別できるよう薄い文字にする。
+ * 文字は上に寄せる。折り返す文章は、レイアウトが見積もる高さが実際の行数より大きくなることがあり、
+ * 既定の上下中央寄せだと、余った高さの分だけ文字が下にずれて入力欄から離れて見えるため。
  *
  * @param key 説明文の ini のキー。
  * @return 作ったラベル(レイアウトに追加すると、ダイアログが解放する)。
@@ -171,6 +193,7 @@ QLabel *make_note(const char *key)
 {
 	auto *note = new QLabel(text(key));
 	note->setWordWrap(true);
+	note->setAlignment(Qt::AlignLeft | Qt::AlignTop);
 	make_muted(note);
 	return note;
 }
@@ -180,16 +203,81 @@ QLabel *make_note(const char *key)
  *
  * @param control 入力欄、または入力欄を並べたレイアウトを持つウィジェット。
  * @param note_key 説明文の ini のキー。
+ * @param spacing 入力欄と説明文の間の余白(ピクセル)。チェックボックスは checkbox_note_spacing() の値を渡す。
  * @return まとめたウィジェット(QFormLayout の右の列に置く)。
  */
-QWidget *make_field(QWidget *control, const char *note_key)
+QWidget *make_field(QWidget *control, const char *note_key, int spacing = FIELD_NOTE_SPACING)
 {
 	auto *field = new QWidget();
 	auto *column = new QVBoxLayout(field);
 	column->setContentsMargins(0, 0, 0, 0);
+	column->setSpacing(spacing);
 	column->addWidget(control);
 	column->addWidget(make_note(note_key));
 	return field;
+}
+
+/**
+ * @brief チェックボックスとその説明文の間の余白を求める。
+ *
+ * @details
+ * チェックボックスは、四角と文字の上下に部品自体の余白があり(大きさはテーマで決まる)、
+ * 入力欄と同じ余白では説明文が離れて見える。そこで、四角と文字の下にある部品の余白の分だけ差し引く。
+ * テーマから余白を求めるので、テーマや画面の拡大率が変わっても、説明文が四角や文字に重ならない。
+ *
+ * @param checkbox 対象のチェックボックス。
+ * @return 余白(ピクセル)。マイナスになることがある。
+ */
+int checkbox_note_spacing(QCheckBox *checkbox)
+{
+	/* テーマのスタイルシートを当てた後の大きさで計算する */
+	checkbox->ensurePolished();
+	const int indicator_height = checkbox->style()->pixelMetric(QStyle::PM_IndicatorHeight, nullptr, checkbox);
+	const int content_height = std::max(checkbox->fontMetrics().height(), indicator_height);
+	const int padding_below = std::max(0, (checkbox->sizeHint().height() - content_height) / 2);
+	return FIELD_NOTE_SPACING - padding_below;
+}
+
+/**
+ * @brief 項目名のラベルの幅をそろえる。
+ *
+ * @details
+ * 枠ごとに項目名の列の幅が決まるため、項目名の長さが違うと、枠によって入力欄の左の位置がずれる。
+ * 一番長い項目名に合わせて最小の幅をそろえ、どの枠でも入力欄が同じ位置から始まるようにする。
+ *
+ * @param labels 幅をそろえるラベル。
+ */
+void align_label_widths(std::initializer_list<QLabel *> labels)
+{
+	int width = 0;
+	for (QLabel *label : labels) {
+		label->ensurePolished();
+		width = std::max(width, label->sizeHint().width());
+	}
+	for (QLabel *label : labels)
+		label->setMinimumWidth(width);
+}
+
+/**
+ * @brief 見出し付きの枠と、その中の項目を並べるレイアウトを作る。
+ *
+ * @details
+ * 左の列に項目名(右揃え)、右の列に入力欄と説明文を置く(OBS の設定画面に合わせる)。
+ * 項目名と入力欄の間は BASE_SPACING、項目どうしの間は ROW_SPACING だけ空ける。
+ *
+ * @param title_key 枠の見出しの ini のキー。
+ * @param[out] form 枠の中のレイアウト。項目は addRow() で足す。
+ * @return 作った枠(レイアウトに追加すると、ダイアログが解放する)。
+ */
+QGroupBox *make_group(const char *title_key, QFormLayout *&form)
+{
+	auto *group = new QGroupBox(text(title_key));
+	form = new QFormLayout(group);
+	form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	form->setHorizontalSpacing(BASE_SPACING);
+	form->setVerticalSpacing(ROW_SPACING);
+	return group;
 }
 
 /**
@@ -203,6 +291,7 @@ QWidget *make_row(std::initializer_list<QWidget *> widgets)
 	auto *row = new QWidget();
 	auto *layout = new QHBoxLayout(row);
 	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(BASE_SPACING);
 	for (QWidget *widget : widgets)
 		layout->addWidget(widget);
 	layout->addStretch();
@@ -319,21 +408,26 @@ void open_settings_dialog()
 
 	/*
 	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
-	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く
+	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く。
+	 * 枠は役割で 2 つに分ける: いつ非表示になるか(表示時間)と、表示するたびに自動で行うこと(大きさ・重なり順)(#68)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
+	layout->setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN);
+	layout->setSpacing(BASE_SPACING);
 	SettingsWidgets widgets;
-	auto *group = new QGroupBox(text("Settings.Group.Display"));
-	auto *form = new QFormLayout(group);
-	form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-	form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	QFormLayout *form = nullptr;
+	QGroupBox *hide_group = make_group("Settings.Group.HideTiming", form);
 
 	/* 表示時間: [10 秒] */
 	widgets.display_seconds = new QSpinBox();
 	widgets.display_seconds->setRange(DISPLAY_SECONDS_MIN, DISPLAY_SECONDS_MAX);
 	widgets.display_seconds->setSuffix(text("Settings.Seconds"));
-	form->addRow(text("Settings.DisplayTime"),
-		     make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
+	auto *display_label = new QLabel(text("Settings.DisplayTime"));
+	form->addRow(display_label, make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
+
+	layout->addWidget(hide_group);
+	layout->addSpacing(SECTION_SPACING);
+	QGroupBox *adjust_group = make_group("Settings.Group.AutoAdjust", form);
 
 	/*
 	 * 最大サイズ: [60%] (1152 × 648 px)。オン/オフはない(大きさを自分で決めたい配信者は境界の種類を変える)。
@@ -346,23 +440,26 @@ void open_settings_dialog()
 	auto *pixels = new QLabel();
 	pixels->setObjectName(PIXELS_LABEL_NAME);
 	make_muted(pixels);
-	form->addRow(text("Settings.MaxSize"),
-		     make_field(make_row({widgets.max_size_percent, pixels}), "Settings.MaxSize.Note"));
+	auto *max_size_label = new QLabel(text("Settings.MaxSize"));
+	form->addRow(max_size_label, make_field(make_row({widgets.max_size_percent, pixels}), "Settings.MaxSize.Note"));
 	QObject::connect(widgets.max_size_percent, &QSpinBox::valueChanged, dialog,
 			 [dialog]() { update_pixel_label(dialog); });
 
 	/* 常に最前面に表示する(チェックボックスなので項目名の列は空ける) */
 	widgets.always_on_top = new QCheckBox(text("Settings.AlwaysOnTop"));
-	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note"));
+	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note",
+					   checkbox_note_spacing(widgets.always_on_top)));
 
-	layout->addWidget(group);
+	layout->addWidget(adjust_group);
+	/* 2 つの枠で入力欄の左の位置がそろうように */
+	align_label_widths({display_label, max_size_label});
 
 	/*
 	 * 枠の外の案内: フェードはプラグインの設定ではないこと、反映のタイミング。
 	 * 項目の補足ではなく画面全体への案内なので、薄くせず通常の濃さで表示する
 	 * (薄い文字は、そばに濃い項目名がある枠の中の説明だけに使う)
 	 */
-	layout->addSpacing(NOTES_SPACING);
+	layout->addSpacing(SECTION_SPACING);
 	for (const char *key : {"Settings.FadeNote", "Settings.ApplyNote"}) {
 		auto *note = new QLabel(text(key));
 		note->setWordWrap(true);
@@ -381,10 +478,10 @@ void open_settings_dialog()
 	buttons->button(QDialogButtonBox::Apply)->setText(text("Settings.Apply"));
 	buttons->button(QDialogButtonBox::RestoreDefaults)->setText(text("Settings.RestoreDefaults"));
 	/* 画面の一番下(ボタンの上): バージョンとリンク */
-	layout->addSpacing(BUTTONS_SPACING);
+	layout->addSpacing(SECTION_SPACING);
 	layout->addWidget(make_about_label());
 
-	layout->addSpacing(BUTTONS_SPACING);
+	layout->addSpacing(SECTION_SPACING);
 	layout->addWidget(buttons);
 
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, widgets]() {
