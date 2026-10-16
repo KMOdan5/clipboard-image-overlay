@@ -60,20 +60,25 @@ namespace {
 /// @brief ダイアログの最小の幅(ピクセル)。説明文が細かく折り返されて読みにくくならないように。
 constexpr int DIALOG_MIN_WIDTH = 480;
 
-/// @brief 画面下の案内文の上に空ける余白(ピクセル)。枠の中の項目と区別するため。
-constexpr int NOTES_SPACING = 6;
+/*
+ * 余白は 8px を単位にそろえる(8 の倍数にすると、余白の大小の関係が見た目で分かりやすいため)。
+ * 入力欄と説明文の間だけは、ひとまとまりに見せるため半分の 4px にする。
+ */
 
-/// @brief 入力欄とその説明文の間の余白(ピクセル)。説明文が上の入力欄のものだと分かるよう詰める。
-constexpr int FIELD_NOTE_SPACING = 2;
+/// @brief 余白の基本の単位(ピクセル)。画面の縁・部品どうし・項目名と入力欄の間に使う。
+constexpr int BASE_SPACING = 8;
 
-/// @brief 枠の中の項目どうしの間の余白(ピクセル)。説明文が次の項目のものに見えないよう広く空ける。
-constexpr int ROW_SPACING = 14;
+/// @brief 入力欄とその説明文の間の余白(ピクセル)。説明文が上の入力欄のものだと分かるよう、基本の単位の半分に詰める。
+constexpr int FIELD_NOTE_SPACING = BASE_SPACING / 2;
 
-/// @brief 2 つの枠の間に足す余白(ピクセル)。
-constexpr int GROUP_SPACING = 6;
+/// @brief 枠の中の項目どうしの間の余白(ピクセル)。説明文が次の項目のものに見えないよう、基本の単位の 2 倍空ける。
+constexpr int ROW_SPACING = BASE_SPACING * 2;
 
-/// @brief ボタンの上に空ける余白(ピクセル)。案内文とボタンが詰まって見えないように。
-constexpr int BUTTONS_SPACING = 12;
+/**
+ * @brief まとまりどうし(2 つの枠・枠の外の案内・バージョンとリンク・ボタン)の間に足す余白(ピクセル)。
+ * @details 部品どうしの余白(BASE_SPACING)に足すので、間は合わせて 16px になる。
+ */
+constexpr int SECTION_SPACING = BASE_SPACING;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
 constexpr const char *PERCENT_SPIN_NAME = "maxSizePercent";
@@ -207,7 +212,7 @@ QWidget *make_field(QWidget *control, const char *note_key)
  *
  * @details
  * 左の列に項目名(右揃え)、右の列に入力欄と説明文を置く(OBS の設定画面に合わせる)。
- * 項目どうしの間は ROW_SPACING だけ空ける。
+ * 項目名と入力欄の間は BASE_SPACING、項目どうしの間は ROW_SPACING だけ空ける。
  *
  * @param title_key 枠の見出しの ini のキー。
  * @param[out] form 枠の中のレイアウト。項目は addRow() で足す。
@@ -219,6 +224,7 @@ QGroupBox *make_group(const char *title_key, QFormLayout *&form)
 	form = new QFormLayout(group);
 	form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 	form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+	form->setHorizontalSpacing(BASE_SPACING);
 	form->setVerticalSpacing(ROW_SPACING);
 	return group;
 }
@@ -234,6 +240,7 @@ QWidget *make_row(std::initializer_list<QWidget *> widgets)
 	auto *row = new QWidget();
 	auto *layout = new QHBoxLayout(row);
 	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(BASE_SPACING);
 	for (QWidget *widget : widgets)
 		layout->addWidget(widget);
 	layout->addStretch();
@@ -354,6 +361,8 @@ void open_settings_dialog()
 	 * 枠は役割で 2 つに分ける: いつ非表示になるか(表示時間)と、表示するたびに自動で行うこと(大きさ・重なり順)(#68)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
+	layout->setContentsMargins(BASE_SPACING * 2, BASE_SPACING * 2, BASE_SPACING * 2, BASE_SPACING * 2);
+	layout->setSpacing(BASE_SPACING);
 	SettingsWidgets widgets;
 	QFormLayout *form = nullptr;
 	QGroupBox *hide_group = make_group("Settings.Group.HideTiming", form);
@@ -366,7 +375,7 @@ void open_settings_dialog()
 		     make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
 
 	layout->addWidget(hide_group);
-	layout->addSpacing(GROUP_SPACING);
+	layout->addSpacing(SECTION_SPACING);
 	QGroupBox *adjust_group = make_group("Settings.Group.AutoAdjust", form);
 
 	/*
@@ -396,7 +405,7 @@ void open_settings_dialog()
 	 * 項目の補足ではなく画面全体への案内なので、薄くせず通常の濃さで表示する
 	 * (薄い文字は、そばに濃い項目名がある枠の中の説明だけに使う)
 	 */
-	layout->addSpacing(NOTES_SPACING);
+	layout->addSpacing(SECTION_SPACING);
 	for (const char *key : {"Settings.FadeNote", "Settings.ApplyNote"}) {
 		auto *note = new QLabel(text(key));
 		note->setWordWrap(true);
@@ -415,10 +424,10 @@ void open_settings_dialog()
 	buttons->button(QDialogButtonBox::Apply)->setText(text("Settings.Apply"));
 	buttons->button(QDialogButtonBox::RestoreDefaults)->setText(text("Settings.RestoreDefaults"));
 	/* 画面の一番下(ボタンの上): バージョンとリンク */
-	layout->addSpacing(BUTTONS_SPACING);
+	layout->addSpacing(SECTION_SPACING);
 	layout->addWidget(make_about_label());
 
-	layout->addSpacing(BUTTONS_SPACING);
+	layout->addSpacing(SECTION_SPACING);
 	layout->addWidget(buttons);
 
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, widgets]() {
