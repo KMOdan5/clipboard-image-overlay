@@ -62,6 +62,8 @@
 - 利用者向けのマニュアルは `docs/manual/` に置く。README には概要とマニュアルへのリンクを書く
 - コミットメッセージと PR の本文には、Claude のセッションの URL(`Claude-Session:` の行や `claude.ai/code/session_...` のリンク)を付けない。
   後から経緯を追うときは、PR のタイトルと本文で調べる
+- PR の本文に「Generated with Claude Code」の行を自分で書かない(主張は不要)。GitHub への書き込みの仕組みが末尾に自動で付ける一文は、こちらでは消せないのでそのままにする。
+  コミットの `Co-Authored-By: Claude` の行は、誰が書いたかの記録として残す(README の AI 利用の記載と一致させるため)
 
 ## 画面・文書の表現方針
 画面の文言(`data/locale/*.ini`)と、利用者向けの文書(README・マニュアル)に共通する方針。
