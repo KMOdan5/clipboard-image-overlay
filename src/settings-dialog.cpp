@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * Qt のウィジェットを組み合わせて作る(.ui ファイルや Q_OBJECT は使わない。項目が少ないため)。
  * 表示する文字列はすべて data/locale の ini から読む。
  * 「OK」「適用」で settings_save()(settings.cpp)を呼び、変更は次に画像を表示したときから反映される。
+ * 画面の一番下に、バージョンと、マニュアル・不具合の報告先へのリンクを表示する(make_about_label())。
  * 開いたまま OBS を操作できる画面(モードレス)で、同時に開くのは 1 つだけ。
  *
  * 公開している関数の説明は settings-dialog.hpp を参照。
@@ -47,6 +48,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPointer>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QStringList>
 #include <QVBoxLayout>
 
 #include <initializer_list>
@@ -93,6 +95,37 @@ void make_muted(QLabel *label)
 	QPalette palette = label->palette();
 	palette.setColor(QPalette::WindowText, palette.color(QPalette::PlaceholderText));
 	label->setPalette(palette);
+}
+
+/**
+ * @brief 画面の一番下に置く、バージョンとリンクの 1 行を作る。
+ *
+ * @details
+ * 例: 「v0.1.0 · マニュアル · 不具合の報告・要望」。困ったときにその場でマニュアルや報告先を開けるようにし、
+ * 不具合の報告で使っている版を伝えてもらいやすくするため。
+ * - 文字は枠の中の説明文と同じ薄い文字にし、リンクは OBS の標準の見た目(テーマのリンク色)のままにする
+ * - リンク先は言語ごとに ini で決める(日本語は日本語のマニュアル、英語は英語の README)
+ * - クリックすると既定のブラウザで開く。プラグイン自身が通信するわけではない
+ * - 版は buildspec.json の version(X.Y.Z)。ベータ版の「-betaN」はプログラムに入らないため表示しない
+ *
+ * @return 作ったラベル(レイアウトに追加すると、ダイアログが解放する)。
+ */
+QLabel *make_about_label()
+{
+	/* ini の文字列をそのまま HTML に入れると、記号が書式として解釈されることがあるため、文字として扱う */
+	auto link = [](const char *url_key, const char *text_key) {
+		return QStringLiteral("<a href=\"%1\">%2</a>")
+			.arg(text(url_key).toHtmlEscaped(), text(text_key).toHtmlEscaped());
+	};
+	const QString version = text("Settings.Version").arg(QString::fromUtf8(PLUGIN_VERSION)).toHtmlEscaped();
+	const QStringList parts = {version, link("Settings.ManualUrl", "Settings.Manual"),
+				   link("Settings.ReportIssueUrl", "Settings.ReportIssue")};
+
+	auto *label = new QLabel(parts.join(QStringLiteral(" \u00b7 ")));
+	label->setTextFormat(Qt::RichText);
+	label->setOpenExternalLinks(true);
+	make_muted(label);
+	return label;
 }
 
 /**
@@ -316,6 +349,10 @@ void open_settings_dialog()
 	buttons->button(QDialogButtonBox::Cancel)->setText(text("Settings.Cancel"));
 	buttons->button(QDialogButtonBox::Apply)->setText(text("Settings.Apply"));
 	buttons->button(QDialogButtonBox::RestoreDefaults)->setText(text("Settings.RestoreDefaults"));
+	/* 画面の一番下(ボタンの上): バージョンとリンク */
+	layout->addSpacing(BUTTONS_SPACING);
+	layout->addWidget(make_about_label());
+
 	layout->addSpacing(BUTTONS_SPACING);
 	layout->addWidget(buttons);
 
