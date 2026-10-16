@@ -56,6 +56,29 @@ set(PLUGIN_AUTHOR ${_author})
 set(PLUGIN_WEBSITE ${_website})
 set(PLUGIN_EMAIL ${_email})
 set(PLUGIN_VERSION ${_version})
+
+# clipboard-image-overlay: buildspec.json の beta が true なら、画面とログに出す版を「X.Y.Z-beta」にする。
+# version は数字だけ(X.Y.Z)のまま使う(Windows のファイル情報や macOS のインストーラーが数字だけを求めるため)。
+string(JSON _beta ERROR_VARIABLE _beta_error GET ${buildspec} beta)
+if(_beta_error)
+  set(_beta OFF)
+endif()
+if(_beta)
+  set(PLUGIN_DISPLAY_VERSION "${_version}-beta")
+else()
+  set(PLUGIN_DISPLAY_VERSION "${_version}")
+endif()
+unset(_beta)
+unset(_beta_error)
+
+# clipboard-image-overlay: タグでビルドするとき(GitHub Actions)、タグと buildspec.json が食い違っていたら止める。
+# version や beta の直し忘れのまま配らないようにするため。
+if("$ENV{GITHUB_REF_TYPE}" STREQUAL "tag" AND NOT "$ENV{GITHUB_REF_NAME}" STREQUAL "${PLUGIN_DISPLAY_VERSION}")
+  message(
+    FATAL_ERROR
+    "Tag '$ENV{GITHUB_REF_NAME}' does not match buildspec.json (version + beta = '${PLUGIN_DISPLAY_VERSION}')"
+  )
+endif()
 set(MACOS_BUNDLEID ${_bundleId})
 
 string(REPLACE "." ";" _version_canonical "${_version}")

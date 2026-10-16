@@ -29,6 +29,8 @@ extern "C" {
 
 extern const char *PLUGIN_NAME;
 extern const char *PLUGIN_VERSION;
+/* 画面とログに出す版。buildspec.json の beta が true なら「X.Y.Z-beta」、false なら「X.Y.Z」 */
+extern const char *PLUGIN_DISPLAY_VERSION;
 
 void obs_log(int log_level, const char *format, ...);
 extern void blogva(int log_level, const char *format, va_list args);
