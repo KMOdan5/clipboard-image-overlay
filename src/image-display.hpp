@@ -132,6 +132,22 @@ bool is_clipboard_image_showing();
 std::vector<std::string> clipboard_images_in_use();
 
 /**
+ * @brief 'Clipboard Image' で表示中(または表示しようとしている)画像ファイルのパスを返す(#15)。
+ *
+ * @details
+ * 「1 つ前の画像を表示」ホットキーが、今出ている画像が履歴の何番目かを知るために使う。
+ * 差し替えの途中なら、差し替え後に出る画像(差し替え待ちの画像)を返す。
+ * それ以外は 'Clipboard Image' に設定されている画像ファイルを返す。
+ * 表示中かどうかは見ないので、必要なら is_clipboard_image_showing() と合わせて使う。
+ *
+ * @return 画像ファイルのパス(UTF-8)。'Clipboard Image' がない・画像が設定されていなければ空。
+ *
+ * @note 呼び出し元: plugin-main.cpp。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+std::string current_clipboard_image();
+
+/**
  * @brief 表示処理で使っているタイマーや通知の登録を片付ける。何度呼んでもよい。
  *
  * @details 差し替えの途中なら取り消し、シーンの通知の登録も解除する。

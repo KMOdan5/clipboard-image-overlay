@@ -36,7 +36,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 古い画像の掃除(#9): 新しい順に MAX_SAVED_IMAGES 枚だけ残し、それより古いものを削除する
  * (cleanup_saved_images())。ファイル名の形と保存フォルダを知っているのがこのファイルなので、ここで行う。
  *
- * 公開している関数は save_clipboard_image() と cleanup_saved_images()(clipboard-capture.hpp)。
+ * 履歴(#15): 保存フォルダの画像を、そのまま履歴として使う。list_saved_images() で新しい順に並べ、
+ * read_saved_image() で表示に必要な大きさを読む。一覧に出すのも、掃除と同じくプラグインが付けた名前のファイルだけ。
+ *
+ * 公開している関数は save_clipboard_image()・cleanup_saved_images()・saved_images_folder()・
+ * list_saved_images()・read_saved_image()(clipboard-capture.hpp)。
  * それ以外はこのファイル内だけで使う補助関数。
  */
 
@@ -84,6 +88,37 @@ const QStringList OBS_IMAGE_FORMATS = {
 	QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
 	QStringLiteral("gif"), QStringLiteral("bmp"), QStringLiteral("tga"),
 };
+
+/**
+ * @brief このプラグインが付けた名前(yyyyMMdd-HHmmss-zzz.拡張子)かどうかを判定する正規表現。
+ *
+ * @details 古い画像の掃除(#9)と履歴の一覧(#15)で同じ条件を使う。
+ *          配信者が保存フォルダに置いたファイルを、消したり一覧に出したりしないため。
+ */
+const QRegularExpression &saved_name_pattern()
+{
+	static const QRegularExpression pattern(QStringLiteral("^\\d{8}-\\d{6}-\\d{3}\\.(png|jpg|jpeg|gif|bmp|tga)$"),
+						QRegularExpression::CaseInsensitiveOption);
+	return pattern;
+}
+
+/**
+ * @brief 保存フォルダにある、このプラグインが付けた名前の画像を、新しい順に返す。
+ *
+ * @details 名前は日時なので、名前の降順に並べると新しい順になる。
+ *
+ * @param dir 保存フォルダ。
+ * @return ファイル名(フォルダを含まない)の一覧。
+ */
+QStringList saved_names_newest_first(const QDir &dir)
+{
+	QStringList names;
+	for (const QString &name : dir.entryList(QDir::Files, QDir::Name | QDir::Reversed)) {
+		if (saved_name_pattern().match(name).hasMatch())
+			names.append(name);
+	}
+	return names;
+}
 
 /**
  * @brief 画像の保存先フォルダのパスを返す。
@@ -284,17 +319,8 @@ void cleanup_saved_images(const std::vector<std::string> &in_use)
 	if (folder.isEmpty() || !dir.exists())
 		return;
 
-	/*
-	 * このプラグインが付けた名前の形のファイルだけを対象にする(配信者が置いたファイルを消さないため)。
-	 * 名前は日時なので、名前の降順に並べると新しい順になる
-	 */
-	static const QRegularExpression pattern(QStringLiteral("^\\d{8}-\\d{6}-\\d{3}\\.(png|jpg|jpeg|gif|bmp|tga)$"),
-						QRegularExpression::CaseInsensitiveOption);
-	QStringList names;
-	for (const QString &name : dir.entryList(QDir::Files, QDir::Name | QDir::Reversed)) {
-		if (pattern.match(name).hasMatch())
-			names.append(name);
-	}
+	/* このプラグインが付けた名前の形のファイルだけを対象にする(配信者が置いたファイルを消さないため) */
+	const QStringList names = saved_names_newest_first(dir);
 	if (names.size() <= MAX_SAVED_IMAGES)
 		return;
 
@@ -324,4 +350,59 @@ void cleanup_saved_images(const std::vector<std::string> &in_use)
 	if (removed > 0 || failed > 0)
 		obs_log(LOG_INFO, "cleanup: removed %d old image(s), kept newest %d (in use: %d, failed: %d)", removed,
 			MAX_SAVED_IMAGES, skipped, failed);
+}
+
+/**
+ * @brief 保存フォルダのパスを返す。
+ *
+ * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。
+ */
+std::string saved_images_folder()
+{
+	const QString folder = image_folder();
+	if (folder.isEmpty())
+		return std::string();
+	return QDir::toNativeSeparators(folder).toUtf8().toStdString();
+}
+
+/**
+ * @brief 保存した画像のパスを、新しい順に返す。
+ *
+ * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。
+ */
+std::vector<std::string> list_saved_images()
+{
+	std::vector<std::string> paths;
+	const QString folder = image_folder();
+	const QDir dir(folder);
+	if (folder.isEmpty() || !dir.exists())
+		return paths;
+
+	for (const QString &name : saved_names_newest_first(dir)) {
+		paths.push_back(QDir::toNativeSeparators(dir.filePath(name)).toUtf8().toStdString());
+		/* 掃除が終わる前に呼ばれても、上限より多くは返さない */
+		if (static_cast<int>(paths.size()) >= MAX_SAVED_IMAGES)
+			break;
+	}
+	return paths;
+}
+
+/**
+ * @brief 保存した画像の情報(パスと幅・高さ)を読む。
+ *
+ * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。
+ */
+std::optional<SavedImage> read_saved_image(const std::string &path)
+{
+	const QString file = QString::fromUtf8(path.c_str());
+	QImageReader reader(file);
+	/* 保存するときと同じく、回転情報を反映した大きさにする */
+	reader.setAutoTransform(true);
+	const QSize size = reader.canRead() ? reader.size() : QSize();
+	if (!size.isValid()) {
+		obs_log(LOG_WARNING, "history: cannot read %s (%s)", path.c_str(),
+			reader.errorString().toUtf8().constData());
+		return std::nullopt;
+	}
+	return SavedImage{path, size.width(), size.height()};
 }

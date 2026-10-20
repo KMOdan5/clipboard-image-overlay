@@ -78,7 +78,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
  * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、
- * image_display_shutdown()(image-display.hpp)。
+ * current_clipboard_image()、image_display_shutdown()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
@@ -1112,4 +1112,28 @@ std::vector<std::string> clipboard_images_in_use()
 		paths.push_back(pending_swap.image.path);
 
 	return paths;
+}
+
+/**
+ * @brief 'Clipboard Image' で表示中(または表示しようとしている)画像ファイルのパスを返す。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+std::string current_clipboard_image()
+{
+	/* 差し替えの途中なら、この後に出る画像が「今の画像」 */
+	if (pending_swap.item && !pending_swap.image.path.empty())
+		return pending_swap.image.path;
+
+	std::string path;
+	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	if (source) {
+		obs_data_t *settings = obs_source_get_settings(source);
+		const char *file = obs_data_get_string(settings, "file");
+		if (file)
+			path = file;
+		obs_data_release(settings);
+		obs_source_release(source);
+	}
+	return path;
 }
