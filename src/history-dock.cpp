@@ -27,12 +27,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *                                                 └→ request_thumbnail()  まだないサムネイルを裏で作る
  *   ドックの大きさの変化 ─→ update_layout()  1 行の枚数とサムネイルの大きさを決め直す
  *   サムネイルをクリック ─→ on_selected(path)  表示は plugin-main.cpp が行う
+ *   一定時間ごと(ドックが見えている間)─→ update_current()  表示中の画像のカードを目立たせる
  * @endcode
  *
  * 並べ方: 保存している画像(最大 50 枚)を新しい順に並べ、多いときは縦にスクロールする。
  * 1 行の枚数はドックの幅から決め、サムネイルは THUMB_MIN_WIDTH〜THUMB_MAX_WIDTH の間で、
  * ドックの幅をすき間なく埋める大きさにする。ドックを広げると大きく見え、狭めると 1 行の枚数が減る。
  * 1 枚ごとに枠付きのカードに載せ(ThumbnailDelegate)、マウスを乗せると色を変えてクリックできることを示す。
+ * 'Clipboard Image' で表示中の画像のカードは、太い枠と濃い背景にして、今どれが出ているかを示す。
  *
  * 画面は Qt のウィジェットを組み合わせて作る(.ui ファイルや Q_OBJECT は使わない。部品が少ないため)。
  * 表示する文字列はすべて data/locale の ini から読む。
@@ -124,6 +126,27 @@ constexpr int THUMBNAIL_THREADS = 2;
 /// @brief 一覧の項目に、画像ファイルのパスを持たせるときの役割番号。
 constexpr int PATH_ROLE = Qt::UserRole;
 
+/// @brief 一覧の項目に、表示中の画像かどうか(bool)を持たせるときの役割番号。
+constexpr int CURRENT_ROLE = Qt::UserRole + 1;
+
+/**
+ * @brief 表示中の画像を問い合わせる間隔(ミリ秒)。
+ * @details 表示/非表示は、ホットキー・ドック・自動で非表示にするタイマー・目のアイコンなど多くの経路で変わる。
+ *          経路ごとに知らせを受けると漏れが出やすいため、ドックの側から定期的に問い合わせる。
+ *          問い合わせはシーンを一通り見るだけで軽く、ドックが見えている間しか行わない。
+ *          間隔は、クリックしてから枠が移るまでの遅れが気にならない長さにする。
+ */
+constexpr int CURRENT_POLL_MS = 250;
+
+/// @brief 表示中の画像のカードの枠の太さ(ピクセル)。マウスを乗せたとき(1 ピクセル)と見分けられる太さ。
+constexpr qreal CURRENT_BORDER_WIDTH = 3.0;
+
+/// @brief 表示中の画像のカードの背景の濃さ(0〜255)。マウスを乗せたとき(HOVER_BACKGROUND_ALPHA)より濃くする。
+constexpr int CURRENT_BACKGROUND_ALPHA = 96;
+
+/// @brief マウスを乗せたカードの背景の濃さ(0〜255)。
+constexpr int HOVER_BACKGROUND_ALPHA = 48;
+
 /**
  * @brief 翻訳した文字列を Qt の文字列で返す。
  * @param key data/locale の ini のキー。
@@ -185,8 +208,12 @@ QImage make_thumbnail(const QString &path, qreal scale)
  *
  * @details
  * 背景に並べただけだと 1 枚の範囲が分かりにくい(透明な画像や細長い画像で特に)ため、
- * 1 枚ごとにカードを敷いて枠を付ける。マウスを乗せたカードは、選択色の枠と薄い背景にして、
- * クリックできることを示す。色はすべて Qt の配色(OBS のテーマ)から取るので、ダーク・ライトどちらのテーマでも浮かない。
+ * 1 枚ごとにカードを敷いて枠を付ける。カードの見た目は 3 通り:
+ * - 通常: 背景色のカードに、目立たない枠
+ * - マウスを乗せたとき: 選択色の細い枠と薄い背景(クリックできることを示す)
+ * - 表示中の画像: 選択色の太い枠と濃い背景(マウスを乗せても変えない。今出ている画像を見失わないように)
+ *
+ * 色はすべて Qt の配色(OBS のテーマ)から取るので、ダーク・ライトどちらのテーマでも浮かない。
  * 画像はカードの中央に、縦横比を保って描く。サムネイルの作成中は、カードだけを描く。
  */
 class ThumbnailDelegate : public QStyledItemDelegate {
@@ -203,19 +230,28 @@ public:
 					    .adjusted(CARD_GAP / 2.0 + 0.5, CARD_GAP / 2.0 + 0.5, -CARD_GAP / 2.0 - 0.5,
 						      -CARD_GAP / 2.0 - 0.5);
 		const bool hovered = option.state & QStyle::State_MouseOver;
+		const bool current = index.data(CURRENT_ROLE).toBool();
 		const QPalette &palette = option.palette;
+		const QColor highlight = palette.color(QPalette::Highlight);
 
 		QColor background = palette.color(QPalette::Base);
 		QColor border = palette.color(QPalette::Mid);
-		if (hovered) {
-			QColor highlight = palette.color(QPalette::Highlight);
+		qreal border_width = 1.0;
+		if (current) {
 			border = highlight;
-			highlight.setAlpha(48);
 			background = highlight;
+			background.setAlpha(CURRENT_BACKGROUND_ALPHA);
+			border_width = CURRENT_BORDER_WIDTH;
+		} else if (hovered) {
+			border = highlight;
+			background = highlight;
+			background.setAlpha(HOVER_BACKGROUND_ALPHA);
 		}
-		painter->setPen(QPen(border, 1));
+		/* 太い枠がカードの外へはみ出さないよう、太くした分だけ内側に描く */
+		const qreal inset = (border_width - 1.0) / 2.0;
+		painter->setPen(QPen(border, border_width));
 		painter->setBrush(background);
-		painter->drawRoundedRect(card, CARD_RADIUS, CARD_RADIUS);
+		painter->drawRoundedRect(card.adjusted(inset, inset, -inset, -inset), CARD_RADIUS, CARD_RADIUS);
 
 		const QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
 		if (!icon.isNull()) {
@@ -238,8 +274,11 @@ public:
 	/**
 	 * @brief 部品を作り、保存フォルダの見張りを始める。
 	 * @param on_selected サムネイルがクリックされたときに呼ぶ処理。
+	 * @param current     表示中の画像を問い合わせる処理。
 	 */
-	explicit HistoryWidget(HistorySelectedCallback on_selected) : on_selected_(std::move(on_selected))
+	HistoryWidget(HistorySelectedCallback on_selected, HistoryCurrentCallback current)
+		: on_selected_(std::move(on_selected)),
+		  current_(std::move(current))
 	{
 		thumbnail_pool_.setMaxThreadCount(THUMBNAIL_THREADS);
 
@@ -266,6 +305,8 @@ public:
 			obs_log(LOG_INFO, "history: clicked %s", path.toUtf8().constData());
 			if (on_selected_)
 				on_selected_(path.toUtf8().toStdString());
+			/* 次の問い合わせを待たずに、クリックした画像へ枠を移す */
+			update_current();
 		});
 
 		/* 画像がまだないときの案内 */
@@ -293,6 +334,11 @@ public:
 			obs_log(LOG_WARNING, "history: cannot watch folder %s", folder.toUtf8().constData());
 		}
 
+		/* 表示中の画像を定期的に問い合わせる(CURRENT_POLL_MS の説明を参照) */
+		current_timer_.setInterval(CURRENT_POLL_MS);
+		QObject::connect(&current_timer_, &QTimer::timeout, this, [this]() { update_current(); });
+		current_timer_.start();
+
 		update_layout();
 		refresh();
 	}
@@ -306,6 +352,7 @@ public:
 	{
 		stopped_ = true;
 		refresh_timer_.stop();
+		current_timer_.stop();
 		if (!watcher_.directories().isEmpty())
 			watcher_.removePaths(watcher_.directories());
 		thumbnail_pool_.clear();
@@ -409,6 +456,43 @@ private:
 			list_->scrollToTop();
 		else
 			list_->verticalScrollBar()->setValue(scroll);
+
+		/* 作り直した項目には印がないので、表示中の画像に付け直す */
+		update_current(true);
+	}
+
+	/**
+	 * @brief 表示中の画像を問い合わせ、そのカードに印を付ける(印は ThumbnailDelegate が描く)。
+	 *
+	 * @details
+	 * 表示中の画像が前回と同じなら何もしない(ほとんどの問い合わせはここで終わる)。
+	 * 変わっていたら、一覧の中から同じファイルを探して印を付け直す。
+	 * 'Clipboard Image' に設定されたパスと一覧のパスは区切り文字の向きなどが違うことがあるため、
+	 * 文字列ではなくファイルとして比べる。一覧にない画像(掃除で消えた・配信者が別の画像を設定した)なら、どれにも印を付けない。
+	 * ドックが見えていない間は問い合わせない(見えたときの次の問い合わせで追いつく)。
+	 *
+	 * @param force true なら、表示中の画像が前回と同じでも印を付け直す(一覧を作り直した後)。
+	 */
+	void update_current(bool force = false)
+	{
+		if (stopped_ || !current_ || (!force && !isVisible()))
+			return;
+
+		const QString current = QString::fromUtf8(current_().c_str());
+		if (!force && current == current_raw_)
+			return;
+		current_raw_ = current;
+
+		const QFileInfo current_file(current);
+		bool found = false;
+		for (int i = 0; i < list_->count(); i++) {
+			QListWidgetItem *item = list_->item(i);
+			const bool is_current = !found && !current.isEmpty() &&
+						QFileInfo(item->data(PATH_ROLE).toString()) == current_file;
+			found = found || is_current;
+			if (item->data(CURRENT_ROLE).toBool() != is_current)
+				item->setData(CURRENT_ROLE, is_current);
+		}
 	}
 
 	/**
@@ -471,6 +555,8 @@ private:
 
 	/// @brief サムネイルがクリックされたときに呼ぶ処理。
 	HistorySelectedCallback on_selected_;
+	/// @brief 表示中の画像を問い合わせる処理。
+	HistoryCurrentCallback current_;
 	/// @brief サムネイルの一覧。
 	QListWidget *list_ = nullptr;
 	/// @brief 画像がまだないときの案内。
@@ -484,6 +570,8 @@ private:
 	QHash<QString, QPixmap> thumbnails_;
 	/// @brief 作成中のサムネイルのパス。同じ画像を二重に作らないため。
 	QSet<QString> loading_;
+	/// @brief 前回問い合わせたときの、表示中の画像のパス(表示していなければ空)。変わったときだけ印を付け直すため。
+	QString current_raw_;
 	/// @brief true なら止めた後。届いた通知やサムネイルを処理しない。
 	bool stopped_ = false;
 
@@ -491,6 +579,8 @@ private:
 	QFileSystemWatcher watcher_;
 	/// @brief フォルダの変化をまとめて 1 回で読み直すためのタイマー。
 	QTimer refresh_timer_;
+	/// @brief 表示中の画像を定期的に問い合わせるタイマー。
+	QTimer current_timer_;
 	/**
 	 * @brief サムネイルを作るスレッド。
 	 * @details OBS 全体で共有のスレッドではなく専用のものを使う。ドックを消すときに、
@@ -509,12 +599,12 @@ QPointer<HistoryWidget> dock_widget;
  *
  * @details 仕様の詳細は history-dock.hpp の宣言側を参照。
  */
-void history_dock_register(HistorySelectedCallback on_selected)
+void history_dock_register(HistorySelectedCallback on_selected, HistoryCurrentCallback current)
 {
 	if (dock_widget)
 		return;
 
-	auto *widget = new HistoryWidget(std::move(on_selected));
+	auto *widget = new HistoryWidget(std::move(on_selected), std::move(current));
 	if (!obs_frontend_add_dock_by_id(DOCK_ID, obs_module_text("Dock.Title"), widget)) {
 		obs_log(LOG_WARNING, "history: failed to add dock");
 		delete widget;

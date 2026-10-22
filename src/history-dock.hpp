@@ -35,6 +35,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 using HistorySelectedCallback = std::function<void(const std::string &path)>;
 
 /**
+ * @brief 'Clipboard Image' で表示中の画像を、履歴ドックが問い合わせる処理。
+ * @details 表示中の画像ファイルのパス(UTF-8)を返す。表示していなければ空を返す。UI スレッドで呼ばれる。
+ */
+using HistoryCurrentCallback = std::function<std::string()>;
+
+/**
  * @brief 履歴ドックを作り、OBS の「ドック」メニューに登録する。
  *
  * @details
@@ -42,6 +48,8 @@ using HistorySelectedCallback = std::function<void(const std::string &path)>;
  * - 最大 50 枚(保存の上限と同じ)。多いときは縦にスクロールする。一番新しい画像が左上に出る
  * - 1 行の枚数とサムネイルの大きさは、ドックの幅に合わせて変わる(広げると大きく、狭めると 1 行の枚数が減る)
  * - 1 枚ごとに枠付きのカードに載せ、マウスを乗せると色が変わる
+ * - 表示中の画像のカードは、太い枠と濃い背景で目立たせる。表示中かどうかは current に問い合わせる
+ *   (ホットキー・ドック・目のアイコンなど、どこから表示/非表示にしても追いつくよう、ドックが見えている間は定期的に問い合わせる)
  * - サムネイルを 1 回クリックすると on_selected を呼ぶ。表示の処理は呼び出し元(plugin-main.cpp)が行う
  * - 保存フォルダの変化(新しい画像・掃除で消えた画像)を見張り、一覧に自動で反映する。
  *   新しい画像が増えたときは一番上までスクロールする
@@ -50,14 +58,15 @@ using HistorySelectedCallback = std::function<void(const std::string &path)>;
  * 登録に失敗しても、ほかの機能(ホットキー・メニュー)は使えるので、警告をログに出して続ける。
  *
  * @param on_selected サムネイルがクリックされたときに呼ぶ処理。
+ * @param current     表示中の画像を問い合わせる処理。
  *
  * @note 呼び出し元: plugin-main.cpp の obs_module_load()。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
-void history_dock_register(HistorySelectedCallback on_selected);
+void history_dock_register(HistorySelectedCallback on_selected, HistoryCurrentCallback current);
 
 /**
- * @brief 履歴ドックの裏の処理(フォルダの見張り・サムネイルの作成)を止める。何度呼んでもよい。
+ * @brief 履歴ドックの裏の処理(フォルダの見張り・表示中の画像の問い合わせ・サムネイルの作成)を止める。何度呼んでもよい。
  *
  * @details
  * OBS の終了時に呼ぶ。終了の途中でフォルダの変化やサムネイルの完成が届き、

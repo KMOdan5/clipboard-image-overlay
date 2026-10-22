@@ -505,8 +505,16 @@ bool obs_module_load(void)
 	if (previous_hotkey_id == OBS_INVALID_HOTKEY_ID)
 		obs_log(LOG_WARNING, "failed to register previous hotkey");
 
-	/* 履歴ドック(#15)。クリックされた画像は、ホットキーと同じ処理で表示する */
-	history_dock_register([](const std::string &path) { show_history_image(path, "history"); });
+	/*
+	 * 履歴ドック(#15)。クリックされた画像は、ホットキーと同じ処理で表示する。
+	 * 表示中の画像の問い合わせには、シーンの読み込み・切り替え・終了の途中は答えない(片付け中のシーンを触らないため)
+	 */
+	history_dock_register([](const std::string &path) { show_history_image(path, "history"); },
+			      []() {
+				      if (!scenes_ready || !is_clipboard_image_showing())
+					      return std::string();
+				      return current_clipboard_image();
+			      });
 
 	obs_frontend_add_save_callback(on_frontend_save, nullptr);
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
