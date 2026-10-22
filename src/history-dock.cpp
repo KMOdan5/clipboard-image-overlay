@@ -24,11 +24,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 処理の流れ:
  * @code
  *   保存フォルダの変化(QFileSystemWatcher)─→ 少し待って refresh()  一覧を読み直す
- *                                                 └→ show_page()      今のページのサムネイルを並べる
- *                                                      └→ request_thumbnail()  まだないサムネイルを裏で作る
+ *                                                 └→ request_thumbnail()  まだないサムネイルを裏で作る
+ *   ドックの大きさの変化 ─→ update_layout()  1 行の枚数とサムネイルの大きさを決め直す
  *   サムネイルをクリック ─→ on_selected(path)  表示は plugin-main.cpp が行う
- *   ◀ ▶ ボタン ─→ show_page()
  * @endcode
+ *
+ * 並べ方: 保存している画像(最大 50 枚)を新しい順に並べ、多いときは縦にスクロールする。
+ * 1 行の枚数はドックの幅から決め、サムネイルは THUMB_MIN_WIDTH〜THUMB_MAX_WIDTH の間で、
+ * ドックの幅をすき間なく埋める大きさにする。ドックを広げると大きく見え、狭めると 1 行の枚数が減る。
+ * 1 枚ごとに枠付きのカードに載せ(ThumbnailDelegate)、マウスを乗せると色を変えてクリックできることを示す。
  *
  * 画面は Qt のウィジェットを組み合わせて作る(.ui ファイルや Q_OBJECT は使わない。部品が少ないため)。
  * 表示する文字列はすべて data/locale の ini から読む。
@@ -50,10 +54,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QEvent>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
-#include <QHBoxLayout>
 #include <QHash>
+#include <QIcon>
 #include <QImage>
 #include <QImageReader>
 #include <QLabel>
@@ -61,10 +66,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
+#include <QScrollBar>
 #include <QSet>
+#include <QStyle>
+#include <QStyledItemDelegate>
 #include <QThreadPool>
 #include <QTimer>
-#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -80,20 +87,30 @@ namespace {
  */
 constexpr const char *DOCK_ID = "clipboard_image_overlay_history";
 
-/// @brief 1 ページに並べる画像の枚数。ドックに置いたときの選びやすさを見て調整する(#15)。
-constexpr int IMAGES_PER_PAGE = 10;
+/// @brief 一覧に並べる画像の最大枚数。保存の上限(50 枚、clipboard-capture.cpp)とそろえる。
+constexpr int MAX_IMAGES = 50;
 
-/// @brief ページ数の上限。IMAGES_PER_PAGE × MAX_PAGES を、保存の上限(50 枚)とそろえる。
-constexpr int MAX_PAGES = 5;
+/**
+ * @brief サムネイルの幅の最小値(ピクセル)。ドックが狭くても、何の画像か見分けられる大きさ。
+ * @details 1 行の枚数は、この幅のサムネイルが何枚入るかで決める。
+ *          そのため実際の幅は、この値から 2 倍未満の間になる(THUMB_MAX_WIDTH で頭打ち)。
+ */
+constexpr int THUMB_MIN_WIDTH = 120;
 
-/// @brief サムネイルの幅(ピクセル)。16:9 の画像がちょうど収まる大きさにする。
-constexpr int THUMB_WIDTH = 128;
+/// @brief サムネイルの幅の最大値(ピクセル)。ドックを 1 列のまま広げても、大きくなりすぎないように。
+constexpr int THUMB_MAX_WIDTH = 240;
 
-/// @brief サムネイルの高さ(ピクセル)。
-constexpr int THUMB_HEIGHT = 72;
+/// @brief サムネイルの縦横比(幅 ÷ 高さ)。配信画面と同じ 16:9 にする。
+constexpr double THUMB_ASPECT = 16.0 / 9.0;
 
-/// @brief サムネイルどうしの間隔(ピクセル)。
-constexpr int THUMB_SPACING = 4;
+/// @brief カードどうしの間隔(ピクセル)。余白は 8 の倍数を基本にそろえる。
+constexpr int CARD_GAP = 8;
+
+/// @brief カードの枠と画像の間の余白(ピクセル)。カードの中で画像がひとまとまりに見えるよう、間隔より狭くする。
+constexpr int CARD_PADDING = 4;
+
+/// @brief カードの角の丸み(ピクセル)。
+constexpr int CARD_RADIUS = 4;
 
 /**
  * @brief フォルダの変化を受けてから一覧を読み直すまでの待ち時間(ミリ秒)。
@@ -136,50 +153,84 @@ QString saved_time_label(const QString &path)
  * @brief 画像ファイルから、サムネイルの画像を作る。
  *
  * @details
- * 大きさは THUMB_WIDTH × THUMB_HEIGHT に収まるよう縮小し(縦横比は保つ、拡大はしない)、
- * 同じ大きさの透明な画像の中央に置く。一覧の並びがそろうようにするため。
- * 読み込むときに縮小を指定するので、JPEG などは元の大きさで読むより速い。
- * GIF は最初の 1 コマを使う。
+ * THUMB_MAX_WIDTH の大きさの枠に収まるよう縮小する(縦横比は保つ、拡大はしない)。
+ * ドックの幅に合わせた実際の大きさへの縮小は、表示するときに行う(ThumbnailDelegate)。
+ * 最大の大きさで 1 回だけ作っておけば、ドックの大きさを変えても作り直さずに済むため。
+ * 読み込むときに縮小を指定するので、JPEG などは元の大きさで読むより速い。GIF は最初の 1 コマを使う。
  *
  * @param path  画像ファイルのパス。
  * @param scale 画面の拡大率(高解像度の画面でぼやけないよう、その分大きく作る)。
  * @return サムネイル。読めなければ空の画像。
  *
- * @note スレッド: 裏のスレッドで呼ぶ(QImage と QPainter は UI スレッド以外でも使える)。
+ * @note スレッド: 裏のスレッドで呼ぶ(QImage は UI スレッド以外でも使える)。
  */
 QImage make_thumbnail(const QString &path, qreal scale)
 {
 	QImageReader reader(path);
 	reader.setAutoTransform(true);
 	const QSize source = reader.size();
-	const QSize box(qRound(THUMB_WIDTH * scale), qRound(THUMB_HEIGHT * scale));
-	if (source.isValid()) {
-		/* 小さい画像は拡大しない(ぼやけるため) */
-		const QSize target = (source.width() <= box.width() && source.height() <= box.height())
-					     ? source
-					     : source.scaled(box, Qt::KeepAspectRatio);
-		reader.setScaledSize(target.expandedTo(QSize(1, 1)));
-	}
-	const QImage image = reader.read();
+	const QSize box(qRound(THUMB_MAX_WIDTH * scale), qRound(THUMB_MAX_WIDTH / THUMB_ASPECT * scale));
+	if (source.isValid() && (source.width() > box.width() || source.height() > box.height()))
+		reader.setScaledSize(source.scaled(box, Qt::KeepAspectRatio).expandedTo(QSize(1, 1)));
+
+	QImage image = reader.read();
 	if (image.isNull())
 		return QImage();
-
-	QImage canvas(box, QImage::Format_ARGB32_Premultiplied);
-	canvas.fill(Qt::transparent);
-	QPainter painter(&canvas);
-	painter.setRenderHint(QPainter::SmoothPixmapTransform);
-	const QSize drawn = image.size().boundedTo(box);
-	painter.drawImage(QRect(QPoint((box.width() - drawn.width()) / 2, (box.height() - drawn.height()) / 2), drawn),
-			  image);
-	painter.end();
-	canvas.setDevicePixelRatio(scale);
-	return canvas;
+	image.setDevicePixelRatio(scale);
+	return image;
 }
+
+/**
+ * @brief サムネイルを、枠付きのカードに載せて描く。
+ *
+ * @details
+ * 背景に並べただけだと 1 枚の範囲が分かりにくい(透明な画像や細長い画像で特に)ため、
+ * 1 枚ごとにカードを敷いて枠を付ける。マウスを乗せたカードは、選択色の枠と薄い背景にして、
+ * クリックできることを示す。色はすべて Qt の配色(OBS のテーマ)から取るので、ダーク・ライトどちらのテーマでも浮かない。
+ * 画像はカードの中央に、縦横比を保って描く。サムネイルの作成中は、カードだけを描く。
+ */
+class ThumbnailDelegate : public QStyledItemDelegate {
+public:
+	using QStyledItemDelegate::QStyledItemDelegate;
+
+	void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+	{
+		painter->save();
+		painter->setRenderHint(QPainter::Antialiasing);
+
+		/* 隣のカードと間隔を空けるため、マス目より一回り小さく描く */
+		const QRectF card = QRectF(option.rect)
+					    .adjusted(CARD_GAP / 2.0 + 0.5, CARD_GAP / 2.0 + 0.5, -CARD_GAP / 2.0 - 0.5,
+						      -CARD_GAP / 2.0 - 0.5);
+		const bool hovered = option.state & QStyle::State_MouseOver;
+		const QPalette &palette = option.palette;
+
+		QColor background = palette.color(QPalette::Base);
+		QColor border = palette.color(QPalette::Mid);
+		if (hovered) {
+			QColor highlight = palette.color(QPalette::Highlight);
+			border = highlight;
+			highlight.setAlpha(48);
+			background = highlight;
+		}
+		painter->setPen(QPen(border, 1));
+		painter->setBrush(background);
+		painter->drawRoundedRect(card, CARD_RADIUS, CARD_RADIUS);
+
+		const QIcon icon = qvariant_cast<QIcon>(index.data(Qt::DecorationRole));
+		if (!icon.isNull()) {
+			const QRect area =
+				card.toAlignedRect().adjusted(CARD_PADDING, CARD_PADDING, -CARD_PADDING, -CARD_PADDING);
+			icon.paint(painter, area, Qt::AlignCenter);
+		}
+		painter->restore();
+	}
+};
 
 /**
  * @brief 履歴ドックの中身(ウィジェット)。
  *
- * @details 一覧・画像がないときの案内・ページの切り替えの 3 つの部品からなる。
+ * @details サムネイルの一覧と、画像がないときの案内の 2 つの部品からなる。
  *          OBS がドックとして包んで表示する(このウィジェットの持ち主は OBS)。
  */
 class HistoryWidget : public QWidget {
@@ -192,7 +243,7 @@ public:
 	{
 		thumbnail_pool_.setMaxThreadCount(THUMBNAIL_THREADS);
 
-		/* 一覧: ドックの幅に合わせてサムネイルを折り返して並べる */
+		/* 一覧: ドックの幅に合わせて折り返して並べ、多いときは縦にスクロールする */
 		list_ = new QListWidget(this);
 		list_->setViewMode(QListView::IconMode);
 		list_->setFlow(QListView::LeftToRight);
@@ -201,9 +252,15 @@ public:
 		list_->setMovement(QListView::Static);
 		list_->setUniformItemSizes(true);
 		list_->setSelectionMode(QAbstractItemView::NoSelection);
-		list_->setIconSize(QSize(THUMB_WIDTH, THUMB_HEIGHT));
-		list_->setGridSize(QSize(THUMB_WIDTH + THUMB_SPACING * 2, THUMB_HEIGHT + THUMB_SPACING * 2));
+		list_->setFrameShape(QFrame::NoFrame);
+		list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		list_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+		list_->setItemDelegate(new ThumbnailDelegate(list_));
 		list_->setMouseTracking(true);
+		/* マウスを乗せたカードの色を変えるため(ThumbnailDelegate)、乗せた位置を一覧に知らせる */
+		list_->viewport()->setAttribute(Qt::WA_Hover);
+		list_->viewport()->setCursor(Qt::PointingHandCursor);
+		list_->installEventFilter(this);
 		QObject::connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
 			const QString path = item->data(PATH_ROLE).toString();
 			obs_log(LOG_INFO, "history: clicked %s", path.toUtf8().constData());
@@ -216,32 +273,10 @@ public:
 		empty_label_->setAlignment(Qt::AlignCenter);
 		empty_label_->setWordWrap(true);
 
-		/* ページの切り替え: ◀ 1 / 5 ▶ */
-		prev_button_ = new QToolButton(this);
-		prev_button_->setArrowType(Qt::LeftArrow);
-		prev_button_->setToolTip(text("Dock.PrevPage"));
-		QObject::connect(prev_button_, &QToolButton::clicked, this, [this]() { show_page(page_ - 1); });
-		next_button_ = new QToolButton(this);
-		next_button_->setArrowType(Qt::RightArrow);
-		next_button_->setToolTip(text("Dock.NextPage"));
-		QObject::connect(next_button_, &QToolButton::clicked, this, [this]() { show_page(page_ + 1); });
-		page_label_ = new QLabel(this);
-		page_label_->setAlignment(Qt::AlignCenter);
-
-		pager_ = new QWidget(this);
-		auto *pager_layout = new QHBoxLayout(pager_);
-		pager_layout->setContentsMargins(0, 0, 0, 0);
-		pager_layout->addStretch();
-		pager_layout->addWidget(prev_button_);
-		pager_layout->addWidget(page_label_);
-		pager_layout->addWidget(next_button_);
-		pager_layout->addStretch();
-
 		auto *layout = new QVBoxLayout(this);
-		layout->setContentsMargins(THUMB_SPACING, THUMB_SPACING, THUMB_SPACING, THUMB_SPACING);
+		layout->setContentsMargins(0, 0, 0, 0);
 		layout->addWidget(list_, 1);
 		layout->addWidget(empty_label_, 1);
-		layout->addWidget(pager_);
 
 		/*
 		 * 保存フォルダの変化を見張る。フォルダがまだないと見張れないので、ここで作っておく
@@ -258,6 +293,7 @@ public:
 			obs_log(LOG_WARNING, "history: cannot watch folder %s", folder.toUtf8().constData());
 		}
 
+		update_layout();
 		refresh();
 	}
 
@@ -276,30 +312,74 @@ public:
 		thumbnail_pool_.waitForDone();
 	}
 
+protected:
+	/**
+	 * @brief 一覧の大きさが変わったら、1 行の枚数とサムネイルの大きさを決め直す。
+	 */
+	bool eventFilter(QObject *watched, QEvent *event) override
+	{
+		if (watched == list_ && event->type() == QEvent::Resize)
+			update_layout();
+		return QWidget::eventFilter(watched, event);
+	}
+
 private:
+	/**
+	 * @brief ドックの幅から、1 行の枚数とサムネイルの大きさを決める。
+	 *
+	 * @details
+	 * 1. THUMB_MIN_WIDTH のカードが何枚入るかで、1 行の枚数を決める(最低 1 枚)
+	 * 2. その枚数で幅をすき間なく分け、カードの幅にする(THUMB_MAX_WIDTH で頭打ち)
+	 * 3. 高さは 16:9 の比で決める
+	 *
+	 * 縦のスクロールバーの幅は、出ていなくても先に差し引いておく。
+	 * スクロールバーが出たり消えたりするたびに枚数が変わり、並びが揺れるのを防ぐため。
+	 */
+	void update_layout()
+	{
+		const int scrollbar = list_->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, list_);
+		const int available = std::max(1, list_->width() - scrollbar - 1);
+
+		const int min_cell = THUMB_MIN_WIDTH + CARD_PADDING * 2 + CARD_GAP;
+		const int columns = std::max(1, available / min_cell);
+		const int cell_width = std::min(available / columns, THUMB_MAX_WIDTH + CARD_PADDING * 2 + CARD_GAP);
+		const int thumb_width = cell_width - CARD_PADDING * 2 - CARD_GAP;
+		const int thumb_height = qRound(thumb_width / THUMB_ASPECT);
+		const QSize cell(cell_width, thumb_height + CARD_PADDING * 2 + CARD_GAP);
+
+		if (cell == list_->gridSize())
+			return;
+		list_->setIconSize(QSize(thumb_width, thumb_height));
+		list_->setGridSize(cell);
+		for (int i = 0; i < list_->count(); i++)
+			list_->item(i)->setSizeHint(cell);
+	}
+
 	/**
 	 * @brief 保存フォルダの画像を読み直し、一覧を作り直す。
 	 *
 	 * @details
-	 * 新しい画像が増えていたら 1 ページ目に戻る(貼った画像がすぐ見えるように)。
-	 * 一覧から消えた画像のサムネイルは捨てる。
+	 * 新しい画像が増えていたら一番上までスクロールする(貼った画像がすぐ見えるように)。
+	 * それ以外はスクロールの位置を保つ。一覧から消えた画像のサムネイルは捨てる。
 	 */
 	void refresh()
 	{
 		if (stopped_)
 			return;
 
-		paths_.clear();
+		QStringList paths;
 		for (const std::string &path : list_saved_images())
-			paths_.append(QString::fromUtf8(path.c_str()));
-		while (paths_.size() > IMAGES_PER_PAGE * MAX_PAGES)
-			paths_.removeLast();
+			paths.append(QString::fromUtf8(path.c_str()));
+		while (paths.size() > MAX_IMAGES)
+			paths.removeLast();
+		if (paths == paths_)
+			return;
+		paths_ = paths;
 
 		const QString newest = paths_.isEmpty() ? QString() : paths_.first();
-		if (newest != newest_) {
-			newest_ = newest;
-			page_ = 0;
-		}
+		const bool has_new_image = newest != newest_;
+		newest_ = newest;
+		const int scroll = list_->verticalScrollBar()->value();
 
 		/* 一覧にない画像のサムネイルは、もう使わないので捨てる */
 		const QSet<QString> alive(paths_.cbegin(), paths_.cend());
@@ -310,30 +390,8 @@ private:
 				it = thumbnails_.erase(it);
 		}
 
-		show_page(page_);
-	}
-
-	/// @brief 今の一覧のページ数を返す(画像がなくても 1)。
-	int page_count() const
-	{
-		const int pages = static_cast<int>((paths_.size() + IMAGES_PER_PAGE - 1) / IMAGES_PER_PAGE);
-		return std::clamp(pages, 1, MAX_PAGES);
-	}
-
-	/**
-	 * @brief 指定したページのサムネイルを並べる。範囲外のページは端のページにする。
-	 * @param page 0 から始まるページ番号。
-	 */
-	void show_page(int page)
-	{
-		const int pages = page_count();
-		page_ = std::clamp(page, 0, pages - 1);
-
 		list_->clear();
-		const qsizetype first = static_cast<qsizetype>(page_) * IMAGES_PER_PAGE;
-		const qsizetype last = std::min(first + IMAGES_PER_PAGE, paths_.size());
-		for (qsizetype i = first; i < last; i++) {
-			const QString &path = paths_[i];
+		for (const QString &path : paths_) {
 			auto *item = new QListWidgetItem(list_);
 			item->setData(PATH_ROLE, path);
 			item->setToolTip(saved_time_label(path));
@@ -347,10 +405,10 @@ private:
 		const bool empty = paths_.isEmpty();
 		list_->setVisible(!empty);
 		empty_label_->setVisible(empty);
-		pager_->setVisible(pages > 1);
-		page_label_->setText(QStringLiteral("%1 / %2").arg(page_ + 1).arg(pages));
-		prev_button_->setEnabled(page_ > 0);
-		next_button_->setEnabled(page_ < pages - 1);
+		if (has_new_image)
+			list_->scrollToTop();
+		else
+			list_->verticalScrollBar()->setValue(scroll);
 	}
 
 	/**
@@ -417,21 +475,11 @@ private:
 	QListWidget *list_ = nullptr;
 	/// @brief 画像がまだないときの案内。
 	QLabel *empty_label_ = nullptr;
-	/// @brief ページの切り替え(◀ 1 / 5 ▶)をまとめた部品。1 ページしかないときは隠す。
-	QWidget *pager_ = nullptr;
-	/// @brief 前のページのボタン。
-	QToolButton *prev_button_ = nullptr;
-	/// @brief 次のページのボタン。
-	QToolButton *next_button_ = nullptr;
-	/// @brief ページ番号(1 / 5)。
-	QLabel *page_label_ = nullptr;
 
 	/// @brief 一覧に出す画像のパス。先頭が一番新しい。
 	QStringList paths_;
-	/// @brief 前回読み直したときの一番新しい画像。増えたことに気づいて 1 ページ目に戻すため。
+	/// @brief 前回読み直したときの一番新しい画像。増えたことに気づいて一番上までスクロールするため。
 	QString newest_;
-	/// @brief 今のページ(0 から)。
-	int page_ = 0;
 	/// @brief 作ったサムネイル。一覧に残っている画像の分だけ持つ。
 	QHash<QString, QPixmap> thumbnails_;
 	/// @brief 作成中のサムネイルのパス。同じ画像を二重に作らないため。
