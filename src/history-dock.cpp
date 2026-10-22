@@ -28,7 +28,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   ドックの大きさの変化 ─→ update_layout()  1 行の枚数とサムネイルの大きさを決め直す
  *   サムネイルをクリック ─→ on_selected(path)  表示は plugin-main.cpp が行う
  *   一定時間ごと(ドックが見えている間)─→ update_current()  表示中の画像のカードを目立たせる
+ *   ドックが見えるようになった ─→ showEvent()  見えていない間の変化に追いつく
  * @endcode
+ *
+ * 一覧の読み込み・サムネイルの作成・表示中の画像の問い合わせは、ドックが見えている間だけ行う。
  *
  * 並べ方: 保存している画像(最大 50 枚)を新しい順に並べ、多いときは縦にスクロールする。
  * 1 行の枚数はドックの幅から決め、サムネイルは THUMB_MIN_WIDTH〜THUMB_MAX_WIDTH の間で、
@@ -70,6 +73,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPointer>
 #include <QScrollBar>
 #include <QSet>
+#include <QShowEvent>
+#include <QHideEvent>
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QThreadPool>
@@ -334,13 +339,15 @@ public:
 			obs_log(LOG_WARNING, "history: cannot watch folder %s", folder.toUtf8().constData());
 		}
 
-		/* 表示中の画像を定期的に問い合わせる(CURRENT_POLL_MS の説明を参照) */
+		/*
+		 * 表示中の画像を定期的に問い合わせる(CURRENT_POLL_MS の説明を参照)。
+		 * 問い合わせと一覧の読み込みは、ドックが見えている間だけ行う(showEvent() で始め、hideEvent() で止める)
+		 */
 		current_timer_.setInterval(CURRENT_POLL_MS);
 		QObject::connect(&current_timer_, &QTimer::timeout, this, [this]() { update_current(); });
-		current_timer_.start();
 
 		update_layout();
-		refresh();
+		needs_refresh_ = true;
 	}
 
 	~HistoryWidget() override { shutdown(); }
@@ -360,6 +367,34 @@ public:
 	}
 
 protected:
+	/**
+	 * @brief ドックが見えるようになったら、見えていない間に溜まった変化に追いつき、表示中の画像の問い合わせを始める。
+	 *
+	 * @details ドックを閉じている・別のドックのタブの裏にあるときは、一覧の読み込み・サムネイルの作成・
+	 *          表示中の画像の問い合わせをしない(配信中の OBS に、見えない画面のための処理をさせないため)。
+	 *          保存フォルダの見張り自体は続ける(変化があったことだけを覚えておき、見えたときに読み直す)。
+	 */
+	void showEvent(QShowEvent *event) override
+	{
+		QWidget::showEvent(event);
+		if (stopped_)
+			return;
+		if (needs_refresh_)
+			refresh(); /* 表示中の画像の印も付け直される */
+		else
+			update_current(true);
+		current_timer_.start();
+	}
+
+	/**
+	 * @brief ドックが見えなくなったら、表示中の画像の問い合わせを止める。
+	 */
+	void hideEvent(QHideEvent *event) override
+	{
+		QWidget::hideEvent(event);
+		current_timer_.stop();
+	}
+
 	/**
 	 * @brief 一覧の大きさが変わったら、1 行の枚数とサムネイルの大きさを決め直す。
 	 */
@@ -408,11 +443,17 @@ private:
 	 * @details
 	 * 新しい画像が増えていたら一番上までスクロールする(貼った画像がすぐ見えるように)。
 	 * それ以外はスクロールの位置を保つ。一覧から消えた画像のサムネイルは捨てる。
+	 * ドックが見えていなければ読み直さず、見えたときに読み直す(showEvent())。
 	 */
 	void refresh()
 	{
 		if (stopped_)
 			return;
+		if (!isVisible()) {
+			needs_refresh_ = true;
+			return;
+		}
+		needs_refresh_ = false;
 
 		QStringList paths;
 		for (const std::string &path : list_saved_images())
@@ -469,13 +510,13 @@ private:
 	 * 変わっていたら、一覧の中から同じファイルを探して印を付け直す。
 	 * 'Clipboard Image' に設定されたパスと一覧のパスは区切り文字の向きなどが違うことがあるため、
 	 * 文字列ではなくファイルとして比べる。一覧にない画像(掃除で消えた・配信者が別の画像を設定した)なら、どれにも印を付けない。
-	 * ドックが見えていない間は問い合わせない(見えたときの次の問い合わせで追いつく)。
+	 * ドックが見えていない間は問い合わせない(見えたときに追いつく。showEvent())。
 	 *
-	 * @param force true なら、表示中の画像が前回と同じでも印を付け直す(一覧を作り直した後)。
+	 * @param force true なら、表示中の画像が前回と同じでも印を付け直す(一覧を作り直した後・ドックが見えたとき)。
 	 */
 	void update_current(bool force = false)
 	{
-		if (stopped_ || !current_ || (!force && !isVisible()))
+		if (stopped_ || !current_ || !isVisible())
 			return;
 
 		const QString current = QString::fromUtf8(current_().c_str());
@@ -572,6 +613,8 @@ private:
 	QSet<QString> loading_;
 	/// @brief 前回問い合わせたときの、表示中の画像のパス(表示していなければ空)。変わったときだけ印を付け直すため。
 	QString current_raw_;
+	/// @brief true なら、ドックが見えていない間に保存フォルダが変わった(または、まだ一度も読んでいない)。見えたときに読み直す。
+	bool needs_refresh_ = false;
 	/// @brief true なら止めた後。届いた通知やサムネイルを処理しない。
 	bool stopped_ = false;
 
