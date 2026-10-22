@@ -53,6 +53,7 @@ function Package {
         ErrorAction = 'SilentlyContinue'
         Path = @(
             "${ProjectRoot}/release/${ProductName}-*-windows-*.zip"
+            "${ProjectRoot}/release/${ProductName}-*-windows-*.exe"
         )
     }
 
@@ -66,6 +67,41 @@ function Package {
         Verbose = ($Env:CI -ne $null)
     }
     Compress-Archive -Force @CompressArgs
+    Log-Group
+
+    # インストーラー(exe)を作る。中身は zip と同じフォルダから取る(#74)。
+    # リリースの作成(push.yaml)は *.exe も拾うため、ここで release に置けば配布物に入る。
+    Log-Group "Building installer for ${ProductName}..."
+    $Iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+    if ( ! $Iscc ) {
+        $Iscc = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe"
+    }
+    if ( ! ( Test-Path $Iscc ) ) {
+        # CI のイメージに Inno Setup がない場合だけ入れる
+        Invoke-External choco install innosetup --no-progress -y
+        $Iscc = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe"
+    }
+
+    # 画面とアンインストールの一覧に出す版は、タグと同じ表記(例: 0.2.0-beta)にする
+    $DisplayVersion = $ProductVersion
+    if ( $BuildSpec.beta ) {
+        $DisplayVersion = "${ProductVersion}-beta"
+    }
+
+    $IsccArgs = @(
+        "/Qp"
+        "/DProductName=${ProductName}"
+        "/DDisplayName=$($BuildSpec.displayName)"
+        "/DAppVersion=${ProductVersion}"
+        "/DDisplayVersion=${DisplayVersion}"
+        "/DPublisher=$($BuildSpec.author)"
+        "/DWebsite=$($BuildSpec.website)"
+        "/DSourceDir=${ProjectRoot}/release/${Configuration}/${ProductName}"
+        "/DOutputDir=${ProjectRoot}/release"
+        "/DOutputBaseFilename=${OutputName}-installer"
+        "${ProjectRoot}/cmake/windows/resources/installer-Windows.iss"
+    )
+    Invoke-External $Iscc @IsccArgs
     Log-Group
 }
 
