@@ -42,6 +42,8 @@ target_sources(
     src/auto-hide.hpp
     src/clipboard-capture.cpp
     src/clipboard-capture.hpp
+    src/history-dock.cpp
+    src/history-dock.hpp
     src/image-display.cpp
     src/image-display.hpp
     src/settings.cpp
