@@ -71,11 +71,14 @@ jobs:
           root_dir="$(pwd)"
           commit_hash="${GITHUB_SHA:0:9}"
 
+          # リリースに添付するファイルの種類。ここで移したファイルだけが、下の Create Release で添付される(#81)
+          # Linux 向け(動作未確認・デバッグ用ファイル)とソース(GitHub が「Source code」として自動で付ける)は配布しない
+          # 元に戻すときは、該当する行の先頭の # を外す
           variants=(
             'windows-x64;zip|exe'
             'macos-universal;tar.xz|pkg'
-            'ubuntu-24.04-x86_64;tar.xz|deb|ddeb'
-            'sources;tar.xz'
+            # 'ubuntu-24.04-x86_64;tar.xz|deb|ddeb'
+            # 'sources;tar.xz'
           )
 
           for variant_data in "${variants[@]}"; do
