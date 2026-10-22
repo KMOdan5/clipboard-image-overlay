@@ -61,6 +61,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QDir>
 #include <QEvent>
 #include <QFileInfo>
+#include <QFont>
+#include <QFontMetricsF>
 #include <QFileSystemWatcher>
 #include <QHash>
 #include <QIcon>
@@ -152,6 +154,18 @@ constexpr int CURRENT_BACKGROUND_ALPHA = 96;
 /// @brief マウスを乗せたカードの背景の濃さ(0〜255)。
 constexpr int HOVER_BACKGROUND_ALPHA = 48;
 
+/// @brief 「表示中」のラベルの、カードの角からの距離(ピクセル)。太い枠に重ならない位置にする。
+constexpr qreal BADGE_MARGIN = 6.0;
+
+/// @brief 「表示中」のラベルの、文字の左右の余白(ピクセル)。
+constexpr qreal BADGE_PADDING_X = 6.0;
+
+/// @brief 「表示中」のラベルの、文字の上下の余白(ピクセル)。
+constexpr qreal BADGE_PADDING_Y = 2.0;
+
+/// @brief 「表示中」のラベルの文字の大きさ(一覧の文字に対する倍率)。カードの中で画像より目立ちすぎないよう、少し小さくする。
+constexpr qreal BADGE_FONT_SCALE = 0.85;
+
 /**
  * @brief 翻訳した文字列を Qt の文字列で返す。
  * @param key data/locale の ini のキー。
@@ -184,7 +198,8 @@ QString saved_time_label(const QString &path)
  * THUMB_MAX_WIDTH の大きさの枠に収まるよう縮小する(縦横比は保つ、拡大はしない)。
  * ドックの幅に合わせた実際の大きさへの縮小は、表示するときに行う(ThumbnailDelegate)。
  * 最大の大きさで 1 回だけ作っておけば、ドックの大きさを変えても作り直さずに済むため。
- * 読み込むときに縮小を指定するので、JPEG などは元の大きさで読むより速い。GIF は最初の 1 コマを使う。
+ * 読み込むときに縮小を指定するので、JPEG などは元の大きさで読むより速い。
+ * GIF アニメは最初の 1 コマだけを使い、サムネイルでは動かさない(一覧が動くと気が散り、全コマを読むと重くなるため)。
  *
  * @param path  画像ファイルのパス。
  * @param scale 画面の拡大率(高解像度の画面でぼやけないよう、その分大きく作る)。
@@ -216,14 +231,21 @@ QImage make_thumbnail(const QString &path, qreal scale)
  * 1 枚ごとにカードを敷いて枠を付ける。カードの見た目は 3 通り:
  * - 通常: 背景色のカードに、目立たない枠
  * - マウスを乗せたとき: 選択色の細い枠と薄い背景(クリックできることを示す)
- * - 表示中の画像: 選択色の太い枠と濃い背景(マウスを乗せても変えない。今出ている画像を見失わないように)
+ * - 表示中の画像: 選択色の太い枠と濃い背景に、左上の「表示中」のラベル(マウスを乗せても変えない。今出ている画像を見失わないように)
+ *
+ * 枠だけだと「選択した画像」に見え、自動で非表示になったときに「選択が外れた」と受け取られやすい。
+ * ラベルで「画面に出ている」ことを示し、消えたときは「表示が終わった」と読めるようにする。
  *
  * 色はすべて Qt の配色(OBS のテーマ)から取るので、ダーク・ライトどちらのテーマでも浮かない。
  * 画像はカードの中央に、縦横比を保って描く。サムネイルの作成中は、カードだけを描く。
  */
 class ThumbnailDelegate : public QStyledItemDelegate {
 public:
-	using QStyledItemDelegate::QStyledItemDelegate;
+	/**
+	 * @brief 描き方を作る。
+	 * @param parent 持ち主(一覧)。
+	 */
+	explicit ThumbnailDelegate(QObject *parent) : QStyledItemDelegate(parent), badge_text_(text("Dock.Showing")) {}
 
 	void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
 	{
@@ -264,8 +286,38 @@ public:
 				card.toAlignedRect().adjusted(CARD_PADDING, CARD_PADDING, -CARD_PADDING, -CARD_PADDING);
 			icon.paint(painter, area, Qt::AlignCenter);
 		}
+		if (current)
+			paint_badge(painter, option, card);
 		painter->restore();
 	}
+
+private:
+	/**
+	 * @brief カードの左上に「表示中」のラベルを描く。画像に重なっても読めるよう、選択色の地に文字を載せる。
+	 * @param painter 描く先。
+	 * @param option  一覧の文字の大きさと配色。
+	 * @param card    カードの範囲。
+	 */
+	void paint_badge(QPainter *painter, const QStyleOptionViewItem &option, const QRectF &card) const
+	{
+		QFont font = option.font;
+		font.setBold(true);
+		font.setPointSizeF(font.pointSizeF() * BADGE_FONT_SCALE);
+		const QFontMetricsF metrics(font);
+		const QRectF badge(card.left() + BADGE_MARGIN, card.top() + BADGE_MARGIN,
+				   metrics.horizontalAdvance(badge_text_) + BADGE_PADDING_X * 2,
+				   metrics.height() + BADGE_PADDING_Y * 2);
+
+		painter->setPen(Qt::NoPen);
+		painter->setBrush(option.palette.color(QPalette::Highlight));
+		painter->drawRoundedRect(badge, CARD_RADIUS - 1, CARD_RADIUS - 1);
+		painter->setFont(font);
+		painter->setPen(option.palette.color(QPalette::HighlightedText));
+		painter->drawText(badge, Qt::AlignCenter, badge_text_);
+	}
+
+	/// @brief 「表示中」のラベルの文字。描くたびに翻訳を引かないよう、作るときに読んでおく。
+	QString badge_text_;
 };
 
 /**
