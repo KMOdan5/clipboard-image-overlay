@@ -48,18 +48,23 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64.zip`
 
 | Release | Version | What's included |
 |---|---|---|
-| October 2026 | 0.1 (beta) | First beta test: checking the core features on different environments |
-| November 2026 | 0.2 (beta) | Second beta test: adding the history dock and an installer |
+| October 2026 | 0.1 (beta) | Beta test (closed test with acquaintances): checking the core features on different environments |
+| November 2026 | 0.2 (beta) | Public beta test: adding the history dock and an installer |
 | Early December 2026 | 1.0 | Official release: reflecting the test results and improving the manual |
 
 > [!TIP]
-> Anyone can join the test by downloading the beta version.
+> Anyone can join from the public beta test in November.
 
-## Privacy Policy
+## Requirements
 
-- This plugin does not connect to the internet and never sends images anywhere.
-- Displayed images are saved only in the plugin's folder on your computer.
-- AI is used as an aid in developing the system, but this plugin has no AI features and never uses images to train AI.
+- Windows 10 / 11
+- OBS Studio 31.1.1 or later
+
+Files for macOS are also provided, but they have not been tested.
+
+## Installation and usage
+
+Download the latest version from [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases). This is the only official place to get the plugin. For installation and usage, see the [manual (Japanese)](docs/manual/ja.md). An English manual will be added in version 1.0.
 
 ## Terms of Use
 
@@ -68,20 +73,38 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64.zip`
 - Please make sure you have the rights (such as copyright) to the images you show.
 - Modifications and redistribution must follow GPL-2.0.
 
-## Requirements
+## Privacy Policy
 
-- Windows 10 / 11
-- OBS Studio 31.1.1 or later
-
-Files for macOS and Linux are also provided, but they have not been tested.
-
-## Installation and usage
-
-Download the latest version from [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases). For installation and usage, see the [manual (Japanese)](docs/manual/ja.md). An English manual will be added in version 1.0.
+- This plugin does not connect to the internet and never sends images anywhere.
+- Displayed images are saved only in the plugin's folder on your computer.
+- AI is used as an aid in developing the system, but this plugin has no AI features and never uses images to train AI.
 
 ## Bug reports and requests
 
 Please use the [bug report and request form](https://docs.google.com/forms/d/e/1FAIpQLSeOoU9HNzkLZx70GtSAoAbp-y8T491vJsohMwMT1NJjwKI_xA/viewform?usp=pp_url&entry.11414643=Clipboard+Image+Overlay) (in Japanese). If you use GitHub, you can also use [Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose). For security issues, follow the instructions in [SECURITY.md](SECURITY.md).
+
+## Code signing policy
+
+We have applied to SignPath Foundation for code signing of the Windows files.
+
+<details>
+<summary>Signing policy and team</summary>
+
+Until signing starts, the distributed files are not signed.
+
+- Only files built by GitHub Actions from the source code in this repository are signed.
+- Each release is signed only after the author has checked and approved its contents.
+- Every source change is merged through a pull request. The author's account is protected with multi-factor authentication, and release tags are protected so that only the author can create them.
+
+**Team roles**
+
+- Author, reviewer and approver: [KMOdan5](https://github.com/KMOdan5)
+  - Defines the requirements and design, and reviews every change, including security checks and refactoring.
+- Parts of the code are written with the help of AI (Claude). The author reviews AI-written code before it is merged, too.
+
+For privacy, see the [Privacy Policy](#privacy-policy). To report a security issue, see [SECURITY.md](SECURITY.md).
+
+</details>
 
 ## License
 
