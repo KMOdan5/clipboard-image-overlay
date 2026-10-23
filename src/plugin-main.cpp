@@ -213,24 +213,28 @@ void on_show_previous_requested()
 		return;
 	}
 
+	/* 履歴の中で、今の画像がある位置 */
 	const std::string current = current_clipboard_image();
-	const auto found = std::find_if(images.cbegin(), images.cend(),
-					[&current](const std::string &path) { return same_file(path, current); });
-	if (found == images.cend()) {
+	const auto current_pos = std::find_if(images.cbegin(), images.cend(),
+					      [&current](const std::string &path) { return same_file(path, current); });
+	if (current_pos == images.cend()) {
 		show_history_image(images.front(), "previous hotkey");
 		return;
 	}
-	if (std::next(found) == images.cend()) {
+
+	/* 履歴は新しい順なので、1 つ前(古い)の画像は、一覧では 1 つ後ろにある */
+	const auto previous_pos = std::next(current_pos);
+	if (previous_pos == images.cend()) {
 		if (is_clipboard_image_showing()) {
 			obs_log(LOG_INFO, "show previous: current image is the oldest, restarting auto-hide");
 			auto_hide_restart();
 		} else {
 			obs_log(LOG_INFO, "show previous: current image is the oldest, showing it again");
-			show_history_image(*found, "previous hotkey");
+			show_history_image(*current_pos, "previous hotkey");
 		}
 		return;
 	}
-	show_history_image(*std::next(found), "previous hotkey");
+	show_history_image(*previous_pos, "previous hotkey");
 }
 
 /**
