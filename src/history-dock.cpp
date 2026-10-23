@@ -167,7 +167,7 @@ QString text(const char *key)
  * @brief ファイル名(yyyyMMdd-HHmmss-zzz.拡張子)から、保存した日時の表示用の文字列を作る。
  *
  * @param path 画像ファイルのパス。
- * @return 日時(例: 10/20 14:03)。名前から読めなければファイル名をそのまま返す。
+ * @return 日時(例: 2026/10/20 14:03)。名前から読めなければファイル名をそのまま返す。
  */
 QString saved_time_label(const QString &path)
 {
@@ -175,7 +175,7 @@ QString saved_time_label(const QString &path)
 	const QDateTime time = QDateTime::fromString(name.left(15), QStringLiteral("yyyyMMdd-HHmmss"));
 	if (!time.isValid())
 		return QFileInfo(path).fileName();
-	return time.toString(QStringLiteral("M/d HH:mm"));
+	return time.toString(QStringLiteral("yyyy/M/d HH:mm"));
 }
 
 /**
