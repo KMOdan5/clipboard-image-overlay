@@ -187,15 +187,20 @@ bool same_file(const std::string &a, const std::string &b)
 }
 
 /**
- * @brief 「1 つ前の画像を表示」ホットキーの処理(#15)。
+ * @brief 「前の画像を表示」ホットキーの処理。
  *
  * @details
- * - 画像が表示されていないとき: 一番新しい画像をもう一度表示する(「さっきの画像もう一回」)
- * - 画像が表示されているとき: 今の画像より 1 つ古い画像に切り替える。押すたびにさかのぼる
- *   - 今の画像が一番古い画像なら、何もしない(一番新しい画像には戻らない)
- *   - 今の画像が履歴にない(掃除で消えた・配信者が別の画像を設定した)なら、一番新しい画像を表示する
+ * 今の画像('Clipboard Image' が参照している画像。最後に表示した画像)より 1 つ古い画像を表示する。押すたびにさかのぼる。
+ * - 表示中か非表示かに関係なく、今の画像を基準にする。履歴ドックのハイライトと同じ画像なので、
+ *   押す前にドックを見れば、何が出るかが分かる
+ * - 今の画像が一番古い画像なら、それより前はないので、今の画像をもう一度表示する
+ *   - 非表示なら、今の画像を表示する
+ *   - 表示中なら、表示はそのままで、自動で非表示にするまでの時間を最初からやり直す
+ *     (同じ画像に差し替えると、フェードアウトとフェードインでちらつくため)
+ *   - 一番新しい画像には戻らない。気づかずに押し続けたとき、意図しない画像が配信に映らないように
+ * - 今の画像が履歴にない(掃除で消えた・配信者が別の画像を設定した・'Clipboard Image' がない)なら、一番新しい画像を表示する
  *
- * 履歴を覚えておく仕組みは持たず、そのときの表示状態と保存フォルダの一覧だけで決める。
+ * 履歴を覚えておく仕組みは持たず、'Clipboard Image' の画像と保存フォルダの一覧だけで決める。
  *
  * @note スレッド: UI スレッドで呼ぶこと。
  * @see on_previous_hotkey_pressed()(呼び出し元)
@@ -208,23 +213,28 @@ void on_show_previous_requested()
 		return;
 	}
 
-	if (!is_clipboard_image_showing()) {
+	/* 履歴の中で、今の画像がある位置 */
+	const std::string current = current_clipboard_image();
+	const auto current_pos = std::find_if(images.cbegin(), images.cend(),
+					      [&current](const std::string &path) { return same_file(path, current); });
+	if (current_pos == images.cend()) {
 		show_history_image(images.front(), "previous hotkey");
 		return;
 	}
 
-	const std::string current = current_clipboard_image();
-	const auto found = std::find_if(images.cbegin(), images.cend(),
-					[&current](const std::string &path) { return same_file(path, current); });
-	if (found == images.cend()) {
-		show_history_image(images.front(), "previous hotkey");
+	/* 履歴は新しい順なので、1 つ前(古い)の画像は、一覧では 1 つ後ろにある */
+	const auto previous_pos = std::next(current_pos);
+	if (previous_pos == images.cend()) {
+		if (is_clipboard_image_showing()) {
+			obs_log(LOG_INFO, "show previous: current image is the oldest, restarting auto-hide");
+			auto_hide_restart();
+		} else {
+			obs_log(LOG_INFO, "show previous: current image is the oldest, showing it again");
+			show_history_image(*current_pos, "previous hotkey");
+		}
 		return;
 	}
-	if (std::next(found) == images.cend()) {
-		obs_log(LOG_INFO, "show previous: already showing the oldest image");
-		return;
-	}
-	show_history_image(*std::next(found), "previous hotkey");
+	show_history_image(*previous_pos, "previous hotkey");
 }
 
 /**
@@ -505,11 +515,12 @@ bool obs_module_load(void)
 
 	/*
 	 * 履歴ドック(#15)。クリックされた画像は、ホットキーと同じ処理で表示する。
-	 * 表示中の画像の問い合わせには、シーンの読み込み・切り替え・終了の途中は答えない(片付け中のシーンを触らないため)
+	 * ドックのハイライトは今の画像('Clipboard Image' が参照している画像)で、表示中か非表示かは問わない。
+	 * 問い合わせには、シーンの読み込み・切り替え・終了の途中は答えない(片付け中のシーンを触らないため)
 	 */
 	history_dock_register([](const std::string &path) { show_history_image(path, "history"); },
 			      []() {
-				      if (!scenes_ready || !is_clipboard_image_showing())
+				      if (!scenes_ready)
 					      return std::string();
 				      return current_clipboard_image();
 			      });
