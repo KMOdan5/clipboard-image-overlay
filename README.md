@@ -72,6 +72,7 @@ Download the latest version from [Releases](https://github.com/KMOdan5/clipboard
 
 - Free to use for both individuals and companies, including monetized streams.
 - No credit is required. If you like it, I would be happy if you mention it on your stream or social media.
+- If you would like to support development, you can do so via [GitHub Sponsors](https://github.com/sponsors/KMOdan5).
 - Please make sure you have the rights (such as copyright) to the images you show.
 - Modifications and redistribution must follow GPL-2.0.
 
