@@ -330,7 +330,7 @@ struct HotkeyEntry {
 };
 
 /**
- * @brief このプラグインのホットキーの一覧(#89)。
+ * @brief このプラグインのホットキーの一覧。
  *
  * @details
  * **この順で、OBS の設定 > ホットキーに並ぶ。**
@@ -343,7 +343,6 @@ struct HotkeyEntry {
 HotkeyEntry hotkeys[] = {
 	{"clipboard_image_overlay.show", "Hotkey.ShowClipboardImage", "show_hotkey", on_hotkey_pressed,
 	 OBS_INVALID_HOTKEY_ID},
-	/* #15 で追加 */
 	{"clipboard_image_overlay.show_previous", "Hotkey.ShowPrevious", "previous_hotkey", on_previous_hotkey_pressed,
 	 OBS_INVALID_HOTKEY_ID},
 	{"clipboard_image_overlay.toggle_pause", "Hotkey.TogglePause", "pause_hotkey", on_pause_hotkey_pressed,
