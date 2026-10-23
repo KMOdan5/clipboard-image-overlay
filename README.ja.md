@@ -48,19 +48,19 @@ Windows は `clipboard-image-overlay-(版)-windows-x64.zip`
 
 | 公開時期 | 版 | 内容 |
 |---|---|---|
-| 2026 年 10 月 | 0.1(beta) | 第 1 回ベータテスト。基本機能と環境ごとの動作確認 |
-| 2026 年 11 月 | 0.2(beta) | 第 2 回ベータテスト。履歴ドックとインストーラーの追加 |
+| 2026 年 10 月 | 0.1(beta) | ベータテスト(知り合いとの動作テスト)。基本機能と環境ごとの動作確認 |
+| 2026 年 11 月 | 0.2(beta) | 公開ベータテスト。履歴ドックとインストーラーの追加 |
 | 2026 年 12 月上旬 | 1.0(正式版) | テスト結果の反映とマニュアルの充実 |
 
 > [!TIP]
-> ベータ版をダウンロードすることで、どなたでもテストに参加できます。
+> 11 月の公開ベータテストから、どなたでも参加できます。
 
 ## 動作環境
 
 - Windows 10 / 11
 - OBS Studio 31.1.1 以降
 
-macOS・Linux 向けのファイルもありますが、動作は確認していません。
+macOS 向けのファイルもありますが、動作は確認していません。
 
 ## インストールと使い方
 
@@ -83,22 +83,22 @@ macOS・Linux 向けのファイルもありますが、動作は確認してい
 
 [不具合・ご要望フォーム](https://docs.google.com/forms/d/e/1FAIpQLSeOoU9HNzkLZx70GtSAoAbp-y8T491vJsohMwMT1NJjwKI_xA/viewform?usp=pp_url&entry.11414643=Clipboard+Image+Overlay)からお知らせください。GitHub をお使いの方は [Issues](https://github.com/KMOdan5/clipboard-image-overlay/issues/new/choose) からも報告できます。セキュリティに関わる問題は [SECURITY.md](SECURITY.md) の方法で報告してください。
 
-## コード署名ポリシー(Code signing policy)
+## コード署名ポリシー
 
 Windows 用のファイルへのコード署名を、SignPath Foundation に申請しています。
 
 <details>
-<summary>署名の条件と担当者</summary>
+<summary>署名の方針と作者</summary>
 
 署名が始まるまで、配布しているファイルには署名がありません。
 
 - 署名するのは、このリポジトリのソースから GitHub Actions で作ったファイルだけです。
-- 署名は、リリースのたびに承認者が中身を確かめてから行います。
+- 署名は、リリースのたびに作者が中身を確かめて承認してから行います。
 - ソースの変更はすべて PR を通して取り込みます。作者のアカウントは多要素認証で守り、リリースのタグは作者だけが作れるよう保護しています。
 
-**役割と担当者**
+**作者と役割**
 
-- 作者・レビュー担当・承認者: [KMOdan5](https://github.com/KMOdan5)
+- 作成・レビュー・承認: [KMOdan5](https://github.com/KMOdan5)
   - 要件と設計を決め、すべての変更をレビューします。レビューでは、セキュリティの確認とリファクタも行います。
 - コードの一部は AI(Claude)を補助に使って書いています。AI が書いたコードも、作者がレビューしてから取り込みます。
 

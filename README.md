@@ -48,19 +48,19 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64.zip`
 
 | Release | Version | What's included |
 |---|---|---|
-| October 2026 | 0.1 (beta) | First beta test: checking the core features on different environments |
-| November 2026 | 0.2 (beta) | Second beta test: adding the history dock and an installer |
+| October 2026 | 0.1 (beta) | Beta test (closed test with acquaintances): checking the core features on different environments |
+| November 2026 | 0.2 (beta) | Public beta test: adding the history dock and an installer |
 | Early December 2026 | 1.0 | Official release: reflecting the test results and improving the manual |
 
 > [!TIP]
-> Anyone can join the test by downloading the beta version.
+> Anyone can join from the public beta test in November.
 
 ## Requirements
 
 - Windows 10 / 11
 - OBS Studio 31.1.1 or later
 
-Files for macOS and Linux are also provided, but they have not been tested.
+Files for macOS are also provided, but they have not been tested.
 
 ## Installation and usage
 
@@ -88,12 +88,12 @@ Please use the [bug report and request form](https://docs.google.com/forms/d/e/1
 We have applied to SignPath Foundation for code signing of the Windows files.
 
 <details>
-<summary>Signing conditions and team roles</summary>
+<summary>Signing policy and team</summary>
 
 Until signing starts, the distributed files are not signed.
 
 - Only files built by GitHub Actions from the source code in this repository are signed.
-- Each release is signed only after the approver has checked its contents.
+- Each release is signed only after the author has checked and approved its contents.
 - Every source change is merged through a pull request. The author's account is protected with multi-factor authentication, and release tags are protected so that only the author can create them.
 
 **Team roles**
