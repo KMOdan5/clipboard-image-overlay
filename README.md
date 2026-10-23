@@ -8,6 +8,8 @@ An OBS plugin that shows a copied image on your stream with a single hotkey.<br>
 The image is hidden automatically after a few seconds.<br>
 Made for just-chatting streams, so you can say "look at this" without saving the file first.
 
+Author: Kemoyama (Kemodan5)
+
 <!-- Image: demo GIF (docs/images/demo.gif). After adding the image, remove the comment markers around the next line -->
 <!-- <img src="docs/images/demo.gif" width="720" alt="Showing a copied image with a hotkey and hiding it automatically"> -->
 
