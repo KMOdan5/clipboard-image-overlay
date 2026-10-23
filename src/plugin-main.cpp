@@ -193,7 +193,11 @@ bool same_file(const std::string &a, const std::string &b)
  * 今の画像('Clipboard Image' が参照している画像。最後に表示した画像)より 1 つ古い画像を表示する。押すたびにさかのぼる。
  * - 表示中か非表示かに関係なく、今の画像を基準にする。履歴ドックのハイライトと同じ画像なので、
  *   押す前にドックを見れば、何が出るかが分かる
- * - 今の画像が一番古い画像なら、何もしない(一番新しい画像には戻らない)
+ * - 今の画像が一番古い画像なら、それより前はないので、今の画像をもう一度表示する
+ *   - 非表示なら、今の画像を表示する
+ *   - 表示中なら、表示はそのままで、自動で非表示にするまでの時間を最初からやり直す
+ *     (同じ画像に差し替えると、フェードアウトとフェードインでちらつくため)
+ *   - 一番新しい画像には戻らない。気づかずに押し続けたとき、意図しない画像が配信に映らないように
  * - 今の画像が履歴にない(掃除で消えた・配信者が別の画像を設定した・'Clipboard Image' がない)なら、一番新しい画像を表示する
  *
  * 履歴を覚えておく仕組みは持たず、'Clipboard Image' の画像と保存フォルダの一覧だけで決める。
@@ -217,7 +221,13 @@ void on_show_previous_requested()
 		return;
 	}
 	if (std::next(found) == images.cend()) {
-		obs_log(LOG_INFO, "show previous: current image is the oldest");
+		if (is_clipboard_image_showing()) {
+			obs_log(LOG_INFO, "show previous: current image is the oldest, restarting auto-hide");
+			auto_hide_restart();
+		} else {
+			obs_log(LOG_INFO, "show previous: current image is the oldest, showing it again");
+			show_history_image(*found, "previous hotkey");
+		}
 		return;
 	}
 	show_history_image(*std::next(found), "previous hotkey");
