@@ -27,17 +27,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *                                                 └→ request_thumbnail()  まだないサムネイルを裏で作る
  *   ドックの大きさの変化 ─→ update_layout()  1 行の枚数とサムネイルの大きさを決め直す
  *   サムネイルをクリック ─→ on_selected(path)  表示は plugin-main.cpp が行う
- *   一定時間ごと(ドックが見えている間)─→ update_current()  表示中の画像のカードを目立たせる
+ *   一定時間ごと(ドックが見えている間)─→ update_current()  今の画像のカードを目立たせる
  *   ドックが見えるようになった ─→ showEvent()  見えていない間の変化に追いつく
  * @endcode
  *
- * 一覧の読み込み・サムネイルの作成・表示中の画像の問い合わせは、ドックが見えている間だけ行う。
+ * 一覧の読み込み・サムネイルの作成・今の画像の問い合わせは、ドックが見えている間だけ行う。
  *
  * 並べ方: 保存している画像(最大 50 枚)を新しい順に並べ、多いときは縦にスクロールする。
  * 1 行の枚数はドックの幅から決め、サムネイルは THUMB_MIN_WIDTH〜THUMB_MAX_WIDTH の間で、
  * ドックの幅をすき間なく埋める大きさにする。ドックを広げると大きく見え、狭めると 1 行の枚数が減る。
  * 1 枚ごとに枠付きのカードに載せ(ThumbnailDelegate)、マウスを乗せると色を変えてクリックできることを示す。
- * 'Clipboard Image' で表示中の画像のカードは、太い枠と濃い背景にして、今どれが出ているかを示す。
+ * 今の画像('Clipboard Image' が参照している画像。最後に表示した画像で、表示中か非表示かに関係なく 1 枚ある)の
+ * カードは、太い枠と濃い背景にして、どれを選んでいるかを示す。「前の画像を表示」も、この画像を基準にする(plugin-main.cpp)。
  *
  * 画面は Qt のウィジェットを組み合わせて作る(.ui ファイルや Q_OBJECT は使わない。部品が少ないため)。
  * 表示する文字列はすべて data/locale の ini から読む。
@@ -61,8 +62,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QDir>
 #include <QEvent>
 #include <QFileInfo>
-#include <QFont>
-#include <QFontMetricsF>
 #include <QFileSystemWatcher>
 #include <QHash>
 #include <QIcon>
@@ -133,38 +132,26 @@ constexpr int THUMBNAIL_THREADS = 2;
 /// @brief 一覧の項目に、画像ファイルのパスを持たせるときの役割番号。
 constexpr int PATH_ROLE = Qt::UserRole;
 
-/// @brief 一覧の項目に、表示中の画像かどうか(bool)を持たせるときの役割番号。
+/// @brief 一覧の項目に、今の画像かどうか(bool)を持たせるときの役割番号。
 constexpr int CURRENT_ROLE = Qt::UserRole + 1;
 
 /**
- * @brief 表示中の画像を問い合わせる間隔(ミリ秒)。
- * @details 表示/非表示は、ホットキー・ドック・自動で非表示にするタイマー・目のアイコンなど多くの経路で変わる。
+ * @brief 今の画像を問い合わせる間隔(ミリ秒)。
+ * @details 今の画像は、ホットキー・ドック・メニューのほか、配信者が OBS でソースのプロパティから画像を変えたときにも変わる。
  *          経路ごとに知らせを受けると漏れが出やすいため、ドックの側から定期的に問い合わせる。
- *          問い合わせはシーンを一通り見るだけで軽く、ドックが見えている間しか行わない。
+ *          問い合わせはソースの設定を 1 つ読むだけで軽く、ドックが見えている間しか行わない。
  *          間隔は、クリックしてから枠が移るまでの遅れが気にならない長さにする。
  */
 constexpr int CURRENT_POLL_MS = 250;
 
-/// @brief 表示中の画像のカードの枠の太さ(ピクセル)。マウスを乗せたとき(1 ピクセル)と見分けられる太さ。
+/// @brief 今の画像のカードの枠の太さ(ピクセル)。マウスを乗せたとき(1 ピクセル)と見分けられる太さ。
 constexpr qreal CURRENT_BORDER_WIDTH = 3.0;
 
-/// @brief 表示中の画像のカードの背景の濃さ(0〜255)。マウスを乗せたとき(HOVER_BACKGROUND_ALPHA)より濃くする。
+/// @brief 今の画像のカードの背景の濃さ(0〜255)。マウスを乗せたとき(HOVER_BACKGROUND_ALPHA)より濃くする。
 constexpr int CURRENT_BACKGROUND_ALPHA = 96;
 
 /// @brief マウスを乗せたカードの背景の濃さ(0〜255)。
 constexpr int HOVER_BACKGROUND_ALPHA = 48;
-
-/// @brief 「表示中」のラベルの、カードの角からの距離(ピクセル)。太い枠に重ならない位置にする。
-constexpr qreal BADGE_MARGIN = 6.0;
-
-/// @brief 「表示中」のラベルの、文字の左右の余白(ピクセル)。
-constexpr qreal BADGE_PADDING_X = 6.0;
-
-/// @brief 「表示中」のラベルの、文字の上下の余白(ピクセル)。
-constexpr qreal BADGE_PADDING_Y = 2.0;
-
-/// @brief 「表示中」のラベルの文字の大きさ(一覧の文字に対する倍率)。カードの中で画像より目立ちすぎないよう、少し小さくする。
-constexpr qreal BADGE_FONT_SCALE = 0.85;
 
 /**
  * @brief 翻訳した文字列を Qt の文字列で返す。
@@ -231,21 +218,17 @@ QImage make_thumbnail(const QString &path, qreal scale)
  * 1 枚ごとにカードを敷いて枠を付ける。カードの見た目は 3 通り:
  * - 通常: 背景色のカードに、目立たない枠
  * - マウスを乗せたとき: 選択色の細い枠と薄い背景(クリックできることを示す)
- * - 表示中の画像: 選択色の太い枠と濃い背景に、左上の「表示中」のラベル(マウスを乗せても変えない。今出ている画像を見失わないように)
+ * - 今の画像: 選択色の太い枠と濃い背景(マウスを乗せても変えない。どれを選んでいるかを見失わないように)
  *
- * 枠だけだと「選択した画像」に見え、自動で非表示になったときに「選択が外れた」と受け取られやすい。
- * ラベルで「画面に出ている」ことを示し、消えたときは「表示が終わった」と読めるようにする。
+ * ハイライトは「選んでいる画像」を示し、画面に出ているかどうかは示さない(それは OBS のプレビューで見る)。
+ * 非表示になってもハイライトが残るので、「前の画像を表示」で次に何が出るかを予想できる。
  *
  * 色はすべて Qt の配色(OBS のテーマ)から取るので、ダーク・ライトどちらのテーマでも浮かない。
  * 画像はカードの中央に、縦横比を保って描く。サムネイルの作成中は、カードだけを描く。
  */
 class ThumbnailDelegate : public QStyledItemDelegate {
 public:
-	/**
-	 * @brief 描き方を作る。
-	 * @param parent 持ち主(一覧)。
-	 */
-	explicit ThumbnailDelegate(QObject *parent) : QStyledItemDelegate(parent), badge_text_(text("Dock.Showing")) {}
+	using QStyledItemDelegate::QStyledItemDelegate;
 
 	void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
 	{
@@ -286,38 +269,8 @@ public:
 				card.toAlignedRect().adjusted(CARD_PADDING, CARD_PADDING, -CARD_PADDING, -CARD_PADDING);
 			icon.paint(painter, area, Qt::AlignCenter);
 		}
-		if (current)
-			paint_badge(painter, option, card);
 		painter->restore();
 	}
-
-private:
-	/**
-	 * @brief カードの左上に「表示中」のラベルを描く。画像に重なっても読めるよう、選択色の地に文字を載せる。
-	 * @param painter 描く先。
-	 * @param option  一覧の文字の大きさと配色。
-	 * @param card    カードの範囲。
-	 */
-	void paint_badge(QPainter *painter, const QStyleOptionViewItem &option, const QRectF &card) const
-	{
-		QFont font = option.font;
-		font.setBold(true);
-		font.setPointSizeF(font.pointSizeF() * BADGE_FONT_SCALE);
-		const QFontMetricsF metrics(font);
-		const QRectF badge(card.left() + BADGE_MARGIN, card.top() + BADGE_MARGIN,
-				   metrics.horizontalAdvance(badge_text_) + BADGE_PADDING_X * 2,
-				   metrics.height() + BADGE_PADDING_Y * 2);
-
-		painter->setPen(Qt::NoPen);
-		painter->setBrush(option.palette.color(QPalette::Highlight));
-		painter->drawRoundedRect(badge, CARD_RADIUS - 1, CARD_RADIUS - 1);
-		painter->setFont(font);
-		painter->setPen(option.palette.color(QPalette::HighlightedText));
-		painter->drawText(badge, Qt::AlignCenter, badge_text_);
-	}
-
-	/// @brief 「表示中」のラベルの文字。描くたびに翻訳を引かないよう、作るときに読んでおく。
-	QString badge_text_;
 };
 
 /**
@@ -331,7 +284,7 @@ public:
 	/**
 	 * @brief 部品を作り、保存フォルダの見張りを始める。
 	 * @param on_selected サムネイルがクリックされたときに呼ぶ処理。
-	 * @param current     表示中の画像を問い合わせる処理。
+	 * @param current     今の画像を問い合わせる処理。
 	 */
 	HistoryWidget(HistorySelectedCallback on_selected, HistoryCurrentCallback current)
 		: on_selected_(std::move(on_selected)),
@@ -392,7 +345,7 @@ public:
 		}
 
 		/*
-		 * 表示中の画像を定期的に問い合わせる(CURRENT_POLL_MS の説明を参照)。
+		 * 今の画像を定期的に問い合わせる(CURRENT_POLL_MS の説明を参照)。
 		 * 問い合わせと一覧の読み込みは、ドックが見えている間だけ行う(showEvent() で始め、hideEvent() で止める)
 		 */
 		current_timer_.setInterval(CURRENT_POLL_MS);
@@ -420,10 +373,10 @@ public:
 
 protected:
 	/**
-	 * @brief ドックが見えるようになったら、見えていない間に溜まった変化に追いつき、表示中の画像の問い合わせを始める。
+	 * @brief ドックが見えるようになったら、見えていない間に溜まった変化に追いつき、今の画像の問い合わせを始める。
 	 *
 	 * @details ドックを閉じている・別のドックのタブの裏にあるときは、一覧の読み込み・サムネイルの作成・
-	 *          表示中の画像の問い合わせをしない(配信中の OBS に、見えない画面のための処理をさせないため)。
+	 *          今の画像の問い合わせをしない(配信中の OBS に、見えない画面のための処理をさせないため)。
 	 *          保存フォルダの見張り自体は続ける(変化があったことだけを覚えておき、見えたときに読み直す)。
 	 */
 	void showEvent(QShowEvent *event) override
@@ -432,14 +385,14 @@ protected:
 		if (stopped_)
 			return;
 		if (needs_refresh_)
-			refresh(); /* 表示中の画像の印も付け直される */
+			refresh(); /* 今の画像の印も付け直される */
 		else
 			update_current(true);
 		current_timer_.start();
 	}
 
 	/**
-	 * @brief ドックが見えなくなったら、表示中の画像の問い合わせを止める。
+	 * @brief ドックが見えなくなったら、今の画像の問い合わせを止める。
 	 */
 	void hideEvent(QHideEvent *event) override
 	{
@@ -550,21 +503,21 @@ private:
 		else
 			list_->verticalScrollBar()->setValue(scroll);
 
-		/* 作り直した項目には印がないので、表示中の画像に付け直す */
+		/* 作り直した項目には印がないので、今の画像に付け直す */
 		update_current(true);
 	}
 
 	/**
-	 * @brief 表示中の画像を問い合わせ、そのカードに印を付ける(印は ThumbnailDelegate が描く)。
+	 * @brief 今の画像を問い合わせ、そのカードに印を付ける(印は ThumbnailDelegate が描く)。
 	 *
 	 * @details
-	 * 表示中の画像が前回と同じなら何もしない(ほとんどの問い合わせはここで終わる)。
+	 * 今の画像が前回と同じなら何もしない(ほとんどの問い合わせはここで終わる)。
 	 * 変わっていたら、一覧の中から同じファイルを探して印を付け直す。
 	 * 'Clipboard Image' に設定されたパスと一覧のパスは区切り文字の向きなどが違うことがあるため、
 	 * 文字列ではなくファイルとして比べる。一覧にない画像(掃除で消えた・配信者が別の画像を設定した)なら、どれにも印を付けない。
 	 * ドックが見えていない間は問い合わせない(見えたときに追いつく。showEvent())。
 	 *
-	 * @param force true なら、表示中の画像が前回と同じでも印を付け直す(一覧を作り直した後・ドックが見えたとき)。
+	 * @param force true なら、今の画像が前回と同じでも印を付け直す(一覧を作り直した後・ドックが見えたとき)。
 	 */
 	void update_current(bool force = false)
 	{
@@ -648,7 +601,7 @@ private:
 
 	/// @brief サムネイルがクリックされたときに呼ぶ処理。
 	HistorySelectedCallback on_selected_;
-	/// @brief 表示中の画像を問い合わせる処理。
+	/// @brief 今の画像を問い合わせる処理。
 	HistoryCurrentCallback current_;
 	/// @brief サムネイルの一覧。
 	QListWidget *list_ = nullptr;
@@ -663,7 +616,7 @@ private:
 	QHash<QString, QPixmap> thumbnails_;
 	/// @brief 作成中のサムネイルのパス。同じ画像を二重に作らないため。
 	QSet<QString> loading_;
-	/// @brief 前回問い合わせたときの、表示中の画像のパス(表示していなければ空)。変わったときだけ印を付け直すため。
+	/// @brief 前回問い合わせたときの、今の画像のパス(なければ空)。変わったときだけ印を付け直すため。
 	QString current_raw_;
 	/// @brief true なら、ドックが見えていない間に保存フォルダが変わった(または、まだ一度も読んでいない)。見えたときに読み直す。
 	bool needs_refresh_ = false;
@@ -674,7 +627,7 @@ private:
 	QFileSystemWatcher watcher_;
 	/// @brief フォルダの変化をまとめて 1 回で読み直すためのタイマー。
 	QTimer refresh_timer_;
-	/// @brief 表示中の画像を定期的に問い合わせるタイマー。
+	/// @brief 今の画像を定期的に問い合わせるタイマー。
 	QTimer current_timer_;
 	/**
 	 * @brief サムネイルを作るスレッド。
