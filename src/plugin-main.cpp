@@ -76,44 +76,8 @@ OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 namespace {
 
-/**
- * @brief ホットキーの内部名。
- * @warning OBS の設定ファイルに保存されるため、変更すると既存の割り当てが消える。
- */
-constexpr const char *HOTKEY_NAME = "clipboard_image_overlay.show";
-
 /// @brief シーンコレクションの保存データ内で、このプラグインが使うキー名。
 constexpr const char *SAVE_KEY = "clipboard-image-overlay";
-
-/// @brief SAVE_KEY の中で、表示ホットキーの割り当てを保存するキー名。
-constexpr const char *SAVE_HOTKEY_KEY = "show_hotkey";
-
-/**
- * @brief 一時停止ホットキーの内部名。
- * @warning OBS の設定ファイルに保存されるため、変更すると既存の割り当てが消える。
- */
-constexpr const char *PAUSE_HOTKEY_NAME = "clipboard_image_overlay.toggle_pause";
-
-/// @brief SAVE_KEY の中で、一時停止ホットキーの割り当てを保存するキー名。
-constexpr const char *SAVE_PAUSE_HOTKEY_KEY = "pause_hotkey";
-
-/**
- * @brief 「1 つ前の画像を表示」ホットキーの内部名(#15)。
- * @warning OBS の設定ファイルに保存されるため、変更すると既存の割り当てが消える。
- */
-constexpr const char *PREVIOUS_HOTKEY_NAME = "clipboard_image_overlay.show_previous";
-
-/// @brief SAVE_KEY の中で、「1 つ前の画像を表示」ホットキーの割り当てを保存するキー名。
-constexpr const char *SAVE_PREVIOUS_HOTKEY_KEY = "previous_hotkey";
-
-/// @brief 登録した表示ホットキーの ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
-obs_hotkey_id show_hotkey_id = OBS_INVALID_HOTKEY_ID;
-
-/// @brief 登録した一時停止ホットキーの ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
-obs_hotkey_id pause_hotkey_id = OBS_INVALID_HOTKEY_ID;
-
-/// @brief 登録した「1 つ前の画像を表示」ホットキーの ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
-obs_hotkey_id previous_hotkey_id = OBS_INVALID_HOTKEY_ID;
 
 /**
  * @brief シーンコレクションの読み込みが終わり、通知を登録してよい状態なら true。
@@ -344,6 +308,48 @@ void on_previous_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pres
 }
 
 /**
+ * @brief このプラグインのホットキー 1 つ分の情報。
+ */
+struct HotkeyEntry {
+	/**
+	 * @brief 内部名。
+	 * @warning OBS がこの名前で割り当てを見分けるため、変更すると既存の割り当てが消える。
+	 */
+	const char *name;
+	/// @brief 表示名の、data/locale の ini のキー。表示名は変えても割り当ては消えない。
+	const char *text_key;
+	/**
+	 * @brief SAVE_KEY の中で、割り当てを保存するキー名。
+	 * @warning 変更すると既存の割り当てが読み込めなくなる。
+	 */
+	const char *save_key;
+	/// @brief 押された/離されたときの処理。
+	obs_hotkey_func callback;
+	/// @brief 登録した ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
+	obs_hotkey_id id;
+};
+
+/**
+ * @brief このプラグインのホットキーの一覧。
+ *
+ * @details
+ * **この順で、OBS の設定 > ホットキーに並ぶ。**
+ * OBS はプラグインのホットキーを、見出しのない一般の欄に登録した順で並べる(名前順には並べ替えない)。
+ * 並び順は保存されず、起動のたびにこの一覧の順で登録し直すので、ここで並べ替えれば次の起動から反映される。
+ * - 新しいホットキーは、この一覧に足すだけにする(登録・保存・読み込み・解除はこの一覧から行う)
+ * - 登録は obs_module_load() でまとめて行う。後から(起動完了時など)登録すると、
+ *   ほかのプラグインのホットキーの後ろに離れて並んでしまう
+ */
+HotkeyEntry hotkeys[] = {
+	{"clipboard_image_overlay.show", "Hotkey.ShowClipboardImage", "show_hotkey", on_hotkey_pressed,
+	 OBS_INVALID_HOTKEY_ID},
+	{"clipboard_image_overlay.show_previous", "Hotkey.ShowPrevious", "previous_hotkey", on_previous_hotkey_pressed,
+	 OBS_INVALID_HOTKEY_ID},
+	{"clipboard_image_overlay.toggle_pause", "Hotkey.TogglePause", "pause_hotkey", on_pause_hotkey_pressed,
+	 OBS_INVALID_HOTKEY_ID},
+};
+
+/**
  * @brief 1 つのホットキーの割り当てを、保存データに書き込む。
  *
  * @param obj 書き込み先(このプラグイン用の保存データ)。
@@ -379,7 +385,8 @@ void load_hotkey(obs_data_t *obj, const char *key, obs_hotkey_id id)
  * そのため他のフロントエンドプラグインと同じく、シーンコレクションのデータに自分で書き込む。
  * 結果として、割り当てはシーンコレクションごとになる。
  *
- * 保存形式: { "clipboard-image-overlay": { "show_hotkey": [...], "pause_hotkey": [...], "previous_hotkey": [...] } }
+ * 保存形式: { "clipboard-image-overlay": { "show_hotkey": [...], "previous_hotkey": [...], "pause_hotkey": [...] } }
+ * (キー名は hotkeys の save_key)
  *
  * @param save_data シーンコレクションの保存データ。
  * @param saving    保存時 true、読み込み時 false。
@@ -391,9 +398,8 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
 	if (saving) {
 		/* 保存: 現在の割り当てを書き込む */
 		obs_data_t *obj = obs_data_create();
-		save_hotkey(obj, SAVE_HOTKEY_KEY, show_hotkey_id);
-		save_hotkey(obj, SAVE_PAUSE_HOTKEY_KEY, pause_hotkey_id);
-		save_hotkey(obj, SAVE_PREVIOUS_HOTKEY_KEY, previous_hotkey_id);
+		for (const HotkeyEntry &hotkey : hotkeys)
+			save_hotkey(obj, hotkey.save_key, hotkey.id);
 		obs_data_set_obj(save_data, SAVE_KEY, obj);
 		obs_data_release(obj);
 		return;
@@ -404,9 +410,8 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
 	if (!obj)
 		return;
 
-	load_hotkey(obj, SAVE_HOTKEY_KEY, show_hotkey_id);
-	load_hotkey(obj, SAVE_PAUSE_HOTKEY_KEY, pause_hotkey_id);
-	load_hotkey(obj, SAVE_PREVIOUS_HOTKEY_KEY, previous_hotkey_id);
+	for (const HotkeyEntry &hotkey : hotkeys)
+		load_hotkey(obj, hotkey.save_key, hotkey.id);
 	obs_data_release(obj);
 	obs_log(LOG_INFO, "hotkey bindings loaded");
 }
@@ -489,21 +494,14 @@ bool obs_module_load(void)
 
 	add_tools_submenu();
 
-	show_hotkey_id = obs_hotkey_register_frontend(HOTKEY_NAME, obs_module_text("Hotkey.ShowClipboardImage"),
-						      on_hotkey_pressed, nullptr);
-	/* ホットキーが登録できなくてもメニューからは使えるので、警告だけ出して続ける */
-	if (show_hotkey_id == OBS_INVALID_HOTKEY_ID)
-		obs_log(LOG_WARNING, "failed to register show hotkey");
-
-	pause_hotkey_id = obs_hotkey_register_frontend(PAUSE_HOTKEY_NAME, obs_module_text("Hotkey.TogglePause"),
-						       on_pause_hotkey_pressed, nullptr);
-	if (pause_hotkey_id == OBS_INVALID_HOTKEY_ID)
-		obs_log(LOG_WARNING, "failed to register pause hotkey");
-
-	previous_hotkey_id = obs_hotkey_register_frontend(PREVIOUS_HOTKEY_NAME, obs_module_text("Hotkey.ShowPrevious"),
-							  on_previous_hotkey_pressed, nullptr);
-	if (previous_hotkey_id == OBS_INVALID_HOTKEY_ID)
-		obs_log(LOG_WARNING, "failed to register previous hotkey");
+	/* 一覧の順に続けて登録する(この順で設定画面に並ぶ。hotkeys の説明を参照) */
+	for (HotkeyEntry &hotkey : hotkeys) {
+		hotkey.id = obs_hotkey_register_frontend(hotkey.name, obs_module_text(hotkey.text_key), hotkey.callback,
+							 nullptr);
+		/* ホットキーが登録できなくてもメニューやドックからは使えるので、警告だけ出して続ける */
+		if (hotkey.id == OBS_INVALID_HOTKEY_ID)
+			obs_log(LOG_WARNING, "failed to register hotkey %s", hotkey.name);
+	}
 
 	/*
 	 * 履歴ドック(#15)。クリックされた画像は、ホットキーと同じ処理で表示する。
@@ -539,17 +537,11 @@ void obs_module_unload(void)
 	obs_frontend_remove_event_callback(on_frontend_event, nullptr);
 	obs_frontend_remove_save_callback(on_frontend_save, nullptr);
 
-	if (show_hotkey_id != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(show_hotkey_id);
-		show_hotkey_id = OBS_INVALID_HOTKEY_ID;
-	}
-	if (pause_hotkey_id != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(pause_hotkey_id);
-		pause_hotkey_id = OBS_INVALID_HOTKEY_ID;
-	}
-	if (previous_hotkey_id != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(previous_hotkey_id);
-		previous_hotkey_id = OBS_INVALID_HOTKEY_ID;
+	for (HotkeyEntry &hotkey : hotkeys) {
+		if (hotkey.id != OBS_INVALID_HOTKEY_ID) {
+			obs_hotkey_unregister(hotkey.id);
+			hotkey.id = OBS_INVALID_HOTKEY_ID;
+		}
 	}
 
 	obs_log(LOG_INFO, "plugin unloaded");
