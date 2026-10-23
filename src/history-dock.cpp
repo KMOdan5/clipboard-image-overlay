@@ -167,9 +167,8 @@ QString text(const char *key)
  * @brief ファイル名(yyyyMMdd-HHmmss-zzz.拡張子)から、保存した日時の表示用の文字列を作る。
  *
  * @param path 画像ファイルのパス。
- * 書式は言語ごとに data/locale の ini(Dock.TimeFormat)で決める。
- * 日本語は「2026/10/20 14:03」、英語は「2026-10-20 14:03」。英語圏は国によって月と日の順が違い、
- * 「/」区切りだと読み違えやすいため、どの国でも同じに読める年-月-日の形にする。
+ * 書式は言語によらず「2026-10-20 14:03」(年-月-日)にする。英語圏は国によって月と日の順が違い、
+ * 「/」区切りだと読み違えやすいため、どの国でも同じに読める国際規格(ISO 8601)の形にそろえる。
  *
  * @return 日時。名前から読めなければファイル名をそのまま返す。
  */
@@ -179,7 +178,7 @@ QString saved_time_label(const QString &path)
 	const QDateTime time = QDateTime::fromString(name.left(15), QStringLiteral("yyyyMMdd-HHmmss"));
 	if (!time.isValid())
 		return QFileInfo(path).fileName();
-	return time.toString(text("Dock.TimeFormat"));
+	return time.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
 }
 
 /**
