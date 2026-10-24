@@ -15,7 +15,7 @@
 
 ### **[最新版のダウンロード](https://github.com/KMOdan5/clipboard-image-overlay/releases)**
 
-Windows は `clipboard-image-overlay-(版)-windows-x64.zip`
+Windows は `clipboard-image-overlay-(版)-windows-x64-installer.exe`(インストーラー)
 
 </div>
 
@@ -24,7 +24,7 @@ Windows は `clipboard-image-overlay-(版)-windows-x64.zip`
 
 ## できること
 
-| 📋 コピーしてすぐ表示 | ⏱️ 時間が経つと自動で非表示 | 🗂️ 履歴から再表示<br>(0.2 以降) |
+| 📋 コピーしてすぐ表示 | ⏱️ 時間が経つと自動で非表示 | 🗂️ 表示履歴から再表示 |
 |---|---|---|
 | 画像をコピーしてホットキーを押すだけで、簡単に配信画面に表示できます。 | 時間が経過するとフェードアウトして非表示になります。消し忘れの心配はありません。 | 過去に表示した画像の一覧から選ぶことで再表示できます。 |
 
