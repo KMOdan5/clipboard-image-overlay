@@ -22,7 +22,7 @@
 <!-- <img src="../images/tools-menu.png" width="600" alt="「ツール」メニューの「Clipboard Image」"> -->
 
 <details>
-<summary>zip で入れる</summary>
+<summary>手動で入れる</summary>
 
 1. リリースから `clipboard-image-overlay-(版)-windows-x64.zip` をダウンロードし、展開します。
 2. OBS を終了します。
@@ -39,11 +39,11 @@
 
 ### 最新バージョンへ更新するとき
 
-インストーラーの場合は新しい版のインストーラーで同じようにインストールします。zip の場合は OBS を終了して新しい「clipboard-image-overlay」フォルダで上書きします。どちらも設定と表示履歴はそのまま引き継がれます。zip で入れた版の上からインストーラーで入れることもできます。
+インストーラーの場合は新しい版のインストーラーで同じようにインストールします。手動で入れた場合は OBS を終了して新しい「clipboard-image-overlay」フォルダで上書きします。どちらも設定と表示履歴はそのまま引き継がれます。手動で入れた版の上からインストーラーで入れることもできます。
 
 ### アンインストールするとき
 
-インストーラーで入れた場合は Windows の「設定」→「アプリ」→「インストールされているアプリ」から「Clipboard Image Overlay」をアンインストールします。zip で入れた場合は OBS を終了して「plugins」フォルダの「clipboard-image-overlay」フォルダを削除します。
+インストーラーで入れた場合は Windows の「設定」→「アプリ」→「インストールされているアプリ」から「Clipboard Image Overlay」をアンインストールします。手動で入れた場合は OBS を終了して「plugins」フォルダの「clipboard-image-overlay」フォルダを削除します。
 
 アンインストールしても設定と保存した画像は残ります。もう一度インストールすると元の状態に戻ります。完全に削除するときは `%APPDATA%\obs-studio\plugin_config\clipboard-image-overlay` フォルダも削除してください。
 
