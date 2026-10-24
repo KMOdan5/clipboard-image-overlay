@@ -15,11 +15,11 @@
 3. 画面の案内に沿ってインストールします。OBS を起動したままの場合は閉じるかを確認する画面が表示されます。
 4. OBS を起動し、「ツール」メニューに「Clipboard Image」があればインストール完了です。
 
-<!-- 画像: インストール後の「ツール」メニュー(docs/images/tools-menu.png)。画像を置いたら、次の行のコメントの記号を消す -->
-<!-- <img src="../images/tools-menu.png" width="600" alt="「ツール」メニューの「Clipboard Image」"> -->
-
 <!-- 画像: 手順 2 の「Windows によって PC が保護されました」の画面(docs/images/installer-smartscreen.png)。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/installer-smartscreen.png" width="600" alt="「Windows によって PC が保護されました」の画面の「詳細情報」と「実行」"> -->
+
+<!-- 画像: インストール後の「ツール」メニュー(docs/images/tools-menu.png)。画像を置いたら、次の行のコメントの記号を消す -->
+<!-- <img src="../images/tools-menu.png" width="600" alt="「ツール」メニューの「Clipboard Image」"> -->
 
 <details>
 <summary>zip で入れる</summary>
