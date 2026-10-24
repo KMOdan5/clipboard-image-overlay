@@ -15,7 +15,7 @@ Author: Kemoyama (Kemodan5)
 
 ### **[Download the latest version](https://github.com/KMOdan5/clipboard-image-overlay/releases)**
 
-For Windows: `clipboard-image-overlay-(version)-windows-x64.zip`
+For Windows: `clipboard-image-overlay-(version)-windows-x64-installer.exe` (installer)
 
 </div>
 
@@ -24,7 +24,7 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64.zip`
 
 ## Features
 
-| 📋 Copy and show instantly | ⏱️ Hidden automatically after a while | 🗂️ Show again from the history<br>(0.2 and later) |
+| 📋 Copy and show instantly | ⏱️ Hidden automatically after a while | 🗂️ Show again from the history |
 |---|---|---|
 | Just copy an image and press the hotkey to show it on your stream. | Images fade out and are hidden after a while, so you never have to worry about forgetting to hide them. | Choose an image from the list of images you have shown to show it again. |
 
