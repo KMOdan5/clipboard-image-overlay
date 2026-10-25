@@ -23,17 +23,17 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @details
  * 処理の流れ:
  * @code
- *   ツール > Clipboard Image > 画像を表示 ─┐
- *                                          ├→ on_show_requested()
- *   表示ホットキー 押下 ──────────────────┘     (UI スレッド)
+ *   ツール > Clipboard Image > コピーした画像を表示 ─┐
+ *                                                    ├→ on_show_requested()
+ *   表示ホットキー 押下 ────────────────────────────┘     (UI スレッド)
  *        ├→ save_clipboard_image()         画像を保存(clipboard-capture.cpp)
  *        └→ show_saved_image()             保存した画像を表示する共通処理
  *             ├→ show_image_on_current_scene()  シーンに表示(image-display.cpp)
  *             ├→ cleanup_saved_images()         古い画像を掃除(clipboard-capture.cpp)
  *             └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
  *
- *   履歴ドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
- *   「1 つ前の画像を表示」ホットキー ─→ on_show_previous_requested() ─→ show_history_image()
+ *   表示履歴のドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
+ *   「前の画像を表示」ホットキー ─→ on_show_previous_requested() ─→ show_history_image()
  *
  *   一時停止ホットキー 押下 ──→ auto_hide_toggle_pause()  自動で非表示にするタイマーの一時停止/再開
  *                                (auto-hide.cpp)
@@ -43,9 +43,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * 関連ファイル:
  * - clipboard-capture.cpp … クリップボードから画像を取り出して保存する。保存した画像の一覧(履歴)も返す
- * - image-display.cpp … 保存した画像を現在のシーンに表示する/消す
+ * - image-display.cpp … 保存した画像を現在のシーンに表示する/非表示にする。'Clipboard Image' の今の画像を返す
  * - auto-hide.cpp … 表示した画像を一定時間後に自動で消すタイマーと、その一時停止
- * - history-dock.cpp … 履歴ドック(#15)。保存した画像をサムネイルで並べる
+ * - history-dock.cpp … 表示履歴のドック。保存した画像をサムネイルで並べる
  * - settings.cpp … 設定値の読み込み・保存(起動時に settings_load() で読む)
  * - settings-dialog.cpp … 設定画面
  * - data/locale/ の .ini … メニュー名・ホットキー名・ドックの表示文字列
@@ -94,7 +94,7 @@ bool scenes_ready = false;
  *
  * @details
  * 現在のシーンに表示して、自動で消すタイマーを開始する。クリップボードから貼ったときも、
- * 履歴から出したとき(#15)も、ここを通す(フェード・自動で非表示・一時停止が同じように効くように)。
+ * 表示履歴から出したときも、ここを通す(フェード・自動で非表示・一時停止が同じように効くように)。
  * 表示中にもう一度呼ばれると、画像が差し替わり、タイマーも最初からやり直す(表示時間の延長)。
  *
  * @param image 表示する画像(保存フォルダにあるもの)。
@@ -116,7 +116,7 @@ void show_saved_image(const SavedImage &image)
 	const bool shown = show_image_on_current_scene(image);
 
 	/*
-	 * 表示するたびに古い画像を掃除する(#9)。長い配信で何枚も貼っても、保存フォルダがたまり続けないように。
+	 * 表示するたびに古い画像を掃除する。長い配信で何枚も貼っても、保存フォルダがたまり続けないように。
 	 * 表示を始めた後に行うのは、今表示する画像と差し替え待ちの画像を「使用中」として確実に残すため
 	 */
 	cleanup_saved_images(clipboard_images_in_use());
@@ -138,7 +138,7 @@ void show_saved_image(const SavedImage &image)
  * @param trigger どこから呼ばれたか("menu" / "hotkey")。ログ用。
  *
  * @note スレッド: 必ず UI スレッドで呼ぶこと(Qt のクリップボードは UI スレッドからしか触れないため)。
- * @see add_tools_submenu(), on_hotkey_pressed()(呼び出し元)
+ * @see add_tools_submenu()、hotkeys(呼び出し元)
  */
 void on_show_requested(const char *trigger)
 {
@@ -153,7 +153,7 @@ void on_show_requested(const char *trigger)
 }
 
 /**
- * @brief 履歴(保存フォルダ)の画像をもう一度表示する(#15)。
+ * @brief 表示履歴(保存フォルダ)の画像をもう一度表示する。
  *
  * @details 画像の大きさを読んでから show_saved_image() で表示する。
  * 掃除などでファイルが消えていた場合は、理由をログに残して何もしない。
@@ -203,7 +203,7 @@ bool same_file(const std::string &a, const std::string &b)
  * 履歴を覚えておく仕組みは持たず、'Clipboard Image' の画像と保存フォルダの一覧だけで決める。
  *
  * @note スレッド: UI スレッドで呼ぶこと。
- * @see on_previous_hotkey_pressed()(呼び出し元)
+ * @see hotkeys(呼び出し元)
  */
 void on_show_previous_requested()
 {
@@ -242,8 +242,8 @@ void on_show_previous_requested()
  *
  * @details
  * 1 つのプラグインがツールメニューに項目をいくつも並べると、他のプラグインの項目と混ざって探しにくい。
- * そこで項目は 1 つだけにして、その中に「画像を表示」「設定...」を並べる。
- * - 画像を表示 → on_show_requested()(ホットキーと同じ処理)
+ * そこで項目は 1 つだけにして、その中に「コピーした画像を表示」「設定...」を並べる。
+ * - コピーした画像を表示 → on_show_requested()(ホットキーと同じ処理)
  * - 設定...    → open_settings_dialog()(settings-dialog.cpp)
  *
  * サブメニューの親は OBS のメイン画面にする(OBS の終了時に一緒に解放されるように)。
@@ -268,56 +268,6 @@ void add_tools_submenu()
 }
 
 /**
- * @brief ホットキーが押された/離されたときの処理。
- *
- * @param pressed 押したとき true、離したとき false。
- *
- * @note 呼び出し元: OBS(obs_module_load() で登録したホットキー)。
- * @note スレッド: ホットキー専用スレッド(UI スレッドではない)。そのため UI スレッドに処理を依頼する。
- */
-void on_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
-{
-	/* キーを離したときにも呼ばれるので、押したときだけ処理する */
-	if (!pressed)
-		return;
-
-	/* ここはホットキー専用スレッドなので、UI スレッドに処理を依頼してから共通処理を呼ぶ */
-	obs_queue_task(OBS_TASK_UI, [](void *) { on_show_requested("hotkey"); }, nullptr, false);
-}
-
-/**
- * @brief 一時停止ホットキーが押された/離されたときの処理。自動で消すタイマーを一時停止/再開する。
- *
- * @param pressed 押したとき true、離したとき false。
- *
- * @note 呼び出し元: OBS(obs_module_load() で登録したホットキー)。
- * @note スレッド: ホットキー専用スレッド(UI スレッドではない)。Qt のタイマーを触るため UI スレッドに処理を依頼する。
- */
-void on_pause_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
-{
-	if (!pressed)
-		return;
-
-	obs_queue_task(OBS_TASK_UI, [](void *) { auto_hide_toggle_pause(); }, nullptr, false);
-}
-
-/**
- * @brief 「1 つ前の画像を表示」ホットキーが押された/離されたときの処理(#15)。
- *
- * @param pressed 押したとき true、離したとき false。
- *
- * @note 呼び出し元: OBS(obs_module_load() で登録したホットキー)。
- * @note スレッド: ホットキー専用スレッド(UI スレッドではない)。シーンを触るため UI スレッドに処理を依頼する。
- */
-void on_previous_hotkey_pressed(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
-{
-	if (!pressed)
-		return;
-
-	obs_queue_task(OBS_TASK_UI, [](void *) { on_show_previous_requested(); }, nullptr, false);
-}
-
-/**
  * @brief このプラグインのホットキー 1 つ分の情報。
  */
 struct HotkeyEntry {
@@ -333,11 +283,33 @@ struct HotkeyEntry {
 	 * @warning 変更すると既存の割り当てが読み込めなくなる。
 	 */
 	const char *save_key;
-	/// @brief 押された/離されたときの処理。
-	obs_hotkey_func callback;
+	/// @brief 押したときの処理。UI スレッドで呼ばれる(on_hotkey_pressed() が UI スレッドに回す)。
+	void (*action)();
 	/// @brief 登録した ID。登録前・解除後は OBS_INVALID_HOTKEY_ID。
 	obs_hotkey_id id;
 };
+
+/**
+ * @brief ホットキーが押された/離されたときの処理。全ホットキーで共通。
+ *
+ * @details 押したときだけ、そのホットキーの処理(HotkeyEntry::action)を UI スレッドに回す。
+ *          表示・ソースの操作・Qt のタイマーやクリップボードは、UI スレッドでしか触れないため。
+ *
+ * @param data    押されたホットキーの HotkeyEntry(登録時に渡したもの。hotkeys の要素なので、ずっと残る)。
+ * @param pressed 押したとき true、離したとき false。
+ *
+ * @note 呼び出し元: OBS(obs_module_load() で登録したホットキー)。
+ * @note スレッド: ホットキー専用スレッド(UI スレッドではない)。
+ */
+void on_hotkey_pressed(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
+{
+	/* キーを離したときにも呼ばれるので、押したときだけ処理する */
+	if (!pressed)
+		return;
+
+	obs_queue_task(
+		OBS_TASK_UI, [](void *param) { static_cast<const HotkeyEntry *>(param)->action(); }, data, false);
+}
 
 /**
  * @brief このプラグインのホットキーの一覧。
@@ -351,11 +323,11 @@ struct HotkeyEntry {
  *   ほかのプラグインのホットキーの後ろに離れて並んでしまう
  */
 HotkeyEntry hotkeys[] = {
-	{"clipboard_image_overlay.show", "Hotkey.ShowClipboardImage", "show_hotkey", on_hotkey_pressed,
+	{"clipboard_image_overlay.show", "Hotkey.ShowClipboardImage", "show_hotkey",
+	 []() { on_show_requested("hotkey"); }, OBS_INVALID_HOTKEY_ID},
+	{"clipboard_image_overlay.show_previous", "Hotkey.ShowPrevious", "previous_hotkey", on_show_previous_requested,
 	 OBS_INVALID_HOTKEY_ID},
-	{"clipboard_image_overlay.show_previous", "Hotkey.ShowPrevious", "previous_hotkey", on_previous_hotkey_pressed,
-	 OBS_INVALID_HOTKEY_ID},
-	{"clipboard_image_overlay.toggle_pause", "Hotkey.TogglePause", "pause_hotkey", on_pause_hotkey_pressed,
+	{"clipboard_image_overlay.toggle_pause", "Hotkey.TogglePause", "pause_hotkey", auto_hide_toggle_pause,
 	 OBS_INVALID_HOTKEY_ID},
 };
 
@@ -435,7 +407,7 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  *   OBS は終了処理の最初にシーンコレクションを保存し、EXIT イベントはその後に来る。
  *   そのため表示中に終了すると「表示中」のまま保存され、次の起動時に出たままになる。
  *   保存より前に届くイベントはないので、読み込んだ直後に片付ける。
- *   その後、全シーンの通知(表示/非表示・追加・削除)を登録し、保存フォルダの古い画像を掃除する(#9)。
+ *   その後、全シーンの通知(表示/非表示・追加・削除)を登録し、保存フォルダの古い画像を掃除する。
  * - シーンコレクション切り替えの開始時(SCENE_COLLECTION_CHANGING): タイマーと通知の登録を先に片付ける。
  *   切り替えの途中でタイマーが発火し、片付け中のシーンを触るのを防ぐため。
  * - シーン一覧の変更時(SCENE_LIST_CHANGED): 追加されたシーンの通知も登録する。
@@ -461,7 +433,7 @@ void on_frontend_event(obs_frontend_event event, void *)
 		/* 片付けた後で通知を登録する(起動直後に手動で表示・追加した場合もカウントできるように) */
 		image_display_watch_scenes();
 		scenes_ready = true;
-		/* 前回までにたまった古い画像を掃除する(#9)。読み込んだコレクションで使用中の画像は残す */
+		/* 前回までにたまった古い画像を掃除する。読み込んだコレクションで使用中の画像は残す */
 		cleanup_saved_images(clipboard_images_in_use());
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
@@ -492,7 +464,7 @@ void on_frontend_event(obs_frontend_event event, void *)
 /**
  * @brief プラグインの読み込み時の処理。OBS の起動時に 1 回呼ばれる。
  *
- * @details ツールメニューの項目追加、ホットキー登録、履歴ドックの登録、
+ * @details ツールメニューの項目追加、ホットキー登録、表示履歴のドックの登録、
  *          保存処理と画面側イベント(起動完了・終了など)の登録を行う。
  *
  * @return true で読み込み成功。false を返すと OBS はこのプラグインを使わない。
@@ -506,15 +478,15 @@ bool obs_module_load(void)
 
 	/* 一覧の順に続けて登録する(この順で設定画面に並ぶ。hotkeys の説明を参照) */
 	for (HotkeyEntry &hotkey : hotkeys) {
-		hotkey.id = obs_hotkey_register_frontend(hotkey.name, obs_module_text(hotkey.text_key), hotkey.callback,
-							 nullptr);
+		hotkey.id = obs_hotkey_register_frontend(hotkey.name, obs_module_text(hotkey.text_key),
+							 on_hotkey_pressed, &hotkey);
 		/* ホットキーが登録できなくてもメニューやドックからは使えるので、警告だけ出して続ける */
 		if (hotkey.id == OBS_INVALID_HOTKEY_ID)
 			obs_log(LOG_WARNING, "failed to register hotkey %s", hotkey.name);
 	}
 
 	/*
-	 * 履歴ドック(#15)。クリックされた画像は、ホットキーと同じ処理で表示する。
+	 * 表示履歴のドック。クリックされた画像は、ホットキーと同じ処理で表示する。
 	 * ドックのハイライトは今の画像('Clipboard Image' が参照している画像)で、表示中か非表示かは問わない。
 	 * 問い合わせには、シーンの読み込み・切り替え・終了の途中は答えない(片付け中のシーンを触らないため)
 	 */
