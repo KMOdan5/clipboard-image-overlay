@@ -97,6 +97,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -136,6 +138,65 @@ void set_image_file(obs_source_t *source, const char *path)
 }
 
 /**
+ * @brief ソースが、このプラグインが使う 'Clipboard Image' かどうかを判断する。
+ *
+ * @details
+ * 名前が SOURCE_NAME で、OBS 標準の画像ソースのものを、このプラグインのソースとして扱う。
+ * 配信者が同じ名前で別の種類のソース(テキストなど)を作っていても、それは触らない。
+ * 削除の途中かどうかはここでは見ない。ソースを削除したときに届く通知(アイテムの削除)も、
+ * このプラグインのソースのものとして受け取る必要があるため。使えるかどうかは find_managed_source() で判断する。
+ *
+ * プラグインのソースかどうかの判断は、すべてこの関数と find_managed_source() で行う。
+ * 見分け方を変えるとき(名前以外の印で見分ける、複数のソースを扱うなど)は、この 2 つだけを直せばよいようにするため。
+ *
+ * @param source 調べるソース(nullptr でもよい)。
+ * @return このプラグインのソースなら true。
+ *
+ * @note スレッド: どのスレッドから呼んでもよい(シーンの通知の中からも呼ばれる)。
+ */
+bool is_managed_source(obs_source_t *source)
+{
+	if (!source)
+		return false;
+	const char *name = obs_source_get_name(source);
+	return name && std::strcmp(name, SOURCE_NAME) == 0 &&
+	       std::strcmp(obs_source_get_unversioned_id(source), IMAGE_SOURCE_ID) == 0;
+}
+
+/**
+ * @brief このプラグインが使う 'Clipboard Image' を探す。作りはしない。
+ *
+ * @return 見つかったソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
+ * @retval nullptr ない、別の種類のソースが同じ名前を使っている、または削除の途中。
+ *
+ * @see is_managed_source()(判断の決まり)、get_or_create_image_source()(なければ作る)
+ */
+obs_source_t *find_managed_source()
+{
+	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	/* 削除の途中(OBS が片付けるまでの一瞬)のソースは使わない。消えるソースに画像を出してしまうため */
+	if (source && (!is_managed_source(source) || obs_source_removed(source))) {
+		obs_source_release(source);
+		return nullptr;
+	}
+	return source;
+}
+
+/**
+ * @brief 画像ソースに設定されている画像ファイルのパスを返す。
+ * @param source 画像ソース。
+ * @return 画像ファイルのパス(UTF-8)。設定されていなければ空。
+ */
+std::string image_file_of(obs_source_t *source)
+{
+	obs_data_t *settings = obs_source_get_settings(source);
+	const char *file = obs_data_get_string(settings, "file");
+	std::string path = file ? file : "";
+	obs_data_release(settings);
+	return path;
+}
+
+/**
  * @brief 専用の画像ソースを取得する。なければ作る。
  *
  * @details
@@ -149,25 +210,25 @@ void set_image_file(obs_source_t *source, const char *path)
  */
 obs_source_t *get_or_create_image_source(const char *path)
 {
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
+	if (source)
+		return source;
+
+	/*
+	 * 同じ名前のソースがあるのにプラグインのソースとして使えない場合は、作らずに失敗扱いにする。
+	 * - 配信者が同じ名前で別の種類のソース(テキストなど)を作っている: 書き換えると配信者の設定を壊すため
+	 * - 削除の途中(OBS が片付けるまでの一瞬): 消えるソースに画像を出してしまうため
+	 * OBS は同じ名前のソースを 2 つ作れないので、新しく作ることもできない。
+	 */
+	source = obs_get_source_by_name(SOURCE_NAME);
 	if (source) {
-		/*
-		 * 同じ名前のソースを配信者が自分で作っている可能性がある(テキストソースなど)。
-		 * 種類が違うものを書き換えると配信者の設定を壊すので、触らずに失敗扱いにする。
-		 */
-		/* 削除の途中(OBS が片付けるまでの一瞬)のソースは使わない。消えるソースに画像を出してしまうため */
-		if (obs_source_removed(source)) {
+		if (obs_source_removed(source))
 			obs_log(LOG_WARNING, "display: \"%s\" is being removed; try again", SOURCE_NAME);
-			obs_source_release(source);
-			return nullptr;
-		}
-		if (std::strcmp(obs_source_get_unversioned_id(source), IMAGE_SOURCE_ID) != 0) {
+		else
 			obs_log(LOG_WARNING, "display: a source named \"%s\" exists but is not an image source (%s)",
 				SOURCE_NAME, obs_source_get_unversioned_id(source));
-			obs_source_release(source);
-			return nullptr;
-		}
-		return source;
+		obs_source_release(source);
+		return nullptr;
 	}
 
 	obs_data_t *settings = obs_data_create();
@@ -457,6 +518,40 @@ void release_items(std::vector<obs_sceneitem_t *> &items)
 }
 
 /**
+ * @brief 全シーン(グループの中を含む)に置かれた、指定したソースのシーンアイテムを順に処理する。
+ *
+ * @details 全シーンを対象にする処理(表示中かの判断・非表示にする処理)で共通に使う。
+ *          同じシーンに 2 つ以上置かれていれば、すべてを渡す。
+ *
+ * @param source 対象のソース。
+ * @param fn     アイテムごとに呼ぶ処理。false を返すと、そこで打ち切る。
+ *
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+template<typename Fn> void for_each_item_in_all_scenes(obs_source_t *source, Fn fn)
+{
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+
+	bool keep_going = true;
+	for (size_t i = 0; i < scenes.sources.num && keep_going; i++) {
+		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
+		if (!scene)
+			continue;
+		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
+		for (obs_sceneitem_t *item : items) {
+			if (!fn(item)) {
+				keep_going = false;
+				break;
+			}
+		}
+		release_items(items);
+	}
+
+	obs_frontend_source_list_free(&scenes);
+}
+
+/**
  * @brief シーンの中から、指定したソースが置かれているシーンアイテムを 1 つ探す。グループの中も探す。
  *
  * @details
@@ -491,25 +586,16 @@ obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
  */
 bool is_visible_in_any_scene()
 {
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
 	if (!source)
 		return false;
 
-	obs_frontend_source_list scenes = {};
-	obs_frontend_get_scenes(&scenes);
-
 	bool visible = false;
-	for (size_t i = 0; i < scenes.sources.num && !visible; i++) {
-		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
-		if (!scene)
-			continue;
-		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
-		for (obs_sceneitem_t *item : items)
-			visible = visible || obs_sceneitem_visible(item);
-		release_items(items);
-	}
+	for_each_item_in_all_scenes(source, [&visible](obs_sceneitem_t *item) {
+		visible = obs_sceneitem_visible(item);
+		return !visible; /* 1 つでも表示中なら打ち切る */
+	});
 
-	obs_frontend_source_list_free(&scenes);
 	obs_source_release(source);
 	return visible;
 }
@@ -774,9 +860,7 @@ void queue_visibility_changed(bool shown)
 obs_sceneitem_t *clipboard_item_from(calldata_t *cd)
 {
 	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
-	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
-	const char *name = source ? obs_source_get_name(source) : nullptr;
-	if (!name || std::strcmp(name, SOURCE_NAME) != 0)
+	if (!item || !is_managed_source(obs_sceneitem_get_source(item)))
 		return nullptr;
 	return item;
 }
@@ -786,7 +870,7 @@ obs_sceneitem_t *clipboard_item_from(calldata_t *cd)
  *
  * @details
  * 目のアイコン・OBS 標準のホットキー・元に戻す・プラグイン自身、どの方法で切り替えても届く。
- * 名前が Clipboard Image のものだけを扱い、それ以外のソースの通知は名前を比べるだけで何もしない。
+ * Clipboard Image のものだけを扱い(is_managed_source())、それ以外のソースの通知は何もしない。
  * プラグイン自身の操作(self_changing が true)の通知は捨てる。
  *
  * @param cd 通知の内容("item": シーンアイテム、"visible": 表示なら true)。
@@ -1009,36 +1093,23 @@ void hide_clipboard_image(bool fade)
 	/* 差し替えの途中なら取り消す(フェードアウト後に勝手に表示し直さないように) */
 	cancel_swap();
 
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
 	if (!source) {
 		obs_log(LOG_INFO, "display: nothing to hide (no \"%s\")", SOURCE_NAME);
 		return;
 	}
 
-	/* シーン一覧を取り、それぞれのシーンに置かれた Clipboard Image を非表示にする */
-	obs_frontend_source_list scenes = {};
-	obs_frontend_get_scenes(&scenes);
-
+	/* 全シーンの Clipboard Image のうち、表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
 	int hidden = 0;
-	for (size_t i = 0; i < scenes.sources.num; i++) {
-		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
-		if (!scene)
-			continue;
-
-		/* 同じシーンに 2 つ以上置かれていることもあるので、全部を対象にする(グループの中も含む) */
-		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
-		for (obs_sceneitem_t *item : items) {
-			/* 表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
-			if (!obs_sceneitem_visible(item))
-				continue;
+	for_each_item_in_all_scenes(source, [fade, &hidden](obs_sceneitem_t *item) {
+		if (obs_sceneitem_visible(item)) {
 			const bool changed = fade ? obs_sceneitem_set_visible(item, false) : hide_item_instantly(item);
 			if (changed)
 				hidden++;
 		}
-		release_items(items);
-	}
+		return true;
+	});
 
-	obs_frontend_source_list_free(&scenes);
 	obs_source_release(source);
 	obs_log(LOG_INFO, "display: hidden %d item(s) (%s)", hidden, fade ? "fade" : "instant");
 }
@@ -1098,13 +1169,11 @@ std::vector<std::string> clipboard_images_in_use()
 {
 	std::vector<std::string> paths;
 
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
 	if (source) {
-		obs_data_t *settings = obs_source_get_settings(source);
-		const char *file = obs_data_get_string(settings, "file");
-		if (file && *file)
-			paths.emplace_back(file);
-		obs_data_release(settings);
+		std::string file = image_file_of(source);
+		if (!file.empty())
+			paths.push_back(std::move(file));
 		obs_source_release(source);
 	}
 
@@ -1126,13 +1195,9 @@ std::string current_clipboard_image()
 		return pending_swap.image.path;
 
 	std::string path;
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
 	if (source) {
-		obs_data_t *settings = obs_source_get_settings(source);
-		const char *file = obs_data_get_string(settings, "file");
-		if (file)
-			path = file;
-		obs_data_release(settings);
+		path = image_file_of(source);
 		obs_source_release(source);
 	}
 	return path;
