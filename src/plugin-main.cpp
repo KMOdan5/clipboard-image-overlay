@@ -38,6 +38,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *        └→ trash_saved_image()            ごみ箱に送る(clipboard-capture.cpp)
  *   「前の画像を表示」ホットキー ─→ on_show_previous_requested() ─→ show_history_image()
  *
+ *   非表示ホットキー 押下 ──→ on_hide_requested() ─→ hide_clipboard_image()  全シーンでフェードアウト(image-display.cpp)
+ *
  *   一時停止ホットキー 押下 ──→ on_toggle_pause_requested() ─→ auto_hide_toggle_pause()
  *                                自動で非表示にするタイマーの一時停止/再開(auto-hide.cpp)
  *
@@ -110,7 +112,7 @@ bool scenes_ready = false;
  * @return 受け付けてよいなら true。
  *
  * @note 呼び出し元: on_show_requested()・show_history_image()・on_show_previous_requested()・delete_history_image()・
- *       on_toggle_pause_requested()。
+ *       on_hide_requested()・on_toggle_pause_requested()。
  * @note スレッド: UI スレッドで呼ぶこと。
  */
 bool accept_user_action(const char *action)
@@ -342,6 +344,38 @@ void add_tools_submenu()
 }
 
 /**
+ * @brief 「'Clipboard Image' を非表示」ホットキーの処理。表示中の画像を、表示時間を待たずに非表示にする。
+ *
+ * @details
+ * 表示時間を 0 秒(手動でのみ非表示)にしたときや、ゲームを全画面で動かしていて目のアイコンを押せないときのため。
+ * - 全シーン(グループの中を含む)の 'Clipboard Image' を、非表示トランジション(フェード)で非表示にする。
+ *   自動で非表示になるときと同じ動き(hide_clipboard_image())。差し替えの途中なら取り消す
+ * - 自動非表示のタイマーと一時停止を解除する(グループの中に置いた場合は非表示の通知が届かないため、通知を待たずにここで解除する)
+ * - 何も表示していなければ、何もしない(残っていた一時停止があれば解除する)
+ * - 今の画像は変えない(画像ファイルの参照は外さない)。ドックのハイライトと「前の画像を表示」の基準はそのまま
+ *
+ * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
+ *
+ * @note スレッド: UI スレッドで呼ぶこと。
+ * @see hotkeys(呼び出し元)
+ */
+void on_hide_requested()
+{
+	if (!accept_user_action("hide"))
+		return;
+
+	if (!is_clipboard_image_showing()) {
+		obs_log(LOG_INFO, "hide: no image shown");
+		auto_hide_on_image_hidden();
+		return;
+	}
+
+	obs_log(LOG_INFO, "hide requested (trigger: hotkey)");
+	hide_clipboard_image(true);
+	auto_hide_on_image_hidden();
+}
+
+/**
  * @brief 「自動非表示を一時停止/再開」ホットキーの処理。
  *
  * @details auto_hide_toggle_pause() を呼ぶ。シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
@@ -417,6 +451,7 @@ HotkeyEntry hotkeys[] = {
 	 []() { on_show_requested("hotkey"); }, OBS_INVALID_HOTKEY_ID},
 	{"clipboard_image_overlay.show_previous", "Hotkey.ShowPrevious", "previous_hotkey", on_show_previous_requested,
 	 OBS_INVALID_HOTKEY_ID},
+	{"clipboard_image_overlay.hide", "Hotkey.Hide", "hide_hotkey", on_hide_requested, OBS_INVALID_HOTKEY_ID},
 	{"clipboard_image_overlay.toggle_pause", "Hotkey.TogglePause", "pause_hotkey", on_toggle_pause_requested,
 	 OBS_INVALID_HOTKEY_ID},
 };
@@ -457,7 +492,7 @@ void load_hotkey(obs_data_t *obj, const char *key, obs_hotkey_id id)
  * そのため他のフロントエンドプラグインと同じく、シーンコレクションのデータに自分で書き込む。
  * 結果として、割り当てはシーンコレクションごとになる。
  *
- * 保存形式: { "clipboard-image-overlay": { "show_hotkey": [...], "previous_hotkey": [...], "pause_hotkey": [...] } }
+ * 保存形式: { "clipboard-image-overlay": { "show_hotkey": [...], "previous_hotkey": [...], "hide_hotkey": [...], "pause_hotkey": [...] } }
  * (キー名は hotkeys の save_key)
  *
  * @param save_data シーンコレクションの保存データ。

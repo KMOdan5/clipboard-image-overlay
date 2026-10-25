@@ -1093,7 +1093,7 @@ bool show_image_on_current_scene(const SavedImage &image)
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  *
- * @note 呼び出し元: auto-hide.cpp の on_hide_timer()(フェードあり)、
+ * @note 呼び出し元: auto-hide.cpp の on_hide_timer()(フェードあり)、plugin-main.cpp の on_hide_requested()(フェードあり)、
  *       plugin-main.cpp の on_frontend_event()(起動時などにフェードなし)、clear_clipboard_image()(フェードなし)。
  * @note スレッド: UI スレッド。
  */
