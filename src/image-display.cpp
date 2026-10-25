@@ -98,7 +98,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <cstdint>
 #include <cstring>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace {
@@ -1175,9 +1174,9 @@ std::vector<std::string> clipboard_images_in_use()
 
 	obs_source_t *source = find_managed_source();
 	if (source) {
-		std::string file = image_file_of(source);
+		const std::string file = image_file_of(source);
 		if (!file.empty())
-			paths.push_back(std::move(file));
+			paths.push_back(file);
 		obs_source_release(source);
 	}
 
