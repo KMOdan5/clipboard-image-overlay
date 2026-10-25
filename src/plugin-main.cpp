@@ -35,8 +35,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   表示履歴のドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
  *   「前の画像を表示」ホットキー ─→ on_show_previous_requested() ─→ show_history_image()
  *
- *   一時停止ホットキー 押下 ──→ auto_hide_toggle_pause()  自動で非表示にするタイマーの一時停止/再開
- *                                (auto-hide.cpp)
+ *   一時停止ホットキー 押下 ──→ on_toggle_pause_requested() ─→ auto_hide_toggle_pause()
+ *                                自動で非表示にするタイマーの一時停止/再開(auto-hide.cpp)
+ *
+ *   シーンの読み込み・切り替え・終了の途中に受け付けた操作は、何もせずに無視する(accept_user_action())
  *
  *   ツール > Clipboard Image > 設定... ─→ open_settings_dialog()  設定画面(settings-dialog.cpp)
  * @endcode
@@ -80,14 +82,39 @@ namespace {
 constexpr const char *SAVE_KEY = "clipboard-image-overlay";
 
 /**
- * @brief シーンコレクションの読み込みが終わり、通知を登録してよい状態なら true。
+ * @brief シーンコレクションの読み込みが終わり、シーンを触ってよい状態なら true。
  *
  * @details
- * シーン一覧の変更(SCENE_LIST_CHANGED)は、読み込みの途中・切り替えの途中・終了の途中にも届く。
- * その間に通知を登録すると、片付けた後にまた通知を受け取り、タイマーが動き出してしまうことがある。
- * 起動完了時・切り替え完了時に true、切り替え開始時・終了時に false にする。
+ * 起動完了時・切り替え完了時に true、切り替え開始時・終了時に false にする。false の間は次のことをしない。
+ * - 通知の登録: シーン一覧の変更(SCENE_LIST_CHANGED)は、読み込み・切り替え・終了の途中にも届く。
+ *   その間に通知を登録すると、片付けた後にまた通知を受け取り、タイマーが動き出してしまうことがある
+ * - 配信者の操作(ホットキー・メニュー・表示履歴のドック): 片付け中のシーンに画像を出したり、
+ *   タイマーを動かしたりしないよう、無視する(accept_user_action())
+ * - 表示履歴のドックへの、今の画像の問い合わせへの答え
  */
 bool scenes_ready = false;
+
+/**
+ * @brief 配信者の操作を受け付けてよいかを返す。受け付けないときは、理由をログに残す。
+ *
+ * @details
+ * シーンの読み込み・切り替え・終了の途中(scenes_ready が false)に受け付けた操作は、何もせずに無視する。
+ * 後で実行するために取っておくことはしない。その途中に操作する配信者はまれで、反応がなければもう一度操作すれば済むため。
+ * 取っておいて後から実行すると、切り替えた後のシーンに思わぬ画像が出ることもある。
+ *
+ * @param action 操作の名前。ログ用。
+ * @return 受け付けてよいなら true。
+ *
+ * @note 呼び出し元: on_show_requested()・show_history_image()・on_show_previous_requested()・on_toggle_pause_requested()。
+ * @note スレッド: UI スレッドで呼ぶこと。
+ */
+bool accept_user_action(const char *action)
+{
+	if (scenes_ready)
+		return true;
+	obs_log(LOG_INFO, "%s ignored: scenes are loading or shutting down", action);
+	return false;
+}
 
 /**
  * @brief 保存フォルダにある画像を表示する共通処理。
@@ -134,6 +161,7 @@ void show_saved_image(const SavedImage &image)
  *
  * @details クリップボードの画像を保存し、show_saved_image() で表示する。
  * 画像が取れなければ、理由をログに残して何もしない。
+ * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
  *
  * @param trigger どこから呼ばれたか("menu" / "hotkey")。ログ用。
  *
@@ -143,6 +171,8 @@ void show_saved_image(const SavedImage &image)
 void on_show_requested(const char *trigger)
 {
 	obs_log(LOG_INFO, "show requested (trigger: %s)", trigger);
+	if (!accept_user_action("show"))
+		return;
 
 	/* クリップボードの画像をファイルに保存する。画像がなければ終了 */
 	const auto image = save_clipboard_image();
@@ -157,6 +187,7 @@ void on_show_requested(const char *trigger)
  *
  * @details 画像の大きさを読んでから show_saved_image() で表示する。
  * 掃除などでファイルが消えていた場合は、理由をログに残して何もしない。
+ * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
  *
  * @param path    画像ファイルのパス(UTF-8)。
  * @param trigger どこから呼ばれたか("history" / "previous hotkey")。ログ用。
@@ -167,6 +198,8 @@ void on_show_requested(const char *trigger)
 void show_history_image(const std::string &path, const char *trigger)
 {
 	obs_log(LOG_INFO, "show history image requested (trigger: %s): %s", trigger, path.c_str());
+	if (!accept_user_action("show history image"))
+		return;
 
 	const auto image = read_saved_image(path);
 	if (!image)
@@ -201,12 +234,16 @@ bool same_file(const std::string &a, const std::string &b)
  * - 今の画像が履歴にない(掃除で消えた・配信者が別の画像を設定した・'Clipboard Image' がない)なら、一番新しい画像を表示する
  *
  * 履歴を覚えておく仕組みは持たず、'Clipboard Image' の画像と保存フォルダの一覧だけで決める。
+ * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
  *
  * @note スレッド: UI スレッドで呼ぶこと。
  * @see hotkeys(呼び出し元)
  */
 void on_show_previous_requested()
 {
+	if (!accept_user_action("show previous"))
+		return;
+
 	const std::vector<std::string> images = list_saved_images();
 	if (images.empty()) {
 		obs_log(LOG_INFO, "show previous: no saved image");
@@ -265,6 +302,22 @@ void add_tools_submenu()
 	QAction *settings = menu->addAction(QString::fromUtf8(obs_module_text("Menu.Settings")));
 	QObject::connect(settings, &QAction::triggered, []() { open_settings_dialog(); });
 	root->setMenu(menu);
+}
+
+/**
+ * @brief 「自動非表示を一時停止/再開」ホットキーの処理。
+ *
+ * @details auto_hide_toggle_pause() を呼ぶ。シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
+ *          表示中かどうかを調べるときに、片付け中のシーンを触らないため。
+ *
+ * @note スレッド: UI スレッドで呼ぶこと。
+ * @see hotkeys(呼び出し元)
+ */
+void on_toggle_pause_requested()
+{
+	if (!accept_user_action("toggle pause"))
+		return;
+	auto_hide_toggle_pause();
 }
 
 /**
@@ -327,7 +380,7 @@ HotkeyEntry hotkeys[] = {
 	 []() { on_show_requested("hotkey"); }, OBS_INVALID_HOTKEY_ID},
 	{"clipboard_image_overlay.show_previous", "Hotkey.ShowPrevious", "previous_hotkey", on_show_previous_requested,
 	 OBS_INVALID_HOTKEY_ID},
-	{"clipboard_image_overlay.toggle_pause", "Hotkey.TogglePause", "pause_hotkey", auto_hide_toggle_pause,
+	{"clipboard_image_overlay.toggle_pause", "Hotkey.TogglePause", "pause_hotkey", on_toggle_pause_requested,
 	 OBS_INVALID_HOTKEY_ID},
 };
 

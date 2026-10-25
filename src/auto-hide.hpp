@@ -61,6 +61,7 @@ void auto_hide_restart();
  * - 画像が表示されていないとき: 何もしない(一時停止が残っていれば解除する)
  * - タイマーが動いていないとき(表示時間 0 で表示したときなど): 何もしない
  *
+ * @note 呼び出し元: plugin-main.cpp の on_toggle_pause_requested()(シーンの準備ができているときだけ呼ぶ)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void auto_hide_toggle_pause();
