@@ -22,7 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * @details 実装は clipboard-capture.cpp。呼び出し元は plugin-main.cpp
  *          (on_show_requested()・起動完了時の掃除・表示履歴の画像の表示・「前の画像を表示」ホットキー)と、
- *          history-dock.cpp(表示履歴の一覧)。
+ *          history-dock.cpp(表示履歴の一覧)。表示履歴からの削除(trash_saved_image())も plugin-main.cpp から呼ぶ。
  */
 
 #pragma once
@@ -122,3 +122,24 @@ std::vector<std::string> list_saved_images();
  * @note 呼び出し元: plugin-main.cpp の show_history_image()。
  */
 std::optional<SavedImage> read_saved_image(const std::string &path);
+
+/**
+ * @brief 保存した画像を、OS のごみ箱に送る。表示履歴のドックで配信者が「削除」を選んだときに使う。
+ *
+ * @details
+ * - 対象は保存フォルダの直下にある、このプラグインが付けた名前のファイルだけ。それ以外は削除せずに false を返す
+ * - 完全には削除せず、ごみ箱に送る(確認の画面を出さないので、元に戻せるように)。
+ *   ごみ箱に送れないとき(ごみ箱がない場所など)は、削除せずに false を返す
+ * - 既にファイルがなければ、何もせずに true を返す
+ * - 'Clipboard Image' の参照はここでは外さない。今の画像を削除するときは、先に呼び出し元で外す(clear_clipboard_image())
+ *
+ * 結果はログに出す。保存フォルダが変わるので、表示履歴のドックの一覧には自動で反映される。
+ *
+ * @param path 画像ファイルのパス(UTF-8)。list_saved_images() が返したもの。
+ * @return ごみ箱に送れた(または既になかった)ら true。
+ * @retval false 対象外のファイル、またはごみ箱に送れなかった。理由は OBS のログに出る。
+ *
+ * @note 呼び出し元: plugin-main.cpp の delete_history_image()。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+bool trash_saved_image(const std::string &path);

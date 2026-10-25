@@ -52,6 +52,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 表示サイズ(境界が「自動」のときだけ)
  * - 重なり順(「常に最前面に表示する」がオンのとき、貼るたびに最前面へ。既定オン)
  * - 表示/非表示(表示する・消す)
+ * - 画像ファイルの参照を外す(配信者が今の画像を削除したとき。clear_clipboard_image())
  * 位置・境界・トランジションなど、それ以外の設定は変えない。
  * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
  *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
@@ -76,9 +77,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - グループの表示/非表示・位置・大きさは変えない。表示サイズはグループの拡大率に関係なく、キャンバスを基準に決める
  * - 「常に最前面に表示する」は、グループの中での最前面になる
  *
+ * 今の画像を配信者が削除するとき(表示履歴のドックの「削除」):
+ * - clear_clipboard_image() で、全シーンの Clipboard Image を即座に非表示にしてから、画像ファイルの参照を外す。
+ *   ファイルを先に消しても、OBS は読み込んだ画像を持っているので画面に残ってしまうため
+ *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
  * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、
- * current_clipboard_image()、image_display_shutdown()(image-display.hpp)。
+ * current_clipboard_image()、clear_clipboard_image()、image_display_shutdown()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
@@ -1089,7 +1094,7 @@ bool show_image_on_current_scene(const SavedImage &image)
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  *
  * @note 呼び出し元: auto-hide.cpp の on_hide_timer()(フェードあり)、
- *       plugin-main.cpp の on_frontend_event()(起動時などにフェードなし)。
+ *       plugin-main.cpp の on_frontend_event()(起動時などにフェードなし)、clear_clipboard_image()(フェードなし)。
  * @note スレッド: UI スレッド。
  */
 void hide_clipboard_image(bool fade)
@@ -1205,4 +1210,22 @@ std::string current_clipboard_image()
 		obs_source_release(source);
 	}
 	return path;
+}
+
+/**
+ * @brief 今の画像を外す。全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を空にする。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+void clear_clipboard_image()
+{
+	/* 差し替えの途中なら取り消し、フェードアウトせずに即座に非表示にする(見せたくない画像を一瞬も残さないため) */
+	hide_clipboard_image(false);
+
+	obs_source_t *source = find_managed_source();
+	if (!source)
+		return;
+	set_image_file(source, "");
+	obs_source_release(source);
+	obs_log(LOG_INFO, "display: cleared the image of \"%s\"", SOURCE_NAME);
 }

@@ -26,7 +26,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   保存フォルダの変化(QFileSystemWatcher)─→ 少し待って refresh()  一覧を読み直す
  *                                                 └→ request_thumbnail()  まだないサムネイルを裏で作る
  *   ドックの大きさの変化 ─→ update_layout()  1 行の枚数とサムネイルの大きさを決め直す
- *   サムネイルをクリック ─→ on_selected(path)  表示は plugin-main.cpp が行う
+ *   サムネイルをクリック ─→ callbacks_.show(path)  表示は plugin-main.cpp が行う
+ *   右クリック ─→ show_context_menu()  「表示」「設定...」「削除」(処理は plugin-main.cpp が行う)
  *   一定時間ごと(ドックが見えている間)─→ update_current()  今の画像のカードを目立たせる
  *   ドックが見えるようになった ─→ showEvent()  見えていない間の変化に追いつく
  * @endcode
@@ -57,6 +58,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <QAction>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -69,6 +71,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QImageReader>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
@@ -284,12 +287,9 @@ class HistoryWidget : public QWidget {
 public:
 	/**
 	 * @brief 部品を作り、保存フォルダの見張りを始める。
-	 * @param on_selected サムネイルがクリックされたときに呼ぶ処理。
-	 * @param current     今の画像を問い合わせる処理。
+	 * @param callbacks ドックから頼む処理(表示・今の画像の問い合わせ・削除・設定画面)。
 	 */
-	HistoryWidget(HistorySelectedCallback on_selected, HistoryCurrentCallback current)
-		: on_selected_(std::move(on_selected)),
-		  current_(std::move(current))
+	explicit HistoryWidget(HistoryDockCallbacks callbacks) : callbacks_(std::move(callbacks))
 	{
 		thumbnail_pool_.setMaxThreadCount(THUMBNAIL_THREADS);
 
@@ -314,16 +314,24 @@ public:
 		QObject::connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
 			const QString path = item->data(PATH_ROLE).toString();
 			obs_log(LOG_INFO, "history: clicked %s", path.toUtf8().constData());
-			if (on_selected_)
-				on_selected_(path.toUtf8().toStdString());
-			/* 次の問い合わせを待たずに、クリックした画像へ枠を移す */
-			update_current();
+			show_image(path);
+		});
+		/* 右クリックメニュー。一覧の位置は、スクロールする中身(viewport)の座標で届く */
+		list_->setContextMenuPolicy(Qt::CustomContextMenu);
+		QObject::connect(list_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+			const QListWidgetItem *item = list_->itemAt(pos);
+			show_context_menu(list_->viewport()->mapToGlobal(pos),
+					  item ? item->data(PATH_ROLE).toString() : QString());
 		});
 
-		/* 画像がまだないときの案内 */
+		/* 画像がまだないときの案内。ここで右クリックしても、設定画面には行けるようにする */
 		empty_label_ = new QLabel(text("Dock.Empty"), this);
 		empty_label_->setAlignment(Qt::AlignCenter);
 		empty_label_->setWordWrap(true);
+		empty_label_->setContextMenuPolicy(Qt::CustomContextMenu);
+		QObject::connect(empty_label_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+			show_context_menu(empty_label_->mapToGlobal(pos), QString());
+		});
 
 		auto *layout = new QVBoxLayout(this);
 		layout->setContentsMargins(0, 0, 0, 0);
@@ -414,6 +422,67 @@ protected:
 	}
 
 private:
+	/**
+	 * @brief 画像を表示する(サムネイルのクリック・右クリックメニューの「表示」)。
+	 * @param path 画像ファイルのパス。
+	 */
+	void show_image(const QString &path)
+	{
+		if (callbacks_.show)
+			callbacks_.show(path.toUtf8().toStdString());
+		/* 次の問い合わせを待たずに、表示した画像へ枠を移す */
+		update_current();
+	}
+
+	/**
+	 * @brief 右クリックメニューを出す。
+	 *
+	 * @details
+	 * - 画像の上: 「表示」・「設定...」・区切り線・「削除」
+	 * - 空いている所: 「設定...」だけ
+	 *
+	 * 「表示」を一番上、「削除」を一番下に置く。右クリックの直後に誤ってクリックしても、削除にならないように。
+	 * 削除は確認の画面を出さない(ごみ箱から元に戻せるため。処理は plugin-main.cpp)。
+	 * メニューは閉じるのを待たずに出す(exec() を使わない)。待つ間に別の処理ループが回り、
+	 * その間に一覧の作り直しや OBS の終了処理が割り込むのを避けるため。
+	 * 項目には右クリックした画像のパスを持たせる(メニューを開いている間に一覧が作り直されても、選んだ画像を見失わないように)。
+	 *
+	 * @param global メニューを出す位置(画面の座標)。
+	 * @param path   右クリックした画像のパス。空いている所なら空。
+	 */
+	void show_context_menu(const QPoint &global, const QString &path)
+	{
+		if (stopped_)
+			return;
+
+		auto *menu = new QMenu(this);
+		menu->setAttribute(Qt::WA_DeleteOnClose);
+		if (!path.isEmpty()) {
+			QAction *show = menu->addAction(text("Dock.Menu.Show"));
+			QObject::connect(show, &QAction::triggered, this, [this, path]() {
+				obs_log(LOG_INFO, "history: show from menu %s", path.toUtf8().constData());
+				show_image(path);
+			});
+		}
+		QAction *settings = menu->addAction(text("Menu.Settings"));
+		QObject::connect(settings, &QAction::triggered, this, [this]() {
+			if (callbacks_.open_settings)
+				callbacks_.open_settings();
+		});
+		if (!path.isEmpty()) {
+			menu->addSeparator();
+			QAction *remove = menu->addAction(text("Dock.Menu.Delete"));
+			QObject::connect(remove, &QAction::triggered, this, [this, path]() {
+				obs_log(LOG_INFO, "history: delete from menu %s", path.toUtf8().constData());
+				if (callbacks_.remove)
+					callbacks_.remove(path.toUtf8().toStdString());
+				/* 今の画像を削除したときは枠が外れるので、次の問い合わせを待たずに反映する。一覧はフォルダの見張りで更新される */
+				update_current();
+			});
+		}
+		menu->popup(global);
+	}
+
 	/**
 	 * @brief ドックの幅から、1 行の枚数とサムネイルの大きさを決める。
 	 *
@@ -525,10 +594,10 @@ private:
 	 */
 	void update_current(bool force = false)
 	{
-		if (stopped_ || !current_ || !isVisible())
+		if (stopped_ || !callbacks_.current || !isVisible())
 			return;
 
-		const QString current = QString::fromUtf8(current_().c_str());
+		const QString current = QString::fromUtf8(callbacks_.current().c_str());
 		if (!force && current == current_raw_)
 			return;
 		current_raw_ = current;
@@ -603,10 +672,8 @@ private:
 		}
 	}
 
-	/// @brief サムネイルがクリックされたときに呼ぶ処理。
-	HistorySelectedCallback on_selected_;
-	/// @brief 今の画像を問い合わせる処理。
-	HistoryCurrentCallback current_;
+	/// @brief ドックから頼む処理(表示・今の画像の問い合わせ・削除・設定画面)。
+	HistoryDockCallbacks callbacks_;
 	/// @brief サムネイルの一覧。
 	QListWidget *list_ = nullptr;
 	/// @brief 画像がまだないときの案内。
@@ -651,12 +718,12 @@ QPointer<HistoryWidget> dock_widget;
  *
  * @details 仕様の詳細は history-dock.hpp の宣言側を参照。
  */
-void history_dock_register(HistorySelectedCallback on_selected, HistoryCurrentCallback current)
+void history_dock_register(HistoryDockCallbacks callbacks)
 {
 	if (dock_widget)
 		return;
 
-	auto *widget = new HistoryWidget(std::move(on_selected), std::move(current));
+	auto *widget = new HistoryWidget(std::move(callbacks));
 	if (!obs_frontend_add_dock_by_id(DOCK_ID, obs_module_text("Dock.Title"), widget)) {
 		obs_log(LOG_WARNING, "history: failed to add dock");
 		delete widget;
