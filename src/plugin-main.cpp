@@ -33,6 +33,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *             └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
  *
  *   表示履歴のドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
+ *   表示履歴のドックの右クリック > 削除 ─→ delete_history_image()
+ *        ├→ clear_clipboard_image()        今の画像なら、即座に非表示にして参照を外す(image-display.cpp)
+ *        └→ trash_saved_image()            ごみ箱に送る(clipboard-capture.cpp)
  *   「前の画像を表示」ホットキー ─→ on_show_previous_requested() ─→ show_history_image()
  *
  *   一時停止ホットキー 押下 ──→ on_toggle_pause_requested() ─→ auto_hide_toggle_pause()
@@ -71,6 +74,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <algorithm>
 #include <iterator>
 #include <string>
+#include <utility>
 #include <vector>
 
 OBS_DECLARE_MODULE()
@@ -105,7 +109,8 @@ bool scenes_ready = false;
  * @param action 操作の名前。ログ用。
  * @return 受け付けてよいなら true。
  *
- * @note 呼び出し元: on_show_requested()・show_history_image()・on_show_previous_requested()・on_toggle_pause_requested()。
+ * @note 呼び出し元: on_show_requested()・show_history_image()・on_show_previous_requested()・delete_history_image()・
+ *       on_toggle_pause_requested()。
  * @note スレッド: UI スレッドで呼ぶこと。
  */
 bool accept_user_action(const char *action)
@@ -272,6 +277,38 @@ void on_show_previous_requested()
 		return;
 	}
 	show_history_image(*previous_pos, "previous hotkey");
+}
+
+/**
+ * @brief 表示履歴の画像を削除する(表示履歴のドックの右クリックメニューの「削除」)。
+ *
+ * @details
+ * 配信者が選んで消す操作なので、今の画像でも削除する(古い画像の自動の掃除とは違い、使用中でも残さない)。
+ * 1. 今の画像なら、全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す(clear_clipboard_image())。
+ *    自動非表示のタイマーと一時停止も解除する(グループの中に置いた場合は非表示の通知が届かないため、通知を待たずにここで解除する)
+ * 2. ファイルを OS のごみ箱に送る(trash_saved_image())。確認の画面は出さない(ごみ箱から元に戻せるため)
+ *
+ * 1 を先に行うのは、OBS の画像ソースが読み込んだ画像を持っていて、ファイルを先に消しても画面に残ってしまうため。
+ * ごみ箱に送れなかった場合も、1 は済んでいる(見せたくない画像が画面に出たままにならないことを優先する)。
+ * 今の画像でなければ、2 だけを行う。差し替え待ちの画像は今の画像として扱うので、1 で差し替えも取り消される。
+ * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
+ *
+ * @param path 画像ファイルのパス(UTF-8)。
+ *
+ * @note スレッド: UI スレッドで呼ぶこと。
+ * @see history_dock_register()(呼び出し元)
+ */
+void delete_history_image(const std::string &path)
+{
+	obs_log(LOG_INFO, "delete history image requested: %s", path.c_str());
+	if (!accept_user_action("delete"))
+		return;
+
+	if (same_file(path, current_clipboard_image())) {
+		clear_clipboard_image();
+		auto_hide_on_image_hidden();
+	}
+	trash_saved_image(path);
 }
 
 /**
@@ -540,15 +577,22 @@ bool obs_module_load(void)
 
 	/*
 	 * 表示履歴のドック。クリックされた画像は、ホットキーと同じ処理で表示する。
+	 * 右クリックメニューの「削除」は delete_history_image()、「設定...」は設定画面を開く。
 	 * ドックのハイライトは今の画像('Clipboard Image' が参照している画像)で、表示中か非表示かは問わない。
 	 * 問い合わせには、シーンの読み込み・切り替え・終了の途中は答えない(片付け中のシーンを触らないため)
 	 */
-	history_dock_register([](const std::string &path) { show_history_image(path, "history"); },
-			      []() {
-				      if (!scenes_ready)
-					      return std::string();
-				      return current_clipboard_image();
-			      });
+	HistoryDockCallbacks dock_callbacks;
+	dock_callbacks.show = [](const std::string &path) {
+		show_history_image(path, "history");
+	};
+	dock_callbacks.current = []() {
+		if (!scenes_ready)
+			return std::string();
+		return current_clipboard_image();
+	};
+	dock_callbacks.remove = delete_history_image;
+	dock_callbacks.open_settings = open_settings_dialog;
+	history_dock_register(std::move(dock_callbacks));
 
 	obs_frontend_add_save_callback(on_frontend_save, nullptr);
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
