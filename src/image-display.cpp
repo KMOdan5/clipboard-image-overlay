@@ -150,32 +150,36 @@ void set_image_file(obs_source_t *source, const char *path)
  * 見分け方を変えるとき(名前以外の印で見分ける、複数のソースを扱うなど)は、この 2 つだけを直せばよいようにするため。
  *
  * @param source 調べるソース(nullptr でもよい)。
+ * @param name   プラグインのソースの名前。省略すると SOURCE_NAME。
  * @return このプラグインのソースなら true。
  *
  * @note スレッド: どのスレッドから呼んでもよい(シーンの通知の中からも呼ばれる)。
  */
-bool is_managed_source(obs_source_t *source)
+bool is_managed_source(obs_source_t *source, const char *name = SOURCE_NAME)
 {
-	if (!source)
+	if (!source || !name)
 		return false;
-	const char *name = obs_source_get_name(source);
-	return name && std::strcmp(name, SOURCE_NAME) == 0 &&
+	const char *source_name = obs_source_get_name(source);
+	return source_name && std::strcmp(source_name, name) == 0 &&
 	       std::strcmp(obs_source_get_unversioned_id(source), IMAGE_SOURCE_ID) == 0;
 }
 
 /**
  * @brief このプラグインが使う 'Clipboard Image' を探す。作りはしない。
  *
+ * @param name 探すソースの名前。省略すると SOURCE_NAME。名前を選んで探す場合に備えて、名前を渡せるようにしている。
  * @return 見つかったソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
  * @retval nullptr ない、別の種類のソースが同じ名前を使っている、または削除の途中。
  *
  * @see is_managed_source()(判断の決まり)、get_or_create_image_source()(なければ作る)
  */
-obs_source_t *find_managed_source()
+obs_source_t *find_managed_source(const char *name = SOURCE_NAME)
 {
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	if (!name)
+		return nullptr;
+	obs_source_t *source = obs_get_source_by_name(name);
 	/* 削除の途中(OBS が片付けるまでの一瞬)のソースは使わない。消えるソースに画像を出してしまうため */
-	if (source && (!is_managed_source(source) || obs_source_removed(source))) {
+	if (source && (!is_managed_source(source, name) || obs_source_removed(source))) {
 		obs_source_release(source);
 		return nullptr;
 	}
