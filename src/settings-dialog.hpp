@@ -52,7 +52,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * フェードの長さはプラグインの設定に含めず、OBS 標準の表示/非表示トランジションで変えるよう案内する。
  * 開いたまま OBS を操作できる(モードレス)。同時に開くのは 1 つだけ。
  *
- * @note 呼び出し元: plugin-main.cpp の on_settings_menu_clicked()。
+ * @note 呼び出し元: plugin-main.cpp の add_tools_submenu()(「ツール」メニューの「設定...」)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void open_settings_dialog();

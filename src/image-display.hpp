@@ -20,7 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @file image-display.hpp
  * @brief 保存した画像を、現在のシーンに表示する機能の公開窓口。
  *
- * @details 実装は image-display.cpp。呼び出し元は plugin-main.cpp の on_show_requested()。
+ * @details 実装は image-display.cpp。呼び出し元は plugin-main.cpp と auto-hide.cpp。
  */
 
 #pragma once
@@ -89,10 +89,10 @@ void hide_clipboard_image(bool fade);
  * - 表示・追加されたら、貼ったときと同じく自動で消すカウントを始める(出しっぱなしにしないため)
  * - どのシーンにも表示されなくなったら、一時停止を解除してタイマーを止める
  *
- * 通知はシーン単位でしか受け取れないので全シーンに登録するが、処理するのは名前が Clipboard Image のものだけ。
- * 他のソースの通知は、名前を比べるだけで何もしない(負荷はほぼない)。
+ * 通知はシーン単位でしか受け取れないので全シーンに登録するが、処理するのはプラグインの 'Clipboard Image'
+ * (名前が Clipboard Image の画像ソース)のものだけ。他のソースの通知は、名前と種類を比べるだけで何もしない(負荷はほぼない)。
  * 削除されたシーンの登録は、呼ぶたびに一覧から取り除く。
- * グループには登録しないため、グループの中の Clipboard Image を手動で切り替えたことには気づけない(#18、既知の制限)。
+ * グループには登録しないため、グループの中の Clipboard Image を手動で切り替えたことには気づけない(既知の制限。#37 で検討する)。
  *
  * @note 呼び出し元: plugin-main.cpp(起動完了時・シーンコレクション切り替え時・シーン一覧の変更時)。
  * @note スレッド: UI スレッドから呼ぶこと。
@@ -120,7 +120,7 @@ bool is_clipboard_image_showing();
  * @brief 'Clipboard Image' が今使っている画像ファイルのパスを返す。
  *
  * @details
- * 古い画像を掃除するとき(#9)に、消してはいけないファイルを知るために使う。
+ * 古い画像を掃除するときに、消してはいけないファイルを知るために使う。
  * - 'Clipboard Image' に設定されている画像ファイル(表示中、または最後に表示した画像)
  * - 差し替え待ちの画像(フェードアウトが終わったら表示する画像)
  *

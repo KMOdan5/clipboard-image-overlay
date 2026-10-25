@@ -18,7 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 /**
  * @file history-dock.hpp
- * @brief 履歴ドック(#15)の公開窓口。最近表示した画像をサムネイルで並べ、クリックでもう一度表示する。
+ * @brief 表示履歴のドックの公開窓口。最近表示した画像をサムネイルで並べ、クリックでもう一度表示する。
  *
  * @details 実装は history-dock.cpp。呼び出し元は plugin-main.cpp。
  */

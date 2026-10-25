@@ -33,10 +33,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * ファイル名: yyyyMMdd-HHmmss-zzz.拡張子(保存した日時)
  *
- * 古い画像の掃除(#9): 新しい順に MAX_SAVED_IMAGES 枚だけ残し、それより古いものを削除する
+ * 古い画像の掃除: 新しい順に MAX_SAVED_IMAGES 枚だけ残し、それより古いものを削除する
  * (cleanup_saved_images())。ファイル名の形と保存フォルダを知っているのがこのファイルなので、ここで行う。
  *
- * 履歴(#15): 保存フォルダの画像を、そのまま履歴として使う。list_saved_images() で新しい順に並べ、
+ * 表示履歴: 保存フォルダの画像を、そのまま履歴として使う。list_saved_images() で新しい順に並べ、
  * read_saved_image() で表示に必要な大きさを読む。一覧に出すのも、掃除と同じくプラグインが付けた名前のファイルだけ。
  *
  * 公開している関数は save_clipboard_image()・cleanup_saved_images()・saved_images_folder()・
@@ -70,7 +70,7 @@ constexpr const char *IMAGE_FOLDER = "images";
 
 /**
  * @brief 保存フォルダに残す画像の枚数。これより古い画像は cleanup_saved_images() で削除する。
- * @note MVP では固定。枚数・容量の上限を設定画面で変えられるようにするかは #23 で検討する。
+ * @note 今は固定。枚数・容量の上限を設定画面で変えられるようにするかは #23 で検討する。
  */
 constexpr int MAX_SAVED_IMAGES = 50;
 
@@ -92,7 +92,7 @@ const QStringList OBS_IMAGE_FORMATS = {
 /**
  * @brief このプラグインが付けた名前(yyyyMMdd-HHmmss-zzz.拡張子)かどうかを判定する正規表現。
  *
- * @details 古い画像の掃除(#9)と履歴の一覧(#15)で同じ条件を使う。
+ * @details 古い画像の掃除と表示履歴の一覧で同じ条件を使う。
  *          配信者が保存フォルダに置いたファイルを、消したり一覧に出したりしないため。
  */
 const QRegularExpression &saved_name_pattern()

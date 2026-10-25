@@ -18,7 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 /**
  * @file history-dock.cpp
- * @brief 履歴ドック(#15)。保存フォルダの画像をサムネイルで並べ、クリックでもう一度表示する。
+ * @brief 表示履歴のドック。保存フォルダの画像をサムネイルで並べ、クリックでもう一度表示する。
  *
  * @details
  * 処理の流れ:
@@ -44,7 +44,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 表示する文字列はすべて data/locale の ini から読む。
  *
  * 関連ファイル:
- * - clipboard-capture.cpp … 保存フォルダと、履歴の一覧(list_saved_images())
+ * - clipboard-capture.cpp … 保存フォルダと、表示履歴の一覧(list_saved_images()。最大 50 枚)
  * - plugin-main.cpp … ドックの登録と、クリックされた画像の表示
  *
  * 公開している関数の説明は history-dock.hpp を参照。
@@ -74,8 +74,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QPointer>
 #include <QScrollBar>
 #include <QSet>
-#include <QShowEvent>
 #include <QHideEvent>
+#include <QShowEvent>
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QThreadPool>
@@ -94,9 +94,6 @@ namespace {
  * @warning OBS がドックの位置や表示/非表示をこの ID で保存するため、変更すると配置が初期化される。
  */
 constexpr const char *DOCK_ID = "clipboard_image_overlay_history";
-
-/// @brief 一覧に並べる画像の最大枚数。保存の上限(50 枚、clipboard-capture.cpp)とそろえる。
-constexpr int MAX_IMAGES = 50;
 
 /**
  * @brief サムネイルの幅の最小値(ピクセル)。ドックが狭くても、何の画像か見分けられる大きさ。
@@ -166,10 +163,11 @@ QString text(const char *key)
 /**
  * @brief ファイル名(yyyyMMdd-HHmmss-zzz.拡張子)から、保存した日時の表示用の文字列を作る。
  *
- * @param path 画像ファイルのパス。
+ * @details
  * 書式は言語によらず「2026-10-20 14:03」(年-月-日)にする。英語圏は国によって月と日の順が違い、
  * 「/」区切りだと読み違えやすいため、どの国でも同じに読める国際規格(ISO 8601)の形にそろえる。
  *
+ * @param path 画像ファイルのパス。
  * @return 日時。名前から読めなければファイル名をそのまま返す。
  */
 QString saved_time_label(const QString &path)
@@ -331,6 +329,8 @@ public:
 		layout->setContentsMargins(0, 0, 0, 0);
 		layout->addWidget(list_, 1);
 		layout->addWidget(empty_label_, 1);
+		/* 最初は一覧が空(paths_ が空)なので、案内だけを出しておく。refresh() は一覧が変わったときだけ出し分けるため */
+		list_->hide();
 
 		/*
 		 * 保存フォルダの変化を見張る。フォルダがまだないと見張れないので、ここで作っておく
@@ -466,10 +466,11 @@ private:
 		QStringList paths;
 		for (const std::string &path : list_saved_images())
 			paths.append(QString::fromUtf8(path.c_str()));
-		while (paths.size() > MAX_IMAGES)
-			paths.removeLast();
-		if (paths == paths_)
+		if (paths == paths_) {
+			/* 一覧は同じでも、見えていない間に今の画像が変わっていることがあるので、印は付け直す */
+			update_current(true);
 			return;
+		}
 		paths_ = paths;
 
 		const QString newest = paths_.isEmpty() ? QString() : paths_.first();

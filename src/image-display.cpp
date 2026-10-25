@@ -56,9 +56,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
  *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
  *
- * 表示/非表示の検知(#7):
+ * 表示/非表示の検知:
  * - 全シーンの item_visible(表示/非表示)・item_add(追加)・item_remove(削除)通知を受け取る。
- *   名前が Clipboard Image のものだけを扱い、他のソースの通知は名前を比べるだけで捨てる。
+ *   プラグインのソース(is_managed_source())のものだけを扱い、他のソースの通知は名前と種類を比べるだけで捨てる。
  * - 通知は UI スレッドに回し、処理する時点の状態を見て判断する(handle_visibility_changed())。
  *   - どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める(auto_hide_on_image_hidden())
  *   - 配信者が表示・追加したなら、貼ったときと同じくカウントを始める(auto_hide_restart())
@@ -68,11 +68,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 片付け(シーンコレクションの切り替え・終了)より前に回した通知は、片付けた後には処理しない(watch_generation)。
  * - 差し替えを待つ間にアイテム・ソース・シーンが削除されたら、差し替えを取り消す。
  *
- * グループ(#18):
+ * グループ:
  * - Clipboard Image を探すときは、グループの中も探す(collect_items())。表示・非表示・差し替えは、
  *   グループの外に置いたときと同じように動く
  * - 通知はシーンにだけ登録し、グループには登録しない。グループの中で手動で表示/非表示を切り替えても
- *   気づけないため、手動で表示したときはカウントが始まらない(既知の制限)
+ *   気づけないため、手動で表示したときはカウントが始まらない(既知の制限。#37 で検討する)
  * - グループの表示/非表示・位置・大きさは変えない。表示サイズはグループの拡大率に関係なく、キャンバスを基準に決める
  * - 「常に最前面に表示する」は、グループの中での最前面になる
  *
@@ -159,8 +159,9 @@ bool is_managed_source(obs_source_t *source, const char *name = SOURCE_NAME)
 	if (!source || !name)
 		return false;
 	const char *source_name = obs_source_get_name(source);
-	return source_name && std::strcmp(source_name, name) == 0 &&
-	       std::strcmp(obs_source_get_unversioned_id(source), IMAGE_SOURCE_ID) == 0;
+	const char *source_id = obs_source_get_unversioned_id(source);
+	return source_name && source_id && std::strcmp(source_name, name) == 0 &&
+	       std::strcmp(source_id, IMAGE_SOURCE_ID) == 0;
 }
 
 /**
@@ -318,7 +319,6 @@ void apply_default_position(obs_sceneitem_t *item)
  * ログにも実際と違う大きさが出て調査の妨げになる。境界の種類はシーンアイテムの設定値として
  * 確実に取得できるので、それで判定する。
  *
- *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報(幅・高さを使う)。
  */
@@ -473,7 +473,7 @@ obs_sceneitem_t *add_hidden_scene_item(obs_scene_t *scene, obs_source_t *source)
  * 非表示にするときや「どこかに表示されているか」を調べるときは、最初の 1 つだけでなく全部を見る。
  * 集めたあとで操作するのは、obs_scene_enum_items() の途中(シーンをロック中)に表示を切り替えないようにするため。
  *
- * グループ(#18): グループの中に置かれたものも、シーンに置かれたものと同じように集める。
+ * グループの中に置かれたものも、シーンに置かれたものと同じように集める。
  * - 探さないと、貼るたびにグループの外へもう 1 つ追加され、自動で非表示にもならないため
  * - OBS ではグループの中にグループを入れられないので、中を探すのは 1 段だけで足りる
  * - グループの中を探すのは、シーンの探索中(シーンをロック中)に行う。OBS 本体も同じ順(シーン → グループ)でロックしている
@@ -796,7 +796,8 @@ std::vector<obs_weak_source_t *> watched_scenes;
  * 通知が届くまでの間に状態が変わっていても(貼った・消した・削除した)、今の状態に合った動きになるため。
  * 1. 差し替え中のアイテムが削除されていたら、差し替えを取り消す
  * 2. 差し替え中なら何もしない(表示が続いている扱い。カウントは貼ったときに始めている)
- * 3. どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める(#7 のルール 2)
+ * 3. どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める
+ *    (一時停止は、画像がどこかに表示されている間だけ続ける。残ったままだと、次に表示した画像が非表示にならないため)
  * 4. 配信者が表示した(表示・追加の通知)なら、貼ったときと同じくカウントを始める
  *    (既にどこかに表示中でカウントしていた場合は、表示時間に戻る)
  *
@@ -1005,7 +1006,7 @@ void prune_watched_scenes()
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  *
- * @note 呼び出し元: plugin-main.cpp の on_show_requested()。
+ * @note 呼び出し元: plugin-main.cpp の show_saved_image()。
  * @note スレッド: UI スレッド。
  */
 bool show_image_on_current_scene(const SavedImage &image)
@@ -1187,7 +1188,7 @@ std::vector<std::string> clipboard_images_in_use()
 }
 
 /**
- * @brief 'Clipboard Image' で表示中(または表示しようとしている)画像ファイルのパスを返す。
+ * @brief 今の画像('Clipboard Image' が参照している画像ファイル)のパスを返す。
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  */
