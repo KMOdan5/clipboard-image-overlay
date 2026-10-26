@@ -73,7 +73,7 @@ void auto_hide_toggle_pause();
  *          一時停止が残ったままだと、次に貼った画像も消えなくなってしまうため。
  *
  * @note 呼び出し元: image-display.cpp(表示されていないのを検知したとき)、
- *       plugin-main.cpp(貼る前に何も表示されていなかったとき)。
+ *       plugin-main.cpp(貼る前に何も表示されていなかったとき・非表示ホットキー・今の画像の削除)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void auto_hide_on_image_hidden();

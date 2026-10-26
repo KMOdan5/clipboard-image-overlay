@@ -77,7 +77,8 @@ bool show_image_on_current_scene(const SavedImage &image);
  *             配信者が今の画像を削除するとき(clear_clipboard_image())に使う。
  *
  * @note 呼び出し元: auto-hide.cpp(自動で消すタイマー、fade = true)、
- *       plugin-main.cpp(起動時・シーンコレクション切り替え時、fade = false)、clear_clipboard_image()(fade = false)。
+ *       plugin-main.cpp(非表示ホットキー、fade = true / 起動時・シーンコレクション切り替え時、fade = false)、
+ *       clear_clipboard_image()(fade = false)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void hide_clipboard_image(bool fade);
