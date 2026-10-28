@@ -21,8 +21,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @brief クリップボードの画像を取り出して保存する機能の公開窓口。
  *
  * @details 実装は clipboard-capture.cpp。呼び出し元は plugin-main.cpp
- *          (on_show_requested()・起動完了時の掃除・「1 つ前の画像を表示」ホットキー)と、
- *          history-dock.cpp(履歴の一覧、#15)。
+ *          (on_show_requested()・起動完了時の掃除・表示履歴の画像の表示・「前の画像を表示」ホットキー)と、
+ *          history-dock.cpp(表示履歴の一覧)。表示履歴からの削除(trash_saved_image())も plugin-main.cpp から呼ぶ。
  */
 
 #pragma once
@@ -62,7 +62,7 @@ struct SavedImage {
 std::optional<SavedImage> save_clipboard_image();
 
 /**
- * @brief 保存フォルダの古い画像を削除し、新しい順に 50 枚だけ残す(#9)。
+ * @brief 保存フォルダの古い画像を削除し、新しい順に 50 枚だけ残す。
  *
  * @details
  * 画像は貼るたびに保存フォルダにたまっていくので、上限を超えた古いものを削除する。
@@ -82,9 +82,9 @@ std::optional<SavedImage> save_clipboard_image();
 void cleanup_saved_images(const std::vector<std::string> &in_use);
 
 /**
- * @brief 画像の保存フォルダのパスを返す(#15)。
+ * @brief 画像の保存フォルダのパスを返す。
  *
- * @details 履歴ドックが、フォルダの変化(新しい画像・掃除で消えた画像)を見張るために使う。
+ * @details 表示履歴のドックが、フォルダの変化(新しい画像・掃除で消えた画像)を見張るために使う。
  *          フォルダは作らない(まだない場合もある)。
  *
  * @return 保存フォルダのパス(UTF-8、OS 標準の区切り文字)。取得できなければ空。
@@ -94,31 +94,52 @@ void cleanup_saved_images(const std::vector<std::string> &in_use);
 std::string saved_images_folder();
 
 /**
- * @brief 保存した画像のパスを、新しい順に返す(#15)。
+ * @brief 保存した画像のパスを、新しい順に返す。
  *
  * @details
- * 保存フォルダの画像を、そのまま履歴として使う。
+ * 保存フォルダの画像を、そのまま表示履歴として使う。
  * - 対象は cleanup_saved_images() と同じく、このプラグインが付けた名前の形のファイルだけ
  * - 新しい・古いはファイル名の日時で判断する
  * - 返すのは最大 50 枚(保存の上限と同じ)。掃除の前に呼ばれても、それより多くは返さない
  *
  * @return 画像ファイルのパス(UTF-8、OS 標準の区切り文字)。先頭が一番新しい。フォルダがなければ空。
  *
- * @note 呼び出し元: history-dock.cpp(一覧)、plugin-main.cpp(「1 つ前の画像を表示」ホットキー)。
+ * @note 呼び出し元: history-dock.cpp(一覧)、plugin-main.cpp(「前の画像を表示」ホットキー)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 std::vector<std::string> list_saved_images();
 
 /**
- * @brief 保存した画像の情報(パスと幅・高さ)を読む(#15)。
+ * @brief 保存した画像の情報(パスと幅・高さ)を読む。
  *
- * @details 履歴から表示するとき、show_image_on_current_scene() に渡す大きさを知るために使う。
+ * @details 表示履歴から表示するとき、show_image_on_current_scene() に渡す大きさを知るために使う。
  *          画像の中身は読まず、大きさだけを読む(回転情報は反映する)。
  *
  * @param path 画像ファイルのパス(UTF-8)。list_saved_images() が返したもの。
  * @return 画像の情報。
  * @retval std::nullopt ファイルがない(掃除などで消えた)・画像として読めない。理由は OBS のログに出る。
  *
- * @note 呼び出し元: plugin-main.cpp。
+ * @note 呼び出し元: plugin-main.cpp の show_history_image()。
  */
 std::optional<SavedImage> read_saved_image(const std::string &path);
+
+/**
+ * @brief 保存した画像を、OS のごみ箱に送る。表示履歴のドックで配信者が「削除」を選んだときに使う。
+ *
+ * @details
+ * - 対象は保存フォルダの直下にある、このプラグインが付けた名前のファイルだけ。それ以外は削除せずに false を返す
+ * - 完全には削除せず、ごみ箱に送る(確認の画面を出さないので、元に戻せるように)。
+ *   ごみ箱に送れないとき(ごみ箱がない場所など)は、削除せずに false を返す
+ * - 既にファイルがなければ、何もせずに true を返す
+ * - 'Clipboard Image' の参照はここでは外さない。今の画像を削除するときは、先に呼び出し元で外す(clear_clipboard_image())
+ *
+ * 結果はログに出す。保存フォルダが変わるので、表示履歴のドックの一覧には自動で反映される。
+ *
+ * @param path 画像ファイルのパス(UTF-8)。list_saved_images() が返したもの。
+ * @return ごみ箱に送れた(または既になかった)ら true。
+ * @retval false 対象外のファイル、またはごみ箱に送れなかった。理由は OBS のログに出る。
+ *
+ * @note 呼び出し元: plugin-main.cpp の delete_history_image()。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+bool trash_saved_image(const std::string &path);

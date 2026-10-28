@@ -52,13 +52,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 表示サイズ(境界が「自動」のときだけ)
  * - 重なり順(「常に最前面に表示する」がオンのとき、貼るたびに最前面へ。既定オン)
  * - 表示/非表示(表示する・消す)
+ * - 画像ファイルの参照を外す(配信者が今の画像を削除したとき。clear_clipboard_image())
  * 位置・境界・トランジションなど、それ以外の設定は変えない。
  * - 消すときは、現在のシーンだけでなく全シーンの Clipboard Image を非表示にする。
  *   表示中にシーンを切り替えても、元のシーンに画像が出しっぱなしにならないようにするため。
  *
- * 表示/非表示の検知(#7):
+ * 表示/非表示の検知:
  * - 全シーンの item_visible(表示/非表示)・item_add(追加)・item_remove(削除)通知を受け取る。
- *   名前が Clipboard Image のものだけを扱い、他のソースの通知は名前を比べるだけで捨てる。
+ *   プラグインのソース(is_managed_source())のものだけを扱い、他のソースの通知は名前と種類を比べるだけで捨てる。
  * - 通知は UI スレッドに回し、処理する時点の状態を見て判断する(handle_visibility_changed())。
  *   - どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める(auto_hide_on_image_hidden())
  *   - 配信者が表示・追加したなら、貼ったときと同じくカウントを始める(auto_hide_restart())
@@ -68,17 +69,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 片付け(シーンコレクションの切り替え・終了)より前に回した通知は、片付けた後には処理しない(watch_generation)。
  * - 差し替えを待つ間にアイテム・ソース・シーンが削除されたら、差し替えを取り消す。
  *
- * グループ(#18):
+ * グループ:
  * - Clipboard Image を探すときは、グループの中も探す(collect_items())。表示・非表示・差し替えは、
  *   グループの外に置いたときと同じように動く
  * - 通知はシーンにだけ登録し、グループには登録しない。グループの中で手動で表示/非表示を切り替えても
- *   気づけないため、手動で表示したときはカウントが始まらない(既知の制限)
+ *   気づけないため、手動で表示したときはカウントが始まらない(既知の制限。#37 で検討する)
  * - グループの表示/非表示・位置・大きさは変えない。表示サイズはグループの拡大率に関係なく、キャンバスを基準に決める
  * - 「常に最前面に表示する」は、グループの中での最前面になる
  *
+ * 今の画像を配信者が削除するとき(表示履歴のドックの「削除」):
+ * - clear_clipboard_image() で、全シーンの Clipboard Image を即座に非表示にしてから、画像ファイルの参照を外す。
+ *   ファイルを先に消しても、OBS は読み込んだ画像を持っているので画面に残ってしまうため
+ *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
  * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、
- * current_clipboard_image()、image_display_shutdown()(image-display.hpp)。
+ * current_clipboard_image()、clear_clipboard_image()、image_display_shutdown()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
@@ -97,6 +102,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace {
@@ -136,6 +142,70 @@ void set_image_file(obs_source_t *source, const char *path)
 }
 
 /**
+ * @brief ソースが、このプラグインが使う 'Clipboard Image' かどうかを判断する。
+ *
+ * @details
+ * 名前が SOURCE_NAME で、OBS 標準の画像ソースのものを、このプラグインのソースとして扱う。
+ * 配信者が同じ名前で別の種類のソース(テキストなど)を作っていても、それは触らない。
+ * 削除の途中かどうかはここでは見ない。ソースを削除したときに届く通知(アイテムの削除)も、
+ * このプラグインのソースのものとして受け取る必要があるため。使えるかどうかは find_managed_source() で判断する。
+ *
+ * プラグインのソースかどうかの判断は、すべてこの関数と find_managed_source() で行う。
+ * 見分け方を変えるとき(名前以外の印で見分ける、複数のソースを扱うなど)は、この 2 つだけを直せばよいようにするため。
+ *
+ * @param source 調べるソース(nullptr でもよい)。
+ * @param name   プラグインのソースの名前。省略すると SOURCE_NAME。
+ * @return このプラグインのソースなら true。
+ *
+ * @note スレッド: どのスレッドから呼んでもよい(シーンの通知の中からも呼ばれる)。
+ */
+bool is_managed_source(obs_source_t *source, const char *name = SOURCE_NAME)
+{
+	if (!source || !name)
+		return false;
+	const char *source_name = obs_source_get_name(source);
+	const char *source_id = obs_source_get_unversioned_id(source);
+	return source_name && source_id && std::strcmp(source_name, name) == 0 &&
+	       std::strcmp(source_id, IMAGE_SOURCE_ID) == 0;
+}
+
+/**
+ * @brief このプラグインが使う 'Clipboard Image' を探す。作りはしない。
+ *
+ * @param name 探すソースの名前。省略すると SOURCE_NAME。名前を選んで探す場合に備えて、名前を渡せるようにしている。
+ * @return 見つかったソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
+ * @retval nullptr ない、別の種類のソースが同じ名前を使っている、または削除の途中。
+ *
+ * @see is_managed_source()(判断の決まり)、get_or_create_image_source()(なければ作る)
+ */
+obs_source_t *find_managed_source(const char *name = SOURCE_NAME)
+{
+	if (!name)
+		return nullptr;
+	obs_source_t *source = obs_get_source_by_name(name);
+	/* 削除の途中(OBS が片付けるまでの一瞬)のソースは使わない。消えるソースに画像を出してしまうため */
+	if (source && (!is_managed_source(source, name) || obs_source_removed(source))) {
+		obs_source_release(source);
+		return nullptr;
+	}
+	return source;
+}
+
+/**
+ * @brief 画像ソースに設定されている画像ファイルのパスを返す。
+ * @param source 画像ソース。
+ * @return 画像ファイルのパス(UTF-8)。設定されていなければ空。
+ */
+std::string image_file_of(obs_source_t *source)
+{
+	obs_data_t *settings = obs_source_get_settings(source);
+	const char *file = obs_data_get_string(settings, "file");
+	std::string path = file ? file : "";
+	obs_data_release(settings);
+	return path;
+}
+
+/**
  * @brief 専用の画像ソースを取得する。なければ作る。
  *
  * @details
@@ -149,25 +219,25 @@ void set_image_file(obs_source_t *source, const char *path)
  */
 obs_source_t *get_or_create_image_source(const char *path)
 {
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
+	if (source)
+		return source;
+
+	/*
+	 * 同じ名前のソースがあるのにプラグインのソースとして使えない場合は、作らずに失敗扱いにする。
+	 * - 配信者が同じ名前で別の種類のソース(テキストなど)を作っている: 書き換えると配信者の設定を壊すため
+	 * - 削除の途中(OBS が片付けるまでの一瞬): 消えるソースに画像を出してしまうため
+	 * OBS は同じ名前のソースを 2 つ作れないので、新しく作ることもできない。
+	 */
+	source = obs_get_source_by_name(SOURCE_NAME);
 	if (source) {
-		/*
-		 * 同じ名前のソースを配信者が自分で作っている可能性がある(テキストソースなど)。
-		 * 種類が違うものを書き換えると配信者の設定を壊すので、触らずに失敗扱いにする。
-		 */
-		/* 削除の途中(OBS が片付けるまでの一瞬)のソースは使わない。消えるソースに画像を出してしまうため */
-		if (obs_source_removed(source)) {
+		if (obs_source_removed(source))
 			obs_log(LOG_WARNING, "display: \"%s\" is being removed; try again", SOURCE_NAME);
-			obs_source_release(source);
-			return nullptr;
-		}
-		if (std::strcmp(obs_source_get_unversioned_id(source), IMAGE_SOURCE_ID) != 0) {
+		else
 			obs_log(LOG_WARNING, "display: a source named \"%s\" exists but is not an image source (%s)",
 				SOURCE_NAME, obs_source_get_unversioned_id(source));
-			obs_source_release(source);
-			return nullptr;
-		}
-		return source;
+		obs_source_release(source);
+		return nullptr;
 	}
 
 	obs_data_t *settings = obs_data_create();
@@ -253,7 +323,6 @@ void apply_default_position(obs_sceneitem_t *item)
  * それでも設定すると、使われない倍率が裏で書き換わり(境界を「自動」に戻したときに思わぬ大きさになる)、
  * ログにも実際と違う大きさが出て調査の妨げになる。境界の種類はシーンアイテムの設定値として
  * 確実に取得できるので、それで判定する。
- *
  *
  * @param item  対象のシーンアイテム。
  * @param image 表示する画像の情報(幅・高さを使う)。
@@ -409,7 +478,7 @@ obs_sceneitem_t *add_hidden_scene_item(obs_scene_t *scene, obs_source_t *source)
  * 非表示にするときや「どこかに表示されているか」を調べるときは、最初の 1 つだけでなく全部を見る。
  * 集めたあとで操作するのは、obs_scene_enum_items() の途中(シーンをロック中)に表示を切り替えないようにするため。
  *
- * グループ(#18): グループの中に置かれたものも、シーンに置かれたものと同じように集める。
+ * グループの中に置かれたものも、シーンに置かれたものと同じように集める。
  * - 探さないと、貼るたびにグループの外へもう 1 つ追加され、自動で非表示にもならないため
  * - OBS ではグループの中にグループを入れられないので、中を探すのは 1 段だけで足りる
  * - グループの中を探すのは、シーンの探索中(シーンをロック中)に行う。OBS 本体も同じ順(シーン → グループ)でロックしている
@@ -457,6 +526,40 @@ void release_items(std::vector<obs_sceneitem_t *> &items)
 }
 
 /**
+ * @brief 全シーン(グループの中を含む)に置かれた、指定したソースのシーンアイテムを順に処理する。
+ *
+ * @details 全シーンを対象にする処理(表示中かの判断・非表示にする処理)で共通に使う。
+ *          同じシーンに 2 つ以上置かれていれば、すべてを渡す。
+ *
+ * @param source 対象のソース。
+ * @param fn     アイテムごとに呼ぶ処理。false を返すと、そこで打ち切る。
+ *
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+template<typename Fn> void for_each_item_in_all_scenes(obs_source_t *source, Fn fn)
+{
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+
+	bool keep_going = true;
+	for (size_t i = 0; i < scenes.sources.num && keep_going; i++) {
+		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
+		if (!scene)
+			continue;
+		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
+		for (obs_sceneitem_t *item : items) {
+			if (!fn(item)) {
+				keep_going = false;
+				break;
+			}
+		}
+		release_items(items);
+	}
+
+	obs_frontend_source_list_free(&scenes);
+}
+
+/**
  * @brief シーンの中から、指定したソースが置かれているシーンアイテムを 1 つ探す。グループの中も探す。
  *
  * @details
@@ -491,25 +594,16 @@ obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
  */
 bool is_visible_in_any_scene()
 {
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
 	if (!source)
 		return false;
 
-	obs_frontend_source_list scenes = {};
-	obs_frontend_get_scenes(&scenes);
-
 	bool visible = false;
-	for (size_t i = 0; i < scenes.sources.num && !visible; i++) {
-		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
-		if (!scene)
-			continue;
-		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
-		for (obs_sceneitem_t *item : items)
-			visible = visible || obs_sceneitem_visible(item);
-		release_items(items);
-	}
+	for_each_item_in_all_scenes(source, [&visible](obs_sceneitem_t *item) {
+		visible = obs_sceneitem_visible(item);
+		return !visible; /* 1 つでも表示中なら打ち切る */
+	});
 
-	obs_frontend_source_list_free(&scenes);
 	obs_source_release(source);
 	return visible;
 }
@@ -707,7 +801,8 @@ std::vector<obs_weak_source_t *> watched_scenes;
  * 通知が届くまでの間に状態が変わっていても(貼った・消した・削除した)、今の状態に合った動きになるため。
  * 1. 差し替え中のアイテムが削除されていたら、差し替えを取り消す
  * 2. 差し替え中なら何もしない(表示が続いている扱い。カウントは貼ったときに始めている)
- * 3. どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める(#7 のルール 2)
+ * 3. どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める
+ *    (一時停止は、画像がどこかに表示されている間だけ続ける。残ったままだと、次に表示した画像が非表示にならないため)
  * 4. 配信者が表示した(表示・追加の通知)なら、貼ったときと同じくカウントを始める
  *    (既にどこかに表示中でカウントしていた場合は、表示時間に戻る)
  *
@@ -774,9 +869,7 @@ void queue_visibility_changed(bool shown)
 obs_sceneitem_t *clipboard_item_from(calldata_t *cd)
 {
 	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
-	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
-	const char *name = source ? obs_source_get_name(source) : nullptr;
-	if (!name || std::strcmp(name, SOURCE_NAME) != 0)
+	if (!item || !is_managed_source(obs_sceneitem_get_source(item)))
 		return nullptr;
 	return item;
 }
@@ -786,7 +879,7 @@ obs_sceneitem_t *clipboard_item_from(calldata_t *cd)
  *
  * @details
  * 目のアイコン・OBS 標準のホットキー・元に戻す・プラグイン自身、どの方法で切り替えても届く。
- * 名前が Clipboard Image のものだけを扱い、それ以外のソースの通知は名前を比べるだけで何もしない。
+ * Clipboard Image のものだけを扱い(is_managed_source())、それ以外のソースの通知は何もしない。
  * プラグイン自身の操作(self_changing が true)の通知は捨てる。
  *
  * @param cd 通知の内容("item": シーンアイテム、"visible": 表示なら true)。
@@ -918,7 +1011,7 @@ void prune_watched_scenes()
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  *
- * @note 呼び出し元: plugin-main.cpp の on_show_requested()。
+ * @note 呼び出し元: plugin-main.cpp の show_saved_image()。
  * @note スレッド: UI スレッド。
  */
 bool show_image_on_current_scene(const SavedImage &image)
@@ -1000,8 +1093,8 @@ bool show_image_on_current_scene(const SavedImage &image)
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  *
- * @note 呼び出し元: auto-hide.cpp の on_hide_timer()(フェードあり)、
- *       plugin-main.cpp の on_frontend_event()(起動時などにフェードなし)。
+ * @note 呼び出し元: auto-hide.cpp の on_hide_timer()(フェードあり)、plugin-main.cpp の on_hide_requested()(フェードあり)、
+ *       plugin-main.cpp の on_frontend_event()(起動時などにフェードなし)、clear_clipboard_image()(フェードなし)。
  * @note スレッド: UI スレッド。
  */
 void hide_clipboard_image(bool fade)
@@ -1009,36 +1102,23 @@ void hide_clipboard_image(bool fade)
 	/* 差し替えの途中なら取り消す(フェードアウト後に勝手に表示し直さないように) */
 	cancel_swap();
 
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
 	if (!source) {
 		obs_log(LOG_INFO, "display: nothing to hide (no \"%s\")", SOURCE_NAME);
 		return;
 	}
 
-	/* シーン一覧を取り、それぞれのシーンに置かれた Clipboard Image を非表示にする */
-	obs_frontend_source_list scenes = {};
-	obs_frontend_get_scenes(&scenes);
-
+	/* 全シーンの Clipboard Image のうち、表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
 	int hidden = 0;
-	for (size_t i = 0; i < scenes.sources.num; i++) {
-		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
-		if (!scene)
-			continue;
-
-		/* 同じシーンに 2 つ以上置かれていることもあるので、全部を対象にする(グループの中も含む) */
-		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
-		for (obs_sceneitem_t *item : items) {
-			/* 表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
-			if (!obs_sceneitem_visible(item))
-				continue;
+	for_each_item_in_all_scenes(source, [fade, &hidden](obs_sceneitem_t *item) {
+		if (obs_sceneitem_visible(item)) {
 			const bool changed = fade ? obs_sceneitem_set_visible(item, false) : hide_item_instantly(item);
 			if (changed)
 				hidden++;
 		}
-		release_items(items);
-	}
+		return true;
+	});
 
-	obs_frontend_source_list_free(&scenes);
 	obs_source_release(source);
 	obs_log(LOG_INFO, "display: hidden %d item(s) (%s)", hidden, fade ? "fade" : "instant");
 }
@@ -1098,13 +1178,11 @@ std::vector<std::string> clipboard_images_in_use()
 {
 	std::vector<std::string> paths;
 
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
 	if (source) {
-		obs_data_t *settings = obs_source_get_settings(source);
-		const char *file = obs_data_get_string(settings, "file");
-		if (file && *file)
-			paths.emplace_back(file);
-		obs_data_release(settings);
+		const std::string file = image_file_of(source);
+		if (!file.empty())
+			paths.push_back(file);
 		obs_source_release(source);
 	}
 
@@ -1115,7 +1193,7 @@ std::vector<std::string> clipboard_images_in_use()
 }
 
 /**
- * @brief 'Clipboard Image' で表示中(または表示しようとしている)画像ファイルのパスを返す。
+ * @brief 今の画像('Clipboard Image' が参照している画像ファイル)のパスを返す。
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  */
@@ -1126,14 +1204,28 @@ std::string current_clipboard_image()
 		return pending_swap.image.path;
 
 	std::string path;
-	obs_source_t *source = obs_get_source_by_name(SOURCE_NAME);
+	obs_source_t *source = find_managed_source();
 	if (source) {
-		obs_data_t *settings = obs_source_get_settings(source);
-		const char *file = obs_data_get_string(settings, "file");
-		if (file)
-			path = file;
-		obs_data_release(settings);
+		path = image_file_of(source);
 		obs_source_release(source);
 	}
 	return path;
+}
+
+/**
+ * @brief 今の画像を外す。全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を空にする。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+void clear_clipboard_image()
+{
+	/* 差し替えの途中なら取り消し、フェードアウトせずに即座に非表示にする(見せたくない画像を一瞬も残さないため) */
+	hide_clipboard_image(false);
+
+	obs_source_t *source = find_managed_source();
+	if (!source)
+		return;
+	set_image_file(source, "");
+	obs_source_release(source);
+	obs_log(LOG_INFO, "display: cleared the image of \"%s\"", SOURCE_NAME);
 }

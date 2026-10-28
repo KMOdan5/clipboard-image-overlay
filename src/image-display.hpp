@@ -20,7 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * @file image-display.hpp
  * @brief 保存した画像を、現在のシーンに表示する機能の公開窓口。
  *
- * @details 実装は image-display.cpp。呼び出し元は plugin-main.cpp の on_show_requested()。
+ * @details 実装は image-display.cpp。呼び出し元は plugin-main.cpp と auto-hide.cpp。
  */
 
 #pragma once
@@ -73,10 +73,12 @@ bool show_image_on_current_scene(const SavedImage &image);
  * 差し替えの途中だった場合は、その差し替えを取り消す。
  *
  * @param fade true なら非表示トランジション(フェード)で消す。
- *             false なら即座に消す。起動時に、前回の表示が残っていたものを片付けるときに使う。
+ *             false なら即座に消す。起動時に、前回の表示が残っていたものを片付けるときと、
+ *             配信者が今の画像を削除するとき(clear_clipboard_image())に使う。
  *
  * @note 呼び出し元: auto-hide.cpp(自動で消すタイマー、fade = true)、
- *       plugin-main.cpp(起動時・シーンコレクション切り替え時、fade = false)。
+ *       plugin-main.cpp(非表示ホットキー、fade = true / 起動時・シーンコレクション切り替え時、fade = false)、
+ *       clear_clipboard_image()(fade = false)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void hide_clipboard_image(bool fade);
@@ -89,10 +91,10 @@ void hide_clipboard_image(bool fade);
  * - 表示・追加されたら、貼ったときと同じく自動で消すカウントを始める(出しっぱなしにしないため)
  * - どのシーンにも表示されなくなったら、一時停止を解除してタイマーを止める
  *
- * 通知はシーン単位でしか受け取れないので全シーンに登録するが、処理するのは名前が Clipboard Image のものだけ。
- * 他のソースの通知は、名前を比べるだけで何もしない(負荷はほぼない)。
+ * 通知はシーン単位でしか受け取れないので全シーンに登録するが、処理するのはプラグインの 'Clipboard Image'
+ * (名前が Clipboard Image の画像ソース)のものだけ。他のソースの通知は、名前と種類を比べるだけで何もしない(負荷はほぼない)。
  * 削除されたシーンの登録は、呼ぶたびに一覧から取り除く。
- * グループには登録しないため、グループの中の Clipboard Image を手動で切り替えたことには気づけない(#18、既知の制限)。
+ * グループには登録しないため、グループの中の Clipboard Image を手動で切り替えたことには気づけない(既知の制限。#37 で検討する)。
  *
  * @note 呼び出し元: plugin-main.cpp(起動完了時・シーンコレクション切り替え時・シーン一覧の変更時)。
  * @note スレッド: UI スレッドから呼ぶこと。
@@ -120,7 +122,7 @@ bool is_clipboard_image_showing();
  * @brief 'Clipboard Image' が今使っている画像ファイルのパスを返す。
  *
  * @details
- * 古い画像を掃除するとき(#9)に、消してはいけないファイルを知るために使う。
+ * 古い画像を掃除するときに、消してはいけないファイルを知るために使う。
  * - 'Clipboard Image' に設定されている画像ファイル(表示中、または最後に表示した画像)
  * - 差し替え待ちの画像(フェードアウトが終わったら表示する画像)
  *
@@ -132,20 +134,40 @@ bool is_clipboard_image_showing();
 std::vector<std::string> clipboard_images_in_use();
 
 /**
- * @brief 'Clipboard Image' で表示中(または表示しようとしている)画像ファイルのパスを返す(#15)。
+ * @brief 今の画像('Clipboard Image' が参照している画像ファイル)のパスを返す。
  *
  * @details
- * 「1 つ前の画像を表示」ホットキーが、今出ている画像が履歴の何番目かを知るために使う。
+ * 「前の画像を表示」ホットキーと履歴ドックのハイライトが、今の画像が履歴のどれかを知るために使う。
+ * 非表示になっても、最後に表示した画像が今の画像のまま残る。
  * 差し替えの途中なら、差し替え後に出る画像(差し替え待ちの画像)を返す。
  * それ以外は 'Clipboard Image' に設定されている画像ファイルを返す。
- * 表示中かどうかは見ないので、必要なら is_clipboard_image_showing() と合わせて使う。
+ * 表示中かどうかは見ない。
  *
  * @return 画像ファイルのパス(UTF-8)。'Clipboard Image' がない・画像が設定されていなければ空。
  *
- * @note 呼び出し元: plugin-main.cpp。
+ * @note 呼び出し元: plugin-main.cpp(「前の画像を表示」ホットキー、表示履歴のドックへの問い合わせ、表示履歴からの削除)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 std::string current_clipboard_image();
+
+/**
+ * @brief 今の画像を外す。全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を空にする。
+ *
+ * @details
+ * 配信者が表示履歴のドックで今の画像を削除するときに、ファイルを削除する前に呼ぶ。
+ * - 差し替えの途中なら取り消す
+ * - 全シーン(グループの中を含む)の 'Clipboard Image' を、フェードアウトせずに即座に非表示にする。
+ *   見せたくない画像を消す操作なので、一瞬も画面に残さないため
+ * - 'Clipboard Image' の画像ファイルの設定を空にする。OBS の画像ソースは読み込んだ画像を持っているので、
+ *   参照を外さずにファイルだけを消すと、次に表示するまで画像が残り続ける
+ *
+ * 呼んだ後は今の画像がなくなる(current_clipboard_image() は空を返す)。'Clipboard Image' がなければ何もしない。
+ * 自動非表示のタイマーと一時停止は、ここでは解除しない(呼び出し元で auto_hide_on_image_hidden() を呼ぶ)。
+ *
+ * @note 呼び出し元: plugin-main.cpp の delete_history_image()。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+void clear_clipboard_image();
 
 /**
  * @brief 表示処理で使っているタイマーや通知の登録を片付ける。何度呼んでもよい。

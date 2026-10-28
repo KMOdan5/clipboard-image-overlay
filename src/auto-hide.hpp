@@ -22,7 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * @details 実装は auto-hide.cpp。呼び出し元は plugin-main.cpp と image-display.cpp。
  *
- * 一時停止のルール(#7):
+ * 一時停止のルール:
  * 1. 貼ると、残り時間は表示時間(設定画面で変更。既定 10 秒)に戻る。一時停止中かどうかに関係ない
  *    - 手動(目のアイコン・OBS 標準のホットキー)で表示したとき、表示状態でシーンに追加したときも、貼ったときと同じ扱い
  * 2. 一時停止は、画像が表示されている間だけ続く
@@ -61,6 +61,7 @@ void auto_hide_restart();
  * - 画像が表示されていないとき: 何もしない(一時停止が残っていれば解除する)
  * - タイマーが動いていないとき(表示時間 0 で表示したときなど): 何もしない
  *
+ * @note 呼び出し元: plugin-main.cpp の on_toggle_pause_requested()(シーンの準備ができているときだけ呼ぶ)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void auto_hide_toggle_pause();
@@ -72,7 +73,7 @@ void auto_hide_toggle_pause();
  *          一時停止が残ったままだと、次に貼った画像も消えなくなってしまうため。
  *
  * @note 呼び出し元: image-display.cpp(表示されていないのを検知したとき)、
- *       plugin-main.cpp(貼る前に何も表示されていなかったとき)。
+ *       plugin-main.cpp(貼る前に何も表示されていなかったとき・非表示ホットキー・今の画像の削除)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void auto_hide_on_image_hidden();

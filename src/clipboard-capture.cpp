@@ -33,14 +33,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * ファイル名: yyyyMMdd-HHmmss-zzz.拡張子(保存した日時)
  *
- * 古い画像の掃除(#9): 新しい順に MAX_SAVED_IMAGES 枚だけ残し、それより古いものを削除する
+ * 古い画像の掃除: 新しい順に MAX_SAVED_IMAGES 枚だけ残し、それより古いものを削除する
  * (cleanup_saved_images())。ファイル名の形と保存フォルダを知っているのがこのファイルなので、ここで行う。
  *
- * 履歴(#15): 保存フォルダの画像を、そのまま履歴として使う。list_saved_images() で新しい順に並べ、
+ * 表示履歴: 保存フォルダの画像を、そのまま履歴として使う。list_saved_images() で新しい順に並べ、
  * read_saved_image() で表示に必要な大きさを読む。一覧に出すのも、掃除と同じくプラグインが付けた名前のファイルだけ。
+ * 配信者が表示履歴から選んで削除するときは、trash_saved_image() で OS のごみ箱に送る(元に戻せるように)。
  *
  * 公開している関数は save_clipboard_image()・cleanup_saved_images()・saved_images_folder()・
- * list_saved_images()・read_saved_image()(clipboard-capture.hpp)。
+ * list_saved_images()・read_saved_image()・trash_saved_image()(clipboard-capture.hpp)。
  * それ以外はこのファイル内だけで使う補助関数。
  */
 
@@ -70,7 +71,7 @@ constexpr const char *IMAGE_FOLDER = "images";
 
 /**
  * @brief 保存フォルダに残す画像の枚数。これより古い画像は cleanup_saved_images() で削除する。
- * @note MVP では固定。枚数・容量の上限を設定画面で変えられるようにするかは #23 で検討する。
+ * @note 今は固定。枚数・容量の上限を設定画面で変えられるようにするかは #23 で検討する。
  */
 constexpr int MAX_SAVED_IMAGES = 50;
 
@@ -92,7 +93,7 @@ const QStringList OBS_IMAGE_FORMATS = {
 /**
  * @brief このプラグインが付けた名前(yyyyMMdd-HHmmss-zzz.拡張子)かどうかを判定する正規表現。
  *
- * @details 古い画像の掃除(#9)と履歴の一覧(#15)で同じ条件を使う。
+ * @details 古い画像の掃除・表示履歴の一覧・表示履歴からの削除で同じ条件を使う。
  *          配信者が保存フォルダに置いたファイルを、消したり一覧に出したりしないため。
  */
 const QRegularExpression &saved_name_pattern()
@@ -405,4 +406,38 @@ std::optional<SavedImage> read_saved_image(const std::string &path)
 		return std::nullopt;
 	}
 	return SavedImage{path, size.width(), size.height()};
+}
+
+/**
+ * @brief 保存した画像を、OS のごみ箱に送る。
+ *
+ * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。
+ */
+bool trash_saved_image(const std::string &path)
+{
+	const QString folder = image_folder();
+	const QFileInfo info(QString::fromUtf8(path.c_str()));
+
+	/* 保存フォルダの直下にある、プラグインが付けた名前のファイルだけを対象にする(ほかのファイルを消さないため) */
+	if (folder.isEmpty() || QFileInfo(info.absolutePath()) != QFileInfo(folder) ||
+	    !saved_name_pattern().match(info.fileName()).hasMatch()) {
+		obs_log(LOG_WARNING, "delete: refused %s (not a saved image)", path.c_str());
+		return false;
+	}
+
+	/* 掃除などで既に消えていれば、消す物はない */
+	if (!info.exists()) {
+		obs_log(LOG_INFO, "delete: %s is already gone", path.c_str());
+		return true;
+	}
+
+	/* ごみ箱に送れなければ、完全には消さない(確認なしで消すので、元に戻せない削除はしない) */
+	QFile file(info.absoluteFilePath());
+	if (!file.moveToTrash()) {
+		obs_log(LOG_WARNING, "delete: failed to move %s to trash (%s); not deleted", path.c_str(),
+			file.errorString().toUtf8().constData());
+		return false;
+	}
+	obs_log(LOG_INFO, "delete: moved %s to trash", path.c_str());
+	return true;
 }
