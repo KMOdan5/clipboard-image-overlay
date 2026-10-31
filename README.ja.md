@@ -66,7 +66,7 @@ macOS 向けのファイルもありますが、動作は確認していませ�
 
 ## インストールと使い方
 
-最新版は[リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases)からダウンロードできます。正式な配布場所はここだけです。インストール方法は[マニュアル](docs/manual/ja.md)をご覧ください。
+最新版は[リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases)からダウンロードできます。正式な配布場所はここだけです。初めて使う方は[かんたんスタート](docs/quickstart/ja.md)を、詳しい使い方は[マニュアル](docs/manual/ja.md)をご覧ください。
 
 ## ご利用について
 
