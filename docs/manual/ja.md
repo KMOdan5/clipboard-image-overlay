@@ -22,14 +22,15 @@
 
 ### インストーラーで入れる(おすすめ)
 
-1. リリースから `clipboard-image-overlay-(版)-windows-x64-installer.exe` をダウンロードします。
-2. ダウンロードしたファイルを開きます。
+1. OBS を起動している場合は終了します。
+2. リリースから `clipboard-image-overlay-(版)-windows-x64-installer.exe` をダウンロードします。
+3. ダウンロードしたファイルを開きます。
    - 「Windows によって PC が保護されました」と表示された場合は「詳細情報」→「実行」を押します。インストーラーにまだ署名がないため表示されます。
    - 「このアプリがデバイスに変更を加えることを許可しますか?」と表示されたら「はい」を押します。
-3. 画面の案内に沿ってインストールします。OBS を起動したままの場合は閉じるかを確認する画面が表示されます。
-4. OBS を起動し、「ツール」メニューに「Clipboard Image」があればインストール完了です。
+4. 画面の案内に沿ってインストールします。
+5. OBS を起動し、「ツール」メニューに「Clipboard Image」があればインストール完了です。
 
-<!-- 画像: 手順 2 の「Windows によって PC が保護されました」の画面(docs/images/installer-smartscreen.png)。画像を置いたら、次の行のコメントの記号を消す -->
+<!-- 画像: 手順 3 の「Windows によって PC が保護されました」の画面(docs/images/installer-smartscreen.png)。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/installer-smartscreen.png" width="600" alt="「Windows によって PC が保護されました」の画面の「詳細情報」と「実行」"> -->
 
 <!-- 画像: インストール後の「ツール」メニュー(docs/images/tools-menu.png)。画像を置いたら、次の行のコメントの記号を消す -->

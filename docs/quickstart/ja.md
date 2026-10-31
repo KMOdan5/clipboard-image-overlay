@@ -4,11 +4,12 @@
 
 ## 1. インストールする
 
-1. [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases)から `clipboard-image-overlay-(版)-windows-x64-installer.exe` をダウンロードします。
-2. ダウンロードしたファイルを開きます。
+1. OBS を起動している場合は終了します。
+2. [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases)から `clipboard-image-overlay-(版)-windows-x64-installer.exe` をダウンロードします。
+3. ダウンロードしたファイルを開きます。
    - 「Windows によって PC が保護されました」と表示された場合は「詳細情報」→「実行」を押します。
    - 「このアプリがデバイスに変更を加えることを許可しますか?」と表示されたら「はい」を押します。
-3. 画面の案内に沿ってインストールします。
+4. 画面の案内に沿ってインストールします。
 
 <!-- 画像: 「Windows によって PC が保護されました」の画面(docs/images/installer-smartscreen.png)。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/installer-smartscreen.png" width="600" alt="「Windows によって PC が保護されました」の画面の「詳細情報」と「実行」"> -->
@@ -30,7 +31,14 @@ OBS を起動し、「ツール」メニューに「Clipboard Image」がある�
 <!-- 画像: コピーしてから表示されるまでの動き(docs/images/demo.gif)。README の GIF と同じもの。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/demo.gif" width="720" alt="コピーした画像が配信画面に表示され、自動で非表示になる様子"> -->
 
-## 4. ホットキーを設定する
+## 4. 表示履歴から表示する
+
+OBS の「ドック」メニューから「Clipboard Image の表示履歴」を選ぶと、表示した画像の一覧が開きます。画像をクリックすると、その画像をもう一度表示できます。
+
+<!-- 画像: 表示履歴のドック(docs/images/history-dock.png)。画像を置いたら、次の行のコメントの記号を消す -->
+<!-- <img src="../images/history-dock.png" width="400" alt="Clipboard Image の表示履歴のドック"> -->
+
+## 5. ホットキーを設定する
 
 OBS の「設定」→「ホットキー」で「画像を 'Clipboard Image' に表示」にキーを割り当てると、メニューを開かずにキー 1 つで画像を表示できます。迷ったときは `Ctrl + Shift + V` がおすすめです。
 
