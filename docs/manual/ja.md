@@ -1,4 +1,4 @@
-# clipboard-image-overlay マニュアル
+# Clipboard Image Overlay マニュアル
 
 コピーした画像をホットキー 1 つで OBS の配信画面に表示するプラグインの使い方です。
 初めて使う方は、先に[かんたんスタート](../quickstart/ja.md)をご覧ください。

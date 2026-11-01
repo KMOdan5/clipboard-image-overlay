@@ -1,4 +1,4 @@
-# clipboard-image-overlay かんたんスタート
+# Clipboard Image Overlay かんたんスタート
 
 コピーした画像を OBS の配信画面に表示するまでの手順です。初めて使うときに、上から順に進めてください。
 
