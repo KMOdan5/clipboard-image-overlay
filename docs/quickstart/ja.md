@@ -11,15 +11,13 @@
    - 「このアプリがデバイスに変更を加えることを許可しますか?」と表示されたら「はい」を押します。
 4. 画面の案内に沿ってインストールします。
 
-<!-- 画像: 「Windows によって PC が保護されました」の画面(docs/images/installer-smartscreen.png)。画像を置いたら、次の行のコメントの記号を消す -->
-<!-- <img src="../images/installer-smartscreen.png" width="600" alt="「Windows によって PC が保護されました」の画面の「詳細情報」と「実行」"> -->
+<img src="../images/installer-smartscreen.png" width="720" alt="「Windows によって PC が保護されました」の画面の「詳細情報」と「実行」">
 
 ## 2. OBS で確かめる
 
 OBS を起動し、「ツール」メニューに「Clipboard Image」があることを確かめます。
 
-<!-- 画像: インストール後の「ツール」メニュー(docs/images/tools-menu.png)。画像を置いたら、次の行のコメントの記号を消す -->
-<!-- <img src="../images/tools-menu.png" width="600" alt="「ツール」メニューの「Clipboard Image」"> -->
+<img src="../images/tools-menu.png" width="600" alt="「ツール」メニューの「Clipboard Image」">
 
 ## 3. 画像を表示する
 
@@ -35,6 +33,8 @@ OBS を起動し、「ツール」メニューに「Clipboard Image」がある�
 
 OBS の「ドック」メニューから「Clipboard Image の表示履歴」を選ぶと、表示した画像の一覧が開きます。画像をクリックすると、その画像をもう一度表示できます。
 
+<img src="../images/dock-menu.png" width="600" alt="「ドック」メニューの「Clipboard Image の表示履歴」">
+
 <!-- 画像: 表示履歴のドック(docs/images/history-dock.png)。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/history-dock.png" width="400" alt="Clipboard Image の表示履歴のドック"> -->
 
@@ -42,8 +42,7 @@ OBS の「ドック」メニューから「Clipboard Image の表示履歴」を
 
 OBS の「設定」→「ホットキー」で「画像を 'Clipboard Image' に表示」にキーを割り当てると、メニューを開かずにキー 1 つで画像を表示できます。迷ったときは `Ctrl + Shift + V` がおすすめです。
 
-<!-- 画像: ホットキーの設定画面(docs/images/hotkey-settings.png)。画像を置いたら、次の行のコメントの記号を消す -->
-<!-- <img src="../images/hotkey-settings.png" width="600" alt="「設定」→「ホットキー」の「画像を 'Clipboard Image' に表示」"> -->
+<img src="../images/hotkey-settings.png" width="720" alt="「ファイル」→「設定」→「ホットキー」の「画像を 'Clipboard Image' に表示」">
 
 ## もっと知りたいとき
 
