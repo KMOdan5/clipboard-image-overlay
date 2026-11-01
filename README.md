@@ -1,6 +1,6 @@
 <div align="center">
 
-# clipboard-image-overlay
+# Clipboard Image Overlay
 
 **English** | [日本語](README.ja.md)
 
