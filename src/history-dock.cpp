@@ -80,6 +80,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QHideEvent>
 #include <QShowEvent>
 #include <QStyle>
+#include <QStyleOption>
 #include <QStyledItemDelegate>
 #include <QThreadPool>
 #include <QTimer>
@@ -491,13 +492,28 @@ private:
 	 * 2. その枚数で幅をすき間なく分け、カードの幅にする(THUMB_MAX_WIDTH で頭打ち)
 	 * 3. 高さは 16:9 の比で決める
 	 *
-	 * 縦のスクロールバーの幅は、出ていなくても先に差し引いておく。
-	 * スクロールバーが出たり消えたりするたびに枚数が変わり、並びが揺れるのを防ぐため。
+	 * 使う幅は、Qt(QListView)がカードを並べるときと同じ計算で求める。
+	 * 計算が食い違うと、2 列が入ると決めたのに Qt が 2 列目を折り返し、2 列分の大きさのカードが 1 列に並ぶため。
+	 * - 枠を除いた幅(maximumViewportSize())から、縦のスクロールバーの幅を引く
+	 * - スクロールバーの幅は、スクロールバー自身で問い合わせる(OBS のテーマで決まる幅にするため)
+	 * - スクロールバーの幅は、出ていなくても先に差し引いておく。出たり消えたりするたびに枚数が変わり、並びが揺れるのを防ぐため
+	 * - Qt は「次のカードの右端が幅以上なら折り返す」ので、カードの幅の合計は、この幅より 1 小さくする
 	 */
 	void update_layout()
 	{
-		const int scrollbar = list_->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, list_);
-		const int available = std::max(1, list_->width() - scrollbar - 1);
+		const QScrollBar *vbar = list_->verticalScrollBar();
+		int scrollbar = 0;
+		if (!list_->style()->pixelMetric(QStyle::PM_ScrollView_ScrollBarOverlap, nullptr, vbar)) {
+			scrollbar = list_->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, vbar);
+			/* 枠をスクロールバーの外ではなく中身の周りだけに描くスタイルでは、その枠の分も Qt が差し引く */
+			if (list_->style()->styleHint(QStyle::SH_ScrollView_FrameOnlyAroundContents, nullptr, list_)) {
+				QStyleOption option;
+				option.initFrom(list_);
+				scrollbar +=
+					list_->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, &option, list_) * 2;
+			}
+		}
+		const int available = std::max(1, list_->maximumViewportSize().width() - scrollbar - 1);
 
 		const int min_cell = THUMB_MIN_WIDTH + CARD_PADDING * 2 + CARD_GAP;
 		const int columns = std::max(1, available / min_cell);
