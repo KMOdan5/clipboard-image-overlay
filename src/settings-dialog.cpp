@@ -341,6 +341,8 @@ struct SettingsWidgets {
 	QSpinBox *max_size_percent = nullptr;
 	/// @brief 常に最前面に表示する。
 	QCheckBox *always_on_top = nullptr;
+	/// @brief スタジオモードで、画像をプログラムにすぐ表示する。
+	QCheckBox *studio_mode_show_on_program = nullptr;
 
 	/**
 	 * @brief 設定値を各項目に表示する。
@@ -351,6 +353,7 @@ struct SettingsWidgets {
 		display_seconds->setValue(settings.display_seconds);
 		max_size_percent->setValue(settings.max_size_percent);
 		always_on_top->setChecked(settings.always_on_top);
+		studio_mode_show_on_program->setChecked(settings.studio_mode_show_on_program);
 	}
 
 	/**
@@ -363,6 +366,7 @@ struct SettingsWidgets {
 		settings.display_seconds = display_seconds->value();
 		settings.max_size_percent = max_size_percent->value();
 		settings.always_on_top = always_on_top->isChecked();
+		settings.studio_mode_show_on_program = studio_mode_show_on_program->isChecked();
 		return settings;
 	}
 };
@@ -409,7 +413,8 @@ void open_settings_dialog()
 	/*
 	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
 	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く。
-	 * 枠は役割で 2 つに分ける: いつ非表示になるか(表示時間)と、表示するたびに自動で行うこと(大きさ・重なり順)
+	 * 枠は役割で 3 つに分ける: いつ非表示になるか(表示時間)、表示するたびに自動で行うこと(大きさ・重なり順)、
+	 * スタジオモードでの表示のしかた
 	 */
 	auto *layout = new QVBoxLayout(dialog);
 	layout->setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN);
@@ -451,6 +456,15 @@ void open_settings_dialog()
 					   checkbox_note_spacing(widgets.always_on_top)));
 
 	layout->addWidget(adjust_group);
+	layout->addSpacing(SECTION_SPACING);
+	QGroupBox *studio_group = make_group("Settings.Group.StudioMode", form);
+
+	/* スタジオモードで、画像をプログラムにすぐ表示する(チェックボックスなので項目名の列は空ける) */
+	widgets.studio_mode_show_on_program = new QCheckBox(text("Settings.StudioModeShowOnProgram"));
+	form->addRow(QString(), make_field(widgets.studio_mode_show_on_program, "Settings.StudioModeShowOnProgram.Note",
+					   checkbox_note_spacing(widgets.studio_mode_show_on_program)));
+
+	layout->addWidget(studio_group);
 	/* 2 つの枠で入力欄の左の位置がそろうように */
 	align_label_widths({display_label, max_size_label});
 
