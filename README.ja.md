@@ -88,7 +88,7 @@ macOS 向けのファイルもありますが、動作は確認していませ�
 
 ## コード署名ポリシー
 
-Windows 用のファイルへのコード署名を SignPath Foundation に申請しています。
+Windows 用のファイルへのコード署名は、利用者が増えた段階で SignPath Foundation に申請する予定です。
 
 <details>
 <summary>署名の方針と作者</summary>
