@@ -413,15 +413,15 @@ void open_settings_dialog()
 	/*
 	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
 	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く。
-	 * 枠は役割で 3 つに分ける: いつ非表示になるか(表示時間)、表示するたびに自動で行うこと(大きさ・重なり順)、
-	 * スタジオモードでの表示のしかた
+	 * 枠は役割で 2 つに分ける: 画像をどう表示・非表示にするか(表示時間・スタジオモードでの表示)と、
+	 * 表示するたびに自動で行うこと(大きさ・重なり順)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
 	layout->setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN);
 	layout->setSpacing(BASE_SPACING);
 	SettingsWidgets widgets;
 	QFormLayout *form = nullptr;
-	QGroupBox *hide_group = make_group("Settings.Group.HideTiming", form);
+	QGroupBox *display_group = make_group("Settings.Group.Display", form);
 
 	/* 表示時間: [10 秒] */
 	widgets.display_seconds = new QSpinBox();
@@ -430,7 +430,12 @@ void open_settings_dialog()
 	auto *display_label = new QLabel(text("Settings.DisplayTime"));
 	form->addRow(display_label, make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
 
-	layout->addWidget(hide_group);
+	/* スタジオモードで、画像をプログラムにすぐ表示する(チェックボックスなので項目名の列は空ける) */
+	widgets.studio_mode_show_on_program = new QCheckBox(text("Settings.StudioModeShowOnProgram"));
+	form->addRow(QString(), make_field(widgets.studio_mode_show_on_program, "Settings.StudioModeShowOnProgram.Note",
+					   checkbox_note_spacing(widgets.studio_mode_show_on_program)));
+
+	layout->addWidget(display_group);
 	layout->addSpacing(SECTION_SPACING);
 	QGroupBox *adjust_group = make_group("Settings.Group.AutoAdjust", form);
 
@@ -456,15 +461,6 @@ void open_settings_dialog()
 					   checkbox_note_spacing(widgets.always_on_top)));
 
 	layout->addWidget(adjust_group);
-	layout->addSpacing(SECTION_SPACING);
-	QGroupBox *studio_group = make_group("Settings.Group.StudioMode", form);
-
-	/* スタジオモードで、画像をプログラムにすぐ表示する(チェックボックスなので項目名の列は空ける) */
-	widgets.studio_mode_show_on_program = new QCheckBox(text("Settings.StudioModeShowOnProgram"));
-	form->addRow(QString(), make_field(widgets.studio_mode_show_on_program, "Settings.StudioModeShowOnProgram.Note",
-					   checkbox_note_spacing(widgets.studio_mode_show_on_program)));
-
-	layout->addWidget(studio_group);
 	/* 2 つの枠で入力欄の左の位置がそろうように */
 	align_label_widths({display_label, max_size_label});
 
