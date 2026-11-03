@@ -88,7 +88,7 @@ Please use the [bug report and request form](https://docs.google.com/forms/d/e/1
 
 ## Code signing policy
 
-We have applied to SignPath Foundation for code signing of the Windows files.
+We plan to apply to SignPath Foundation for code signing of the Windows files once the plugin is more widely used.
 
 <details>
 <summary>Signing policy and team</summary>
