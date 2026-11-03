@@ -413,7 +413,7 @@ void open_settings_dialog()
 	/*
 	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
 	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く。
-	 * 枠は役割で 2 つに分ける: 画像をどう表示・非表示にするか(表示時間・スタジオモードでの表示)と、
+	 * 枠は役割で 2 つに分ける: 画像がいつ表示され、いつ非表示になるか(表示時間・スタジオモードでの表示)と、
 	 * 表示するたびに自動で行うこと(大きさ・重なり順)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
@@ -421,7 +421,7 @@ void open_settings_dialog()
 	layout->setSpacing(BASE_SPACING);
 	SettingsWidgets widgets;
 	QFormLayout *form = nullptr;
-	QGroupBox *display_group = make_group("Settings.Group.Display", form);
+	QGroupBox *display_group = make_group("Settings.Group.ShowHideTiming", form);
 
 	/* 表示時間: [10 秒] */
 	widgets.display_seconds = new QSpinBox();
