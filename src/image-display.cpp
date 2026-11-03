@@ -77,6 +77,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - 非表示は設定に関係なく、いつもコピーにも行う。トランジションでコピーに写った画像が、次のトランジションまで出たままにならないように
  * - 「表示中か」の判断にもコピーを含める(コピーに表示が残っている間は、自動で非表示にするタイマーを止めないように)
  * - コピーへの変更は次のトランジションで作り直されて消える(その時点の元のシーンの状態が写される)。コピーの通知は受け取らない
+ * - コピーを扱う処理は、呼び出し元の分岐で必要なときだけ通す(関係のない場面で思わぬ不具合を起こさないため)
+ *   - スタジオモードでないときは、どの処理も通さない(in_studio_mode())
+ *   - 表示・差し替えと、今の画像を削除したときにコピーの画像ソースの参照を外す処理は、設定がオンのときだけ通す
+ *   - 非表示と「表示中か」の判断は、設定がオフでもスタジオモードなら通す(トランジションでコピーに写った画像を残さないため)
  *
  * グループ:
  * - Clipboard Image を探すときは、グループの中も探す(collect_items())。表示・非表示・差し替えは、
@@ -592,6 +596,23 @@ obs_sceneitem_t *find_scene_item(obs_scene_t *scene, obs_source_t *source)
 }
 
 /**
+ * @brief スタジオモードかどうかを返す。
+ *
+ * @details
+ * プログラムのコピーを扱う処理は、スタジオモードのときだけ意味がある。
+ * 呼び出し元でこの関数を見て分岐し、スタジオモードでないときはコピーを扱う処理に入らないようにする
+ * (コピーを探す処理そのものを通さないことで、関係のない場面での思わぬ不具合を防ぐため)。
+ *
+ * @return スタジオモードなら true。
+ *
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+bool in_studio_mode()
+{
+	return obs_frontend_preview_program_mode_active();
+}
+
+/**
  * @brief スタジオモードで、プログラムに映っているシーンのコピーを返す。
  *
  * @details
@@ -841,7 +862,7 @@ bool is_visible_in_any_scene()
 	obs_source_release(source);
 
 	/* スタジオモードのプログラムのコピーに表示が残っていれば、それも表示中として扱う(非表示にするまでタイマーを止めないため) */
-	if (!visible) {
+	if (!visible && in_studio_mode()) {
 		std::vector<obs_sceneitem_t *> items = collect_program_copy_items();
 		visible = std::any_of(items.begin(), items.end(), obs_sceneitem_visible);
 		release_items(items);
@@ -1012,7 +1033,7 @@ void start_swap(obs_sceneitem_t *item, obs_source_t *scene_source, const SavedIm
 	pending_swap.item = item;
 	pending_swap.scene = obs_source_get_weak_source(scene_source);
 	pending_swap.image = image;
-	pending_swap.show_on_program = settings_get().studio_mode_show_on_program;
+	pending_swap.show_on_program = settings_get().studio_mode_show_on_program && in_studio_mode();
 
 	/* 非表示トランジションがあればその長さだけ待つ。なければすぐ消えるので待たない */
 	const bool has_fade = obs_sceneitem_get_transition(item, false) != nullptr;
@@ -1337,7 +1358,7 @@ bool show_image_on_current_scene(const SavedImage &image)
 	} else {
 		/* 非表示: 画像を設定してフェードイン */
 		show_new_image(item, image);
-		if (settings_get().studio_mode_show_on_program)
+		if (settings_get().studio_mode_show_on_program && in_studio_mode())
 			show_on_program_copy(item, image);
 	}
 
@@ -1380,9 +1401,11 @@ void hide_clipboard_image(bool fade)
 	obs_source_release(source);
 
 	/* スタジオモードのプログラムのコピーも非表示にする(設定に関係なく。トランジションでコピーに写った画像を残さないため) */
-	const int hidden_on_program = hide_on_program_copy(fade);
-	if (hidden_on_program > 0)
-		obs_log(LOG_INFO, "display: hidden %d item(s) on the program copy", hidden_on_program);
+	if (in_studio_mode()) {
+		const int hidden_on_program = hide_on_program_copy(fade);
+		if (hidden_on_program > 0)
+			obs_log(LOG_INFO, "display: hidden %d item(s) on the program copy", hidden_on_program);
+	}
 
 	obs_log(LOG_INFO, "display: hidden %d item(s) (%s)", hidden, fade ? "fade" : "instant");
 }
@@ -1491,14 +1514,20 @@ void clear_clipboard_image()
 		return;
 	set_image_file(source, "");
 
-	/* 「ソースを複製」がオンだと、プログラムのコピーの画像ソースは別物なので、そちらの参照も外す */
-	std::vector<obs_sceneitem_t *> items = collect_program_copy_items();
-	for (obs_sceneitem_t *item : items) {
-		obs_source_t *copy_source = obs_sceneitem_get_source(item);
-		if (copy_source != source)
-			set_image_file(copy_source, "");
+	/*
+	 * 「ソースを複製」がオンだと、プログラムのコピーの画像ソースは別物なので、そちらの参照も外す。
+	 * コピーの画像ソースに画像を設定するのは、プログラムにもすぐ表示する設定のときだけ(show_on_program_copy())。
+	 * 設定がオフなら、コピーの画像は次のトランジションで元のシーン(参照を外した状態)から作り直されるので、ここでは扱わない
+	 */
+	if (settings_get().studio_mode_show_on_program && in_studio_mode()) {
+		std::vector<obs_sceneitem_t *> items = collect_program_copy_items();
+		for (obs_sceneitem_t *item : items) {
+			obs_source_t *copy_source = obs_sceneitem_get_source(item);
+			if (copy_source != source)
+				set_image_file(copy_source, "");
+		}
+		release_items(items);
 	}
-	release_items(items);
 	obs_source_release(source);
 	obs_log(LOG_INFO, "display: cleared the image of \"%s\"", SOURCE_NAME);
 }
