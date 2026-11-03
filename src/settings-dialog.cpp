@@ -341,6 +341,8 @@ struct SettingsWidgets {
 	QSpinBox *max_size_percent = nullptr;
 	/// @brief 常に最前面に表示する。
 	QCheckBox *always_on_top = nullptr;
+	/// @brief スタジオモードでもすぐに配信画面に表示する。
+	QCheckBox *studio_mode_show_on_program = nullptr;
 
 	/**
 	 * @brief 設定値を各項目に表示する。
@@ -351,6 +353,7 @@ struct SettingsWidgets {
 		display_seconds->setValue(settings.display_seconds);
 		max_size_percent->setValue(settings.max_size_percent);
 		always_on_top->setChecked(settings.always_on_top);
+		studio_mode_show_on_program->setChecked(settings.studio_mode_show_on_program);
 	}
 
 	/**
@@ -363,6 +366,7 @@ struct SettingsWidgets {
 		settings.display_seconds = display_seconds->value();
 		settings.max_size_percent = max_size_percent->value();
 		settings.always_on_top = always_on_top->isChecked();
+		settings.studio_mode_show_on_program = studio_mode_show_on_program->isChecked();
 		return settings;
 	}
 };
@@ -409,14 +413,15 @@ void open_settings_dialog()
 	/*
 	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
 	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く。
-	 * 枠は役割で 2 つに分ける: いつ非表示になるか(表示時間)と、表示するたびに自動で行うこと(大きさ・重なり順)
+	 * 枠は役割で 2 つに分ける: 画像がいつ表示され、いつ非表示になるか(表示時間・スタジオモードでの表示)と、
+	 * 表示するたびに自動で行うこと(大きさ・重なり順)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
 	layout->setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN);
 	layout->setSpacing(BASE_SPACING);
 	SettingsWidgets widgets;
 	QFormLayout *form = nullptr;
-	QGroupBox *hide_group = make_group("Settings.Group.HideTiming", form);
+	QGroupBox *display_group = make_group("Settings.Group.ShowHideTiming", form);
 
 	/* 表示時間: [10 秒] */
 	widgets.display_seconds = new QSpinBox();
@@ -425,7 +430,12 @@ void open_settings_dialog()
 	auto *display_label = new QLabel(text("Settings.DisplayTime"));
 	form->addRow(display_label, make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
 
-	layout->addWidget(hide_group);
+	/* スタジオモードでもすぐに配信画面に表示する(チェックボックスなので項目名の列は空ける) */
+	widgets.studio_mode_show_on_program = new QCheckBox(text("Settings.StudioModeShowOnProgram"));
+	form->addRow(QString(), make_field(widgets.studio_mode_show_on_program, "Settings.StudioModeShowOnProgram.Note",
+					   checkbox_note_spacing(widgets.studio_mode_show_on_program)));
+
+	layout->addWidget(display_group);
 	layout->addSpacing(SECTION_SPACING);
 	QGroupBox *adjust_group = make_group("Settings.Group.AutoAdjust", form);
 
