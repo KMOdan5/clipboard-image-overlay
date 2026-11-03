@@ -341,7 +341,7 @@ struct SettingsWidgets {
 	QSpinBox *max_size_percent = nullptr;
 	/// @brief 常に最前面に表示する。
 	QCheckBox *always_on_top = nullptr;
-	/// @brief スタジオモードで、画像をプログラムにすぐ表示する。
+	/// @brief スタジオモードでもすぐに配信画面に表示する。
 	QCheckBox *studio_mode_show_on_program = nullptr;
 
 	/**
@@ -430,7 +430,7 @@ void open_settings_dialog()
 	auto *display_label = new QLabel(text("Settings.DisplayTime"));
 	form->addRow(display_label, make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
 
-	/* スタジオモードで、画像をプログラムにすぐ表示する(チェックボックスなので項目名の列は空ける) */
+	/* スタジオモードでもすぐに配信画面に表示する(チェックボックスなので項目名の列は空ける) */
 	widgets.studio_mode_show_on_program = new QCheckBox(text("Settings.StudioModeShowOnProgram"));
 	form->addRow(QString(), make_field(widgets.studio_mode_show_on_program, "Settings.StudioModeShowOnProgram.Note",
 					   checkbox_note_spacing(widgets.studio_mode_show_on_program)));
