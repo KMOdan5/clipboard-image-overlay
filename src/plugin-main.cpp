@@ -45,6 +45,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  *   シーンの読み込み・切り替え・終了の途中に受け付けた操作は、何もせずに無視する(accept_user_action())
  *
+ *   画像を表示できなかったときは、失敗を見つけた箇所で理由を表示履歴のドックに知らせる(notice.cpp)。
+ *   表示できたときは、そのお知らせを消す(show_saved_image())
+ *
  *   ツール > Clipboard Image > 設定... ─→ open_settings_dialog()  設定画面(settings-dialog.cpp)
  * @endcode
  *
@@ -53,6 +56,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * - image-display.cpp … 保存した画像を現在のシーンに表示する/非表示にする。'Clipboard Image' の今の画像を返す
  * - auto-hide.cpp … 表示した画像を一定時間後に自動で消すタイマーと、その一時停止
  * - history-dock.cpp … 表示履歴のドック。保存した画像をサムネイルで並べる
+ * - notice.cpp … 画像を表示できなかった理由を、表示履歴のドックに知らせる
  * - settings.cpp … 設定値の読み込み・保存(起動時に settings_load() で読む)
  * - settings-dialog.cpp … 設定画面
  * - data/locale/ の .ini … メニュー名・ホットキー名・ドックの表示文字列
@@ -66,6 +70,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "clipboard-capture.hpp"
 #include "history-dock.hpp"
 #include "image-display.hpp"
+#include "notice.hpp"
 #include "settings-dialog.hpp"
 #include "settings.hpp"
 
@@ -104,22 +109,31 @@ bool scenes_ready = false;
  * @brief 配信者の操作を受け付けてよいかを返す。受け付けないときは、理由をログに残す。
  *
  * @details
+ * 画像を表示する操作(shows_image が true)では、ここで操作の始まりをお知らせの仕組みに伝え(notice_begin_operation())、
+ * 受け付けないときは「シーンを読み込み中」のお知らせを出す。非表示・削除・一時停止では出さない
+ * (画像を表示できなかった理由を知らせる仕組みのため)。
+ *
  * シーンの読み込み・切り替え・終了の途中(scenes_ready が false)に受け付けた操作は、何もせずに無視する。
  * 後で実行するために取っておくことはしない。その途中に操作する配信者はまれで、反応がなければもう一度操作すれば済むため。
  * 取っておいて後から実行すると、切り替えた後のシーンに思わぬ画像が出ることもある。
  *
- * @param action 操作の名前。ログ用。
+ * @param action      操作の名前。ログ用。
+ * @param shows_image 画像を表示する操作(表示・表示履歴から表示・前の画像を表示)なら true。
  * @return 受け付けてよいなら true。
  *
  * @note 呼び出し元: on_show_requested()・show_history_image()・on_show_previous_requested()・delete_history_image()・
  *       on_hide_requested()・on_toggle_pause_requested()。
  * @note スレッド: UI スレッドで呼ぶこと。
  */
-bool accept_user_action(const char *action)
+bool accept_user_action(const char *action, bool shows_image = false)
 {
+	if (shows_image)
+		notice_begin_operation();
 	if (scenes_ready)
 		return true;
 	obs_log(LOG_INFO, "%s ignored: scenes are loading or shutting down", action);
+	if (shows_image)
+		notice_report(Notice::ScenesLoading);
 	return false;
 }
 
@@ -159,6 +173,9 @@ void show_saved_image(const SavedImage &image)
 	if (!shown)
 		return;
 
+	/* 前に出したお知らせ(表示できなかった理由)が、表示できた後も残って見えないように消す */
+	notice_clear();
+
 	/* 一定時間後に自動で消す(既に動いていれば延長) */
 	auto_hide_restart();
 }
@@ -178,7 +195,7 @@ void show_saved_image(const SavedImage &image)
 void on_show_requested(const char *trigger)
 {
 	obs_log(LOG_INFO, "show requested (trigger: %s)", trigger);
-	if (!accept_user_action("show"))
+	if (!accept_user_action("show", true))
 		return;
 
 	/* クリップボードの画像をファイルに保存する。画像がなければ終了 */
@@ -205,7 +222,7 @@ void on_show_requested(const char *trigger)
 void show_history_image(const std::string &path, const char *trigger)
 {
 	obs_log(LOG_INFO, "show history image requested (trigger: %s): %s", trigger, path.c_str());
-	if (!accept_user_action("show history image"))
+	if (!accept_user_action("show history image", true))
 		return;
 
 	const auto image = read_saved_image(path);
@@ -248,7 +265,7 @@ bool same_file(const std::string &a, const std::string &b)
  */
 void on_show_previous_requested()
 {
-	if (!accept_user_action("show previous"))
+	if (!accept_user_action("show previous", true))
 		return;
 
 	const std::vector<std::string> images = list_saved_images();

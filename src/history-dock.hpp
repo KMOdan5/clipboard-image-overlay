@@ -91,6 +91,30 @@ struct HistoryDockCallbacks {
 void history_dock_register(HistoryDockCallbacks callbacks);
 
 /**
+ * @brief ドックの一番上に、画像を表示できなかった理由のお知らせを出す。
+ *
+ * @details
+ * - ドックが見えているときだけ出す。閉じている・別のドックのタブの裏にあるときは何もしない
+ * - 一覧の上に、折り返して 2〜3 行の帯で出す。サムネイルの一覧は帯の分だけ下にずれる
+ * - 5 秒たつか、帯をクリックすると消える。出ている間に次のお知らせが来たら、
+ *   文言を差し替えて 5 秒を数え直す
+ *
+ * @param text お知らせの文言(UTF-8)。
+ *
+ * @note 呼び出し元: notice.cpp の notice_report()。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+void history_dock_show_notice(const char *text);
+
+/**
+ * @brief ドックのお知らせを消す。出ていなければ何もしない。
+ *
+ * @note 呼び出し元: notice.cpp の notice_clear()(画像を表示できたとき)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+void history_dock_clear_notice();
+
+/**
  * @brief 履歴ドックの裏の処理(フォルダの見張り・今の画像の問い合わせ・サムネイルの作成)を止める。何度呼んでもよい。
  *
  * @details
