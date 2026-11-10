@@ -2,7 +2,12 @@
 
 コピーした画像を OBS の配信画面に表示するまでの手順です。上から順に進めると、使い始める準備が整います。
 
-## 1. インストールする
+## 1. OBS を更新する
+
+> [!WARNING]
+> このプラグインは OBS Studio 31.1.1 以降で動きます。OBS の版は「ヘルプ」→「OBS Studioについて」で確かめられます。古い場合は「ヘルプ」→「更新を確認」で、最新版に更新してください。
+
+## 2. インストールする
 
 1. OBS を起動している場合は終了します。
 2. [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases)から `clipboard-image-overlay-(版)-windows-x64-installer.exe` をダウンロードします。
@@ -13,13 +18,13 @@
 
 <img src="../images/installer-smartscreen.png" width="720" alt="「Windows によって PC が保護されました」の画面の「詳細情報」と「実行」">
 
-## 2. OBS で確かめる
+## 3. OBS で確かめる
 
 OBS を起動し、「ツール」メニューに「Clipboard Image」があることを確かめます。
 
 <img src="../images/tools-menu.png" width="600" alt="「ツール」メニューの「Clipboard Image」">
 
-## 3. 画像を表示する
+## 4. 画像を表示する
 
 1. 表示したい画像をコピーします。ブラウザでは画像を右クリックして「画像をコピー」を選びます。スクリーンショットは `Win + Shift + S` で範囲を選択します。
 2. OBS の「ツール」→「Clipboard Image」→「コピーした画像を表示」を選びます。
@@ -36,7 +41,7 @@ OBS を起動し、「ツール」メニューに「Clipboard Image」がある�
 <!-- 画像: コピーしてから表示されるまでの動き(docs/images/demo.gif)。README の GIF と同じもの。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/demo.gif" width="720" alt="コピーした画像が配信画面に表示され、自動で非表示になる様子"> -->
 
-## 4. 表示履歴から表示する
+## 5. 表示履歴から表示する
 
 OBS の「ドック」メニューから「Clipboard Image の表示履歴」を選ぶと、表示した画像の一覧が開きます。画像をクリックすると、その画像をもう一度表示できます。
 
@@ -45,7 +50,7 @@ OBS の「ドック」メニューから「Clipboard Image の表示履歴」を
 <!-- 画像: 表示履歴のドック(docs/images/history-dock.png)。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/history-dock.png" width="400" alt="Clipboard Image の表示履歴のドック"> -->
 
-## 5. ホットキーを設定する
+## 6. ホットキーを設定する
 
 OBS の「設定」→「ホットキー」で「画像を 'Clipboard Image' に表示」にキーを割り当てると、メニューを開かずにキー 1 つで画像を表示できます。迷ったときは `Ctrl + Shift + V` がおすすめです。
 
