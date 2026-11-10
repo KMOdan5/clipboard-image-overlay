@@ -144,6 +144,8 @@ QString report_url()
  * - クリックすると既定のブラウザで開く。プラグイン自身が通信するわけではない
  * - 版は PLUGIN_DISPLAY_VERSION。テスト版は「v0.1.0-beta」、完成版は「v0.1.0」と表示する(buildspec.json の beta で切り替え)
  *   配布版(タグのビルド)以外の GitHub Actions のビルドでは「v0.1.0-beta+a80965dc8」のように、後ろにコミットのハッシュが付く
+ * - 文字はマウスで選んでコピーできる(ドラッグして Ctrl+C、または右クリックのメニュー)。
+ *   DM などで問い合わせを受けたとき、版を正確に伝えてもらうため。見た目は変えない
  *
  * @return 作ったラベル(レイアウトに追加すると、ダイアログが解放する)。
  */
@@ -160,6 +162,8 @@ QLabel *make_about_label()
 	auto *label = new QLabel(parts.join(QStringLiteral(" \u00b7 ")));
 	label->setTextFormat(Qt::RichText);
 	label->setOpenExternalLinks(true);
+	/* リンクを開く動きはそのままに、文字の選択とコピーもできるようにする */
+	label->setTextInteractionFlags(Qt::TextBrowserInteraction);
 	make_muted(label);
 	return label;
 }
