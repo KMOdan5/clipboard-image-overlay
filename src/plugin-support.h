@@ -29,7 +29,7 @@ extern "C" {
 
 extern const char *PLUGIN_NAME;
 extern const char *PLUGIN_VERSION;
-/* 画面とログに出す版。buildspec.json の beta が true なら「X.Y.Z-beta」、false なら「X.Y.Z」。配布版(タグのビルド)以外では、後ろに「+コミットのハッシュ」が付く */
+/* 画面とログに出す版。buildspec.json の beta が true なら「X.Y.Z-beta」、false なら「X.Y.Z」。配布版(タグのビルド)以外の GitHub Actions のビルドでは、後ろに「+コミットのハッシュ」が付く */
 extern const char *PLUGIN_DISPLAY_VERSION;
 
 void obs_log(int log_level, const char *format, ...);
