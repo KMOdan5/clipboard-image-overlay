@@ -99,6 +99,7 @@ function Package {
         "/DSourceDir=${ProjectRoot}/release/${Configuration}/${ProductName}"
         "/DOutputDir=${ProjectRoot}/release"
         "/DOutputBaseFilename=${OutputName}-installer"
+        "/DMinObsVersion=$($BuildSpec.dependencies.'obs-studio'.version)"
         "${ProjectRoot}/cmake/windows/resources/installer-Windows.iss"
     )
     Invoke-External $Iscc @IsccArgs
