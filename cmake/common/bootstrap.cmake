@@ -79,6 +79,38 @@ if("$ENV{GITHUB_REF_TYPE}" STREQUAL "tag" AND NOT "$ENV{GITHUB_REF_NAME}" STREQU
     "Tag '$ENV{GITHUB_REF_NAME}' does not match buildspec.json (version + beta = '${PLUGIN_DISPLAY_VERSION}')"
   )
 endif()
+
+# clipboard-image-overlay: 配布版(タグのビルド)以外では、画面とログに出す版の後ろに「+コミットのハッシュ」を付ける。
+# アーティファクトなどから開発中のビルドを入れた人に問い合わせを受けたとき、配布版と見分けるため。
+# ハッシュは先頭 9 文字で、GitHub Actions ではアーティファクトの名前に付くハッシュと同じ値(GITHUB_SHA)を使う。
+# 手元のビルドでは git から取る。取れなければ付けない。CMake の構成をやり直したときに更新される。
+# タグとの照合は上で済ませているので、ここで付けても照合には影響しない。
+if(NOT "$ENV{GITHUB_REF_TYPE}" STREQUAL "tag")
+  set(_commit "$ENV{GITHUB_SHA}")
+  if(NOT _commit)
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+      execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE _commit
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _git_result
+      )
+      if(NOT _git_result EQUAL 0)
+        set(_commit "")
+      endif()
+      unset(_git_result)
+    endif()
+  endif()
+  if(_commit)
+    string(SUBSTRING "${_commit}" 0 9 _commit)
+    string(APPEND PLUGIN_DISPLAY_VERSION "+${_commit}")
+  endif()
+  unset(_commit)
+endif()
+
 set(MACOS_BUNDLEID ${_bundleId})
 
 string(REPLACE "." ";" _version_canonical "${_version}")
