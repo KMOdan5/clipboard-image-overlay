@@ -95,69 +95,71 @@ english.ObsTooOld={#DisplayName} does not work with the installed OBS Studio (%1
 japanese.ObsTooOld=インストールされている OBS Studio(%1)では、{#DisplayName} は動作しません。%nOBS Studio %2 以降に更新してください。%n%nこのままインストールを続けますか?
 
 [Code]
-// 版の文字列(例: 31.0.2)の i 番目(0 始まり)の数を返す。数でない文字が来たら、そこで終わりとみなす。
-// 足りない部分は 0 とする(例: 31.1 の 3 番目は 0)。
-function VersionPart(const Version: String; Index: Integer): Integer;
+const
+  // OBS のインストーラーが「インストールされているアプリ」に版を記録する場所。
+  ObsUninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\OBS Studio';
+
+// 版の文字列(例: 31.0.2)を、大小を比べられる 1 つの数(例: 31000002)にする。
+// 「.」で区切った先頭の 3 つの数を使い、足りない部分は 0 とする。数字と「.」以外の文字(-beta など)が来たら、そこで終わりとする。
+// 先頭が数字でなければ、版として読めないので False を返す(OBS が記録の形を変えた場合に、誤って警告しないため)。
+function VersionToNumber(const Version: String; var Number: Int64): Boolean;
 var
   I, Part: Integer;
-  Digits: String;
+  Value: Int64;
 begin
-  Result := 0;
+  Number := 0;
+  Result := (Length(Version) > 0) and (Version[1] >= '0') and (Version[1] <= '9');
+  if not Result then
+    Exit;
   Part := 0;
-  Digits := '';
+  Value := 0;
   for I := 1 to Length(Version) do
   begin
     if (Version[I] >= '0') and (Version[I] <= '9') then
-      Digits := Digits + Version[I]
-    else if Version[I] = '.' then
+      Value := Value * 10 + Ord(Version[I]) - Ord('0')
+    else if (Version[I] = '.') and (Part < 2) then
     begin
-      if Part = Index then
-        Break;
+      Number := Number * 1000 + Value;
       Part := Part + 1;
-      Digits := '';
+      Value := 0;
     end
     else
       Break;
   end;
-  if (Part = Index) and (Digits <> '') then
-    Result := StrToIntDef(Digits, 0);
+  Number := Number * 1000 + Value;
+  for I := Part + 1 to 2 do
+    Number := Number * 1000;
 end;
 
-// 版 A が版 B より古ければ True を返す(メジャー・マイナー・パッチの 3 つを比べる)。
-function IsOlderVersion(const A, B: String): Boolean;
-var
-  I: Integer;
+// OBS Studio の版を、64 ビットと 32 ビットの両方の記録の場所から探す。見つからなければ False を返す。
+function GetObsVersion(var Version: String): Boolean;
 begin
-  Result := False;
-  for I := 0 to 2 do
-  begin
-    if VersionPart(A, I) < VersionPart(B, I) then
-    begin
-      Result := True;
-      Exit;
-    end;
-    if VersionPart(A, I) > VersionPart(B, I) then
-      Exit;
-  end;
+  Result := RegQueryStringValue(HKLM64, ObsUninstallKey, 'DisplayVersion', Version);
+  if not Result then
+    Result := RegQueryStringValue(HKLM32, ObsUninstallKey, 'DisplayVersion', Version);
 end;
 
-// インストールを始める前に、OBS Studio の版を確かめる。
-// OBS のインストーラーが「インストールされているアプリ」に記録した版を読み、必要な版より古ければ警告する。
-// 「はい」なら続け、「いいえ」ならやめる。版が読めないとき(Steam 版・ポータブル版など)は、警告せずに続ける。
+// インストールを始める前に、OBS Studio の版を確かめる。必要な版より古ければ警告し、「はい」なら続け、「いいえ」ならやめる。
+// 版が分からないとき(記録がない Steam 版・ポータブル版や、版として読めない値)は、警告せずに続ける。
 // サイレントインストールでは警告を出さずに続ける(SuppressibleMsgBox の既定の答えを「はい」にする)。
 function InitializeSetup(): Boolean;
 var
   Installed: String;
+  InstalledNumber, RequiredNumber: Int64;
 begin
   Result := True;
-  if not RegQueryStringValue(HKLM64, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\OBS Studio', 'DisplayVersion', Installed) then
-    if not RegQueryStringValue(HKLM32, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\OBS Studio', 'DisplayVersion', Installed) then
-    begin
-      Log('OBS Studio version not found; skipping the version check');
-      Exit;
-    end;
+  if not GetObsVersion(Installed) then
+  begin
+    Log('OBS Studio version not found; skipping the version check');
+    Exit;
+  end;
+  if not (VersionToNumber(Installed, InstalledNumber) and VersionToNumber('{#MinObsVersion}', RequiredNumber)) then
+  begin
+    Log('OBS Studio version "' + Installed + '" is not a version number; skipping the version check');
+    Exit;
+  end;
   Log('OBS Studio version: ' + Installed + ' (required: {#MinObsVersion})');
-  if IsOlderVersion(Installed, '{#MinObsVersion}') then
+  if InstalledNumber < RequiredNumber then
     Result := SuppressibleMsgBox(FmtMessage(CustomMessage('ObsTooOld'), [Installed, '{#MinObsVersion}']),
       mbConfirmation, MB_YESNO, IDYES) = IDYES;
 end;
