@@ -1,6 +1,6 @@
 /*
 clipboard-image-overlay
-Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
+Copyright (C) 2026 KMOdan5 <gelazy.support@gmail.com>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
