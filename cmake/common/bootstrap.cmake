@@ -82,9 +82,10 @@ endif()
 
 # clipboard-image-overlay: 配布版(タグのビルド)以外の GitHub Actions のビルドでは、画面とログに出す版の後ろに
 # 「+コミットのハッシュ」を付ける。アーティファクトから開発中のビルドを入れた人に問い合わせを受けたとき、配布版と見分けるため。
-# ハッシュはアーティファクトの名前と同じ値(GITHUB_SHA の先頭 9 文字)。タグとの照合は上で済ませているので、照合には影響しない。
-if(NOT "$ENV{GITHUB_REF_TYPE}" STREQUAL "tag" AND DEFINED ENV{GITHUB_SHA})
-  string(SUBSTRING "$ENV{GITHUB_SHA}" 0 9 _commit)
+# ハッシュはアーティファクトの名前と同じ値(PLUGIN_COMMIT_SHA の先頭 9 文字。.github/workflows/build-project.yaml で決める)。
+# タグとの照合は上で済ませているので、照合には影響しない。
+if(NOT "$ENV{GITHUB_REF_TYPE}" STREQUAL "tag" AND DEFINED ENV{PLUGIN_COMMIT_SHA})
+  string(SUBSTRING "$ENV{PLUGIN_COMMIT_SHA}" 0 9 _commit)
   string(APPEND PLUGIN_DISPLAY_VERSION "+${_commit}")
   unset(_commit)
 endif()
