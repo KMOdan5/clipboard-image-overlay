@@ -101,6 +101,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "image-display.hpp"
 #include "auto-hide.hpp"
+#include "notice.hpp"
 #include "settings.hpp"
 
 #include <obs-frontend-api.h>
@@ -244,11 +245,14 @@ obs_source_t *get_or_create_image_source(const char *path)
 	 */
 	source = obs_get_source_by_name(SOURCE_NAME);
 	if (source) {
-		if (obs_source_removed(source))
+		if (obs_source_removed(source)) {
 			obs_log(LOG_WARNING, "display: \"%s\" is being removed; try again", SOURCE_NAME);
-		else
+			notice_report(Notice::DisplayFailed);
+		} else {
 			obs_log(LOG_WARNING, "display: a source named \"%s\" exists but is not an image source (%s)",
 				SOURCE_NAME, obs_source_get_unversioned_id(source));
+			notice_report(Notice::SourceNameConflict);
+		}
 		obs_source_release(source);
 		return nullptr;
 	}
@@ -262,6 +266,7 @@ obs_source_t *get_or_create_image_source(const char *path)
 		obs_log(LOG_INFO, "display: created source \"%s\"", SOURCE_NAME);
 	} else {
 		obs_log(LOG_WARNING, "display: failed to create source \"%s\"", SOURCE_NAME);
+		notice_report(Notice::DisplayFailed);
 	}
 	return source;
 }
@@ -1299,6 +1304,7 @@ bool show_image_on_current_scene(const SavedImage &image)
 	obs_scene_t *scene = obs_scene_from_source(scene_source);
 	if (!scene) {
 		obs_log(LOG_WARNING, "display: no current scene");
+		notice_report(Notice::DisplayFailed);
 		obs_source_release(scene_source);
 		return false;
 	}
@@ -1327,6 +1333,7 @@ bool show_image_on_current_scene(const SavedImage &image)
 		if (!item) {
 			obs_log(LOG_WARNING, "display: failed to add source to scene \"%s\"",
 				obs_source_get_name(scene_source));
+			notice_report(Notice::DisplayFailed);
 			obs_source_release(source);
 			obs_source_release(scene_source);
 			return false;

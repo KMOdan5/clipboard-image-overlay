@@ -46,6 +46,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  */
 
 #include "clipboard-capture.hpp"
+#include "notice.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -149,6 +150,7 @@ QString new_image_path(const QString &extension)
 	const QString folder = image_folder();
 	if (folder.isEmpty() || !QDir().mkpath(folder)) {
 		obs_log(LOG_WARNING, "save: cannot create folder %s", folder.toUtf8().constData());
+		notice_report(Notice::SaveFailed);
 		return QString();
 	}
 
@@ -190,6 +192,7 @@ std::optional<SavedImage> save_as_png(const QImage &image)
 
 	if (!image.save(path, "PNG")) {
 		obs_log(LOG_WARNING, "save: failed to write %s", path.toUtf8().constData());
+		notice_report(Notice::SaveFailed);
 		return std::nullopt;
 	}
 	return saved(path, image.size(), "encoded png");
@@ -241,6 +244,7 @@ std::optional<SavedImage> save_local_file(const QString &source)
 			return std::nullopt;
 		if (!QFile::copy(source, path)) {
 			obs_log(LOG_WARNING, "save: failed to copy to %s", path.toUtf8().constData());
+			notice_report(Notice::SaveFailed);
 			return std::nullopt;
 		}
 		return saved(path, reader.size(), "copied original");
@@ -272,6 +276,7 @@ std::optional<SavedImage> save_clipboard_image()
 	const QMimeData *mime = clipboard ? clipboard->mimeData() : nullptr;
 	if (!mime) {
 		obs_log(LOG_INFO, "clipboard: unavailable");
+		notice_report(Notice::ImageNotRecognized);
 		return std::nullopt;
 	}
 
@@ -302,9 +307,14 @@ std::optional<SavedImage> save_clipboard_image()
 		}
 	}
 
-	/* 画像が見つからない場合: 原因調査のため、クリップボードにあった形式名をログに残す */
+	/*
+	 * 画像が見つからない場合: 原因調査のため、クリップボードにあった形式名をログに残す。
+	 * 画像ではないファイルや読み込めないファイルをコピーした場合も、ここに来る(上の手順で飛ばされるため)。
+	 * 先にファイルの保存に失敗していた場合は、そちらのお知らせが出る(1 回の操作で最初の 1 つだけ。notice.hpp)
+	 */
 	obs_log(LOG_INFO, "clipboard: no image found (formats: %s)",
 		mime->formats().join(QStringLiteral(", ")).toUtf8().constData());
+	notice_report(Notice::ImageNotRecognized);
 	return std::nullopt;
 }
 
@@ -403,6 +413,7 @@ std::optional<SavedImage> read_saved_image(const std::string &path)
 	if (!size.isValid()) {
 		obs_log(LOG_WARNING, "history: cannot read %s (%s)", path.c_str(),
 			reader.errorString().toUtf8().constData());
+		notice_report(Notice::ImageNotFound);
 		return std::nullopt;
 	}
 	return SavedImage{path, size.width(), size.height()};

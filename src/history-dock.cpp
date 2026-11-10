@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *   右クリック ─→ show_context_menu()  「表示」「設定...」「削除」(処理は plugin-main.cpp が行う)
  *   一定時間ごと(ドックが見えている間)─→ update_current()  今の画像のカードを目立たせる
  *   ドックが見えるようになった ─→ showEvent()  見えていない間の変化に追いつく
+ *   画像を表示できなかった(notice.cpp)─→ show_notice()  一覧の上端に重ねて理由を出す。10 秒かクリックで消える
  * @endcode
  *
  * 一覧の読み込み・サムネイルの作成・今の画像の問い合わせは、ドックが見えている間だけ行う。
@@ -47,6 +48,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  * 関連ファイル:
  * - clipboard-capture.cpp … 保存フォルダと、表示履歴の一覧(list_saved_images()。最大 50 枚)
  * - plugin-main.cpp … ドックの登録と、クリックされた画像の表示
+ * - notice.cpp … 画像を表示できなかった理由を、このドックに出すよう頼む
  *
  * 公開している関数の説明は history-dock.hpp を参照。
  */
@@ -59,6 +61,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include <QAction>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -78,6 +81,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QScrollBar>
 #include <QSet>
 #include <QHideEvent>
+#include <QResizeEvent>
 #include <QShowEvent>
 #include <QStyle>
 #include <QStyleOption>
@@ -153,6 +157,22 @@ constexpr int CURRENT_BACKGROUND_ALPHA = 96;
 
 /// @brief マウスを乗せたカードの背景の濃さ(0〜255)。
 constexpr int HOVER_BACKGROUND_ALPHA = 48;
+
+/**
+ * @brief お知らせを出しておく時間(ミリ秒)。
+ * @details お知らせが出ることを知らない配信者でも、配信の操作の合間にドックを見て気づける長さ。
+ *          クリックすれば、それより前に消せる。
+ */
+constexpr int NOTICE_DURATION_MS = 10000;
+
+/// @brief お知らせの帯と、ドックの端の間の余白(ピクセル)。一覧のカードと左右の端をそろえる。
+constexpr int NOTICE_MARGIN = 8;
+
+/// @brief お知らせの帯の色(橙色)。枠線にはこのまま使い、背景にはテーマの背景色と混ぜて使う。
+constexpr QColor NOTICE_ACCENT(255, 170, 0);
+
+/// @brief お知らせの帯の背景で、橙色を混ぜる割合(0〜100)。残りはテーマの背景色。
+constexpr int NOTICE_TINT_PERCENT = 25;
 
 /**
  * @brief 翻訳した文字列を Qt の文字列で返す。
@@ -281,7 +301,7 @@ public:
 /**
  * @brief 履歴ドックの中身(ウィジェット)。
  *
- * @details サムネイルの一覧と、画像がないときの案内の 2 つの部品からなる。
+ * @details サムネイルの一覧と、画像がないときの案内と、画像を表示できなかった理由のお知らせの 3 つの部品からなる。
  *          OBS がドックとして包んで表示する(このウィジェットの持ち主は OBS)。
  */
 class HistoryWidget : public QWidget {
@@ -334,6 +354,20 @@ public:
 			show_context_menu(empty_label_->mapToGlobal(pos), QString());
 		});
 
+		/*
+		 * 画像を表示できなかった理由のお知らせ(show_notice())。出ていないときは隠す。
+		 * レイアウトには入れず、一覧の上端に重ねて置く(place_notice())。出るたびに一覧が下にずれないようにするため。
+		 * 帯のどこをクリックしても消えるようにする(小さな × ボタンより、配信中に素早く押しやすいため)
+		 */
+		notice_label_ = new QLabel(this);
+		notice_label_->setWordWrap(true);
+		notice_label_->setCursor(Qt::PointingHandCursor);
+		notice_label_->installEventFilter(this);
+		notice_label_->hide();
+		notice_timer_.setSingleShot(true);
+		notice_timer_.setInterval(NOTICE_DURATION_MS);
+		QObject::connect(&notice_timer_, &QTimer::timeout, this, [this]() { hide_notice(); });
+
 		auto *layout = new QVBoxLayout(this);
 		layout->setContentsMargins(0, 0, 0, 0);
 		layout->addWidget(list_, 1);
@@ -370,6 +404,46 @@ public:
 	~HistoryWidget() override { shutdown(); }
 
 	/**
+	 * @brief 画像を表示できなかった理由のお知らせを、一覧の上端に重ねて出す。
+	 *
+	 * @details ドックが見えていないときは何もしない。出ている間に次のお知らせが来たら、文言を差し替えて時間を数え直す。
+	 *          NOTICE_DURATION_MS たつか、帯をクリックすると消える(hide_notice())。
+	 *          帯は一覧に重なるので、下の画像が透けて読みにくくならないよう、背景は不透明にする。
+	 *          背景の色は、出すたびにテーマの背景色から作る(OBS のテーマを途中で切り替えても合うように)。
+	 *
+	 * @param message お知らせの文言。
+	 */
+	void show_notice(const QString &message)
+	{
+		if (stopped_ || !isVisible())
+			return;
+		const QColor base = palette().color(QPalette::Window);
+		const auto mix = [&base](int accent, int theme) {
+			return (accent * NOTICE_TINT_PERCENT + theme * (100 - NOTICE_TINT_PERCENT)) / 100;
+		};
+		const QColor background(mix(NOTICE_ACCENT.red(), base.red()), mix(NOTICE_ACCENT.green(), base.green()),
+					mix(NOTICE_ACCENT.blue(), base.blue()));
+		notice_label_->setStyleSheet(QStringLiteral("QLabel { background-color: %1; border: 1px solid %2;"
+							    " border-radius: 4px; padding: 6px 8px; }")
+						     .arg(background.name(), NOTICE_ACCENT.name()));
+		notice_label_->setText(message);
+		place_notice();
+		notice_label_->show();
+		notice_label_->raise();
+		notice_timer_.start();
+		obs_log(LOG_INFO, "history: notice shown");
+	}
+
+	/**
+	 * @brief お知らせを消す。出ていなければ何もしない。
+	 */
+	void hide_notice()
+	{
+		notice_timer_.stop();
+		notice_label_->hide();
+	}
+
+	/**
 	 * @brief フォルダの見張りとサムネイルの作成を止める。作成中のサムネイルは終わるまで待つ。何度呼んでもよい。
 	 */
 	void shutdown()
@@ -377,6 +451,7 @@ public:
 		stopped_ = true;
 		refresh_timer_.stop();
 		current_timer_.stop();
+		notice_timer_.stop();
 		if (!watcher_.directories().isEmpty())
 			watcher_.removePaths(watcher_.directories());
 		thumbnail_pool_.clear();
@@ -404,25 +479,55 @@ protected:
 	}
 
 	/**
-	 * @brief ドックが見えなくなったら、今の画像の問い合わせを止める。
+	 * @brief ドックの大きさが変わったら、お知らせの帯の幅と高さを合わせ直す。
+	 */
+	void resizeEvent(QResizeEvent *event) override
+	{
+		QWidget::resizeEvent(event);
+		if (notice_label_->isVisible())
+			place_notice();
+	}
+
+	/**
+	 * @brief ドックが見えなくなったら、今の画像の問い合わせを止め、お知らせを消す。
+	 *
+	 * @details お知らせを消すのは、次にドックを開いたとき、前の失敗のお知らせが残って見えないようにするため。
 	 */
 	void hideEvent(QHideEvent *event) override
 	{
 		QWidget::hideEvent(event);
 		current_timer_.stop();
+		hide_notice();
 	}
 
 	/**
-	 * @brief 一覧の大きさが変わったら、1 行の枚数とサムネイルの大きさを決め直す。
+	 * @brief 一覧の大きさが変わったら、1 行の枚数とサムネイルの大きさを決め直す。お知らせの帯をクリックしたら消す。
 	 */
 	bool eventFilter(QObject *watched, QEvent *event) override
 	{
+		if (watched == notice_label_ && event->type() == QEvent::MouseButtonRelease) {
+			hide_notice();
+			return true;
+		}
 		if (watched == list_ && event->type() == QEvent::Resize)
 			update_layout();
 		return QWidget::eventFilter(watched, event);
 	}
 
 private:
+	/**
+	 * @brief お知らせの帯を、ドックの上端に、左右に NOTICE_MARGIN の余白を空けて置く。
+	 * @details 高さは、今の幅で文言を折り返したときの高さにする。
+	 */
+	void place_notice()
+	{
+		const int width = std::max(1, this->width() - NOTICE_MARGIN * 2);
+		int height = notice_label_->heightForWidth(width);
+		if (height <= 0)
+			height = notice_label_->sizeHint().height();
+		notice_label_->setGeometry(NOTICE_MARGIN, NOTICE_MARGIN, width, height);
+	}
+
 	/**
 	 * @brief 画像を表示する(サムネイルのクリック・右クリックメニューの「表示」)。
 	 * @param path 画像ファイルのパス。
@@ -694,6 +799,10 @@ private:
 	QListWidget *list_ = nullptr;
 	/// @brief 画像がまだないときの案内。
 	QLabel *empty_label_ = nullptr;
+	/// @brief 画像を表示できなかった理由のお知らせの帯。出ていないときは隠す。
+	QLabel *notice_label_ = nullptr;
+	/// @brief お知らせを NOTICE_DURATION_MS 後に消すタイマー。
+	QTimer notice_timer_;
 
 	/// @brief 一覧に出す画像のパス。先頭が一番新しい。
 	QStringList paths_;
@@ -747,6 +856,28 @@ void history_dock_register(HistoryDockCallbacks callbacks)
 	}
 	dock_widget = widget;
 	obs_log(LOG_INFO, "history: dock added");
+}
+
+/**
+ * @brief ドックの一番上にお知らせを出す。
+ *
+ * @details 仕様の詳細は history-dock.hpp の宣言側を参照。
+ */
+void history_dock_show_notice(const char *text)
+{
+	if (dock_widget && text)
+		dock_widget->show_notice(QString::fromUtf8(text));
+}
+
+/**
+ * @brief ドックのお知らせを消す。
+ *
+ * @details 仕様の詳細は history-dock.hpp の宣言側を参照。
+ */
+void history_dock_clear_notice()
+{
+	if (dock_widget)
+		dock_widget->hide_notice();
 }
 
 /**
