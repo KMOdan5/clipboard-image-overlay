@@ -1,20 +1,5 @@
-/*
-clipboard-image-overlay
-Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program. If not, see <https://www.gnu.org/licenses/>
-*/
+// SPDX-FileCopyrightText: 2026 KMOdan5
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 /**
  * @file settings.hpp
@@ -66,6 +51,16 @@ struct PluginSettings {
 	 * @details オフなら重なり順を一切変えない(重なり順を自分で管理したい配信者向け)。
 	 */
 	bool always_on_top = true;
+
+	/**
+	 * @brief スタジオモードで「シーンを複製」がオンのとき、表示した画像をプログラムにすぐ表示するかどうか。
+	 * @details
+	 * 「シーンを複製」がオンだと、プログラムに映るのはトランジションしたときに作られたシーンのコピーなので、
+	 * 元のシーンに表示した画像は、次のトランジションまでプログラムに出ない。オンなら、コピーにも同じように表示する。
+	 * OBS の「シーンを複製」の設定そのものは変えない。既定はオフ(OBS のスタジオモードの操作感を変えるため)。
+	 * 非表示はこの設定に関係なく、いつもコピーにも行う(トランジションでプログラムに出た画像が残らないように)。
+	 */
+	bool studio_mode_show_on_program = false;
 };
 
 /**

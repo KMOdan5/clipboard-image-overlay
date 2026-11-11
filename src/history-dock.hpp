@@ -1,20 +1,5 @@
-/*
-clipboard-image-overlay
-Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program. If not, see <https://www.gnu.org/licenses/>
-*/
+// SPDX-FileCopyrightText: 2026 KMOdan5
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 /**
  * @file history-dock.hpp
@@ -89,6 +74,30 @@ struct HistoryDockCallbacks {
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void history_dock_register(HistoryDockCallbacks callbacks);
+
+/**
+ * @brief ドックの一番上に、画像を表示できなかった理由のお知らせを出す。
+ *
+ * @details
+ * - ドックが見えているときだけ出す。閉じている・別のドックのタブの裏にあるときは何もしない
+ * - 一覧の上端に重ねて、折り返して 2〜3 行の帯で出す。サムネイルの一覧はずらさない
+ * - 10 秒たつか、帯をクリックすると消える。出ている間に次のお知らせが来たら、
+ *   文言を差し替えて 10 秒を数え直す
+ *
+ * @param text お知らせの文言(UTF-8)。
+ *
+ * @note 呼び出し元: notice.cpp の notice_report()。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+void history_dock_show_notice(const char *text);
+
+/**
+ * @brief ドックのお知らせを消す。出ていなければ何もしない。
+ *
+ * @note 呼び出し元: notice.cpp の notice_clear()(画像を表示できたとき)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+void history_dock_clear_notice();
 
 /**
  * @brief 履歴ドックの裏の処理(フォルダの見張り・今の画像の問い合わせ・サムネイルの作成)を止める。何度呼んでもよい。

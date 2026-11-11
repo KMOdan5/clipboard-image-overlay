@@ -1,20 +1,5 @@
-/*
-clipboard-image-overlay
-Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program. If not, see <https://www.gnu.org/licenses/>
-*/
+// SPDX-FileCopyrightText: 2026 KMOdan5
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 /**
  * @file settings-dialog.hpp
@@ -30,8 +15,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *
  * @details
  * 項目(OBS の設定画面と同じく、見出し付きの枠の中に、左の列に項目名、右の列に入力欄と説明文):
- * - 枠「非表示のタイミング」
+ * - 枠「表示/非表示のタイミング」
  *   - 表示時間(秒、0〜999。0 なら手動でのみ非表示)
+ *   - スタジオモードでもすぐに配信画面に表示する(オン/オフ。既定オフ。オンならスタジオモードで「シーンを複製」がオンでも、画像をすぐプログラムに表示する)
  * - 枠「自動調整」(表示するたびにプラグインが自動で行うこと)
  *   - 最大サイズ(キャンバスに対する割合、10〜100%。横にその大きさのピクセル数を薄い文字で表示。
  *     境界の種類が「自動」のときのみ有効と明記)

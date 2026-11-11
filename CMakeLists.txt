@@ -46,6 +46,8 @@ target_sources(
     src/history-dock.hpp
     src/image-display.cpp
     src/image-display.hpp
+    src/notice.cpp
+    src/notice.hpp
     src/settings.cpp
     src/settings.hpp
     src/settings-dialog.cpp

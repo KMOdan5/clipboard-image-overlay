@@ -1,20 +1,5 @@
-/*
-clipboard-image-overlay
-Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program. If not, see <https://www.gnu.org/licenses/>
-*/
+// SPDX-FileCopyrightText: 2026 KMOdan5
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 /**
  * @file settings-dialog.cpp
@@ -158,6 +143,9 @@ QString report_url()
  * - 不具合・ご要望のリンクは、使っている環境を入力した状態でフォームを開く(report_url())
  * - クリックすると既定のブラウザで開く。プラグイン自身が通信するわけではない
  * - 版は PLUGIN_DISPLAY_VERSION。テスト版は「v0.1.0-beta」、完成版は「v0.1.0」と表示する(buildspec.json の beta で切り替え)
+ *   配布版(タグのビルド)以外の GitHub Actions のビルドでは「v0.1.0-beta+a80965dc8」のように、後ろにコミットのハッシュが付く
+ * - 文字はマウスで選んでコピーできる(ドラッグして Ctrl+C、または右クリックのメニュー)。
+ *   DM などで問い合わせを受けたとき、版を正確に伝えてもらうため。見た目は変えない
  *
  * @return 作ったラベル(レイアウトに追加すると、ダイアログが解放する)。
  */
@@ -174,6 +162,8 @@ QLabel *make_about_label()
 	auto *label = new QLabel(parts.join(QStringLiteral(" \u00b7 ")));
 	label->setTextFormat(Qt::RichText);
 	label->setOpenExternalLinks(true);
+	/* リンクを開く動きはそのままに、文字の選択とコピーもできるようにする */
+	label->setTextInteractionFlags(Qt::TextBrowserInteraction);
 	make_muted(label);
 	return label;
 }
@@ -341,6 +331,8 @@ struct SettingsWidgets {
 	QSpinBox *max_size_percent = nullptr;
 	/// @brief 常に最前面に表示する。
 	QCheckBox *always_on_top = nullptr;
+	/// @brief スタジオモードでもすぐに配信画面に表示する。
+	QCheckBox *studio_mode_show_on_program = nullptr;
 
 	/**
 	 * @brief 設定値を各項目に表示する。
@@ -351,6 +343,7 @@ struct SettingsWidgets {
 		display_seconds->setValue(settings.display_seconds);
 		max_size_percent->setValue(settings.max_size_percent);
 		always_on_top->setChecked(settings.always_on_top);
+		studio_mode_show_on_program->setChecked(settings.studio_mode_show_on_program);
 	}
 
 	/**
@@ -363,6 +356,7 @@ struct SettingsWidgets {
 		settings.display_seconds = display_seconds->value();
 		settings.max_size_percent = max_size_percent->value();
 		settings.always_on_top = always_on_top->isChecked();
+		settings.studio_mode_show_on_program = studio_mode_show_on_program->isChecked();
 		return settings;
 	}
 };
@@ -409,14 +403,15 @@ void open_settings_dialog()
 	/*
 	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
 	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く。
-	 * 枠は役割で 2 つに分ける: いつ非表示になるか(表示時間)と、表示するたびに自動で行うこと(大きさ・重なり順)
+	 * 枠は役割で 2 つに分ける: 画像がいつ表示され、いつ非表示になるか(表示時間・スタジオモードでの表示)と、
+	 * 表示するたびに自動で行うこと(大きさ・重なり順)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
 	layout->setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN);
 	layout->setSpacing(BASE_SPACING);
 	SettingsWidgets widgets;
 	QFormLayout *form = nullptr;
-	QGroupBox *hide_group = make_group("Settings.Group.HideTiming", form);
+	QGroupBox *display_group = make_group("Settings.Group.ShowHideTiming", form);
 
 	/* 表示時間: [10 秒] */
 	widgets.display_seconds = new QSpinBox();
@@ -425,7 +420,12 @@ void open_settings_dialog()
 	auto *display_label = new QLabel(text("Settings.DisplayTime"));
 	form->addRow(display_label, make_field(make_row({widgets.display_seconds}), "Settings.DisplayTime.Note"));
 
-	layout->addWidget(hide_group);
+	/* スタジオモードでもすぐに配信画面に表示する(チェックボックスなので項目名の列は空ける) */
+	widgets.studio_mode_show_on_program = new QCheckBox(text("Settings.StudioModeShowOnProgram"));
+	form->addRow(QString(), make_field(widgets.studio_mode_show_on_program, "Settings.StudioModeShowOnProgram.Note",
+					   checkbox_note_spacing(widgets.studio_mode_show_on_program)));
+
+	layout->addWidget(display_group);
 	layout->addSpacing(SECTION_SPACING);
 	QGroupBox *adjust_group = make_group("Settings.Group.AutoAdjust", form);
 

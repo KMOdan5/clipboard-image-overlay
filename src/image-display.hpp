@@ -1,20 +1,5 @@
-/*
-clipboard-image-overlay
-Copyright (C) 2026 KMOdan5 <dan5gaogao@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program. If not, see <https://www.gnu.org/licenses/>
-*/
+// SPDX-FileCopyrightText: 2026 KMOdan5
+// SPDX-License-Identifier: GPL-2.0-or-later
 
 /**
  * @file image-display.hpp
@@ -49,6 +34,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
  *    - 表示中のとき: フェードアウト → 画像を差し替え → フェードイン
  *      (フェードアウトの時間だけ待ってから差し替える。待っている間に貼られたら、最後の画像を出す)
  *
+ * スタジオモードで「シーンを複製」がオンのとき:
+ * - 現在のシーンは、プログラムに映っているコピーではなく元のシーンなので、表示した画像は次のトランジションまでプログラムに出ない
+ * - 設定の studio_mode_show_on_program がオンなら、プログラムに映っているコピーにも同じように表示する
+ *   (コピーになければ、元のアイテムと同じ見た目で追加する)。既定はオフ。OBS の「シーンを複製」の設定そのものは変えない
+ *
  * 位置・トランジションを設定するのは、シーンに初めて追加したときだけ。
  * 配信者がその後 OBS 上で変えたものは、上書きしない(トランジションを「なし」にした場合も、そのまま)。
  * 重なり順は「常に最前面に表示する」(設定画面、既定オン)がオンのときだけ、貼るたびに最前面にする。
@@ -69,6 +59,8 @@ bool show_image_on_current_scene(const SavedImage &image);
  * 現在のシーンだけでなく、全シーンを対象にする。表示中にシーンを切り替えても、
  * 元のシーンに画像が出しっぱなしにならないようにするため。
  * 同じシーンに 2 つ以上置かれていれば、すべて非表示にする。グループの中に置かれたものも対象にする。
+ * スタジオモードで「シーンを複製」がオンのときは、プログラムに映っているシーンのコピーも、設定に関係なく対象にする
+ * (トランジションでコピーに写った画像が、次のトランジションまでプログラムに出たままにならないように)。
  * Clipboard Image がない、または表示中のものがない場合は何もしない。
  * 差し替えの途中だった場合は、その差し替えを取り消す。
  *
@@ -107,7 +99,7 @@ void image_display_watch_scenes();
  * @details
  * 自動で消す処理は全シーンを対象にするので、「表示中か」も全シーンで判断する。
  * 現在のシーンだけで判断すると、別のシーンに表示が残っているのに一時停止を解除してしまい、
- * その画像が消えなくなるため。
+ * その画像が消えなくなるため。スタジオモードのプログラムに映っているシーンのコピーも含める。
  * 差し替えの途中(フェードアウトして新しい画像を待っている間)も、表示中として扱う。
  *
  * @return 表示中なら true。
