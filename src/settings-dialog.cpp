@@ -289,10 +289,11 @@ QWidget *make_row(std::initializer_list<QWidget *> widgets)
 }
 
 /**
- * @brief 割合を指定したときの大きさ(ピクセル)を、割合の横のラベルに表示する。
+ * @brief 割合を指定したときの最大の大きさ(ピクセル)を、割合の横のラベルに表示する。
  *
  * @details
- * 例: キャンバスが 1920x1080 で 60% → 「(1152 × 648 px)」。
+ * 割合はキャンバスの面積に対する割合で、幅と高さにはそれぞれ √(割合) をかける(max_size_side_ratio())。
+ * 例: キャンバスが 1920x1080 で 60% → 「(1487 × 837 px)」。ピクセル数は四捨五入して整数にする。
  * キャンバスの大きさは開くたび・割合を変えるたびに取り直す(画面を開いたまま OBS の解像度を変えることがあるため)。
  * キャンバスの大きさが取れないときは、ラベルを隠す(間違った数字を出さないため)。
  *
@@ -311,7 +312,7 @@ void update_pixel_label(QDialog *dialog)
 		return;
 	}
 
-	const double ratio = spin->value() / 100.0;
+	const double ratio = max_size_side_ratio(spin->value());
 	const int width = static_cast<int>(ovi.base_width * ratio + 0.5);
 	const int height = static_cast<int>(ovi.base_height * ratio + 0.5);
 	label->setText(text("Settings.MaxSize.Pixels").arg(width).arg(height));
@@ -430,7 +431,7 @@ void open_settings_dialog()
 	QGroupBox *adjust_group = make_group("Settings.Group.AutoAdjust", form);
 
 	/*
-	 * 最大サイズ: [60%] (1152 × 648 px)。オン/オフはない(大きさを自分で決めたい配信者は境界の種類を変える)。
+	 * 最大サイズ: [60%] (1487 × 837 px)。オン/オフはない(大きさを自分で決めたい配信者は境界の種類を変える)。
 	 * ピクセル数は割合を変えるたびに計算し直し、薄い文字で表示する
 	 */
 	widgets.max_size_percent = new QSpinBox();
