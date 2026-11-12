@@ -20,6 +20,7 @@
 #include <util/platform.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace {
@@ -151,4 +152,14 @@ bool settings_save(const PluginSettings &settings)
 		obs_log(LOG_WARNING, "settings: failed to save %s", path.c_str());
 	}
 	return saved;
+}
+
+/**
+ * @brief 「最大サイズの割合」から、キャンバスの幅と高さにかける割合(√割合)を出す。
+ *
+ * @details 仕様の詳細は settings.hpp の宣言側を参照。
+ */
+double max_size_side_ratio(int percent)
+{
+	return std::sqrt(static_cast<double>(percent) / 100.0);
 }

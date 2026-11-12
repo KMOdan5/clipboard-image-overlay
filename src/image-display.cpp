@@ -309,13 +309,15 @@ void apply_default_position(obs_sceneitem_t *item)
  * @brief 画像の大きさに合わせて、表示サイズ(「変換の編集」の「大きさ」)を決める。
  *
  * @details
- * 画像が画面の幅・高さの「最大サイズの割合」(設定画面で変更。既定 60%)を超える場合だけ、収まるように縮小する。
+ * 「最大サイズの割合」(設定画面で変更。既定 60%)は、キャンバスの面積に対する割合として扱う。
+ * 最大の幅と高さは、画面の幅と高さにそれぞれ √(割合) をかけて出す(max_size_side_ratio())。
+ * 画像がその幅・高さを超える場合だけ、収まるように縮小する。
  * 縦横比は保つ(幅と高さに同じ倍率を使う)。小さい画像は等倍のまま拡大しない。
- * OBS では表示サイズを倍率で設定するため、計算した倍率を obs_sceneitem_set_scale() で設定する。
+ * OBS では表示サイズを倍率で設定するため、計算した倍率を丸めずに obs_sceneitem_set_scale() で設定する。
  *
- * 例: 画面 1920x1080、割合 60% → 最大 1152x648
- * - 3840x2160 の画像 → 0.3 倍(1152x648)
- * - 2000x500 の画像  → 0.576 倍(幅で決まる)
+ * 例: 画面 1920x1080、割合 60% → 最大 1487x837(√0.6 ≒ 0.775 倍。面積は画面の 60%)
+ * - 3840x2160 の画像 → 約 0.387 倍(1487x837)
+ * - 2000x500 の画像  → 約 0.744 倍(幅で決まる)
  * - 400x300 の画像   → 1 倍(そのまま)
  *
  * 画像や画面の大きさが取れない場合は、等倍(元の大きさのまま)にする。
@@ -345,7 +347,7 @@ void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 	if (image.width <= 0 || image.height <= 0) {
 		obs_log(LOG_WARNING, "display: unknown image size; showing at original size");
 	} else if (get_canvas_size(canvas_w, canvas_h)) {
-		const float ratio = static_cast<float>(settings.max_size_percent) / 100.0f;
+		const float ratio = static_cast<float>(max_size_side_ratio(settings.max_size_percent));
 		const float max_w = canvas_w * ratio;
 		const float max_h = canvas_h * ratio;
 		const float fit =
