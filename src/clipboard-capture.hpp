@@ -69,12 +69,13 @@ void cleanup_saved_images(const std::vector<std::string> &in_use);
 /**
  * @brief 画像の保存フォルダのパスを返す。
  *
- * @details 表示履歴のドックが、フォルダの変化(新しい画像・掃除で消えた画像)を見張るために使う。
+ * @details 表示履歴のドックが、フォルダの変化(新しい画像・掃除で消えた画像)を見張るためと、
+ *          設定画面の「保存フォルダを開く」で開くために使う。
  *          フォルダは作らない(まだない場合もある)。
  *
  * @return 保存フォルダのパス(UTF-8、OS 標準の区切り文字)。取得できなければ空。
  *
- * @note 呼び出し元: history-dock.cpp。
+ * @note 呼び出し元: history-dock.cpp・settings-dialog.cpp。
  */
 std::string saved_images_folder();
 

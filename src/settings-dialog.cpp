@@ -8,7 +8,9 @@
  * @details
  * Qt のウィジェットを組み合わせて作る(.ui ファイルや Q_OBJECT は使わない。項目が少ないため)。
  * 表示する文字列はすべて data/locale の ini から読む。
+ * 項目は「一般」と「表示履歴」の 2 つのタブに分ける。
  * 「OK」「適用」で settings_save()(settings.cpp)を呼び、変更は次に画像を表示したときから反映される。
+ * 「表示履歴」のタブの「保存フォルダを開く」は、OK や適用を待たずにその場で動く(open_image_folder())。
  * 画面の一番下に、バージョンと、マニュアル・不具合・ご要望のフォームへのリンクを表示する(make_about_label())。
  * 開いたまま OBS を操作できる画面(モードレス)で、同時に開くのは 1 つだけ。
  *
@@ -16,6 +18,7 @@
  */
 
 #include "settings-dialog.hpp"
+#include "clipboard-capture.hpp"
 #include "settings.hpp"
 
 #include <obs-frontend-api.h>
@@ -24,7 +27,9 @@
 
 #include <QCheckBox>
 #include <QDialog>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -36,6 +41,7 @@
 #include <QStringList>
 #include <QStyle>
 #include <QSysInfo>
+#include <QTabWidget>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -65,10 +71,19 @@ constexpr int FIELD_NOTE_SPACING = 4;
 constexpr int ROW_SPACING = 16;
 
 /**
- * @brief まとまりどうし(2 つの枠・枠の外の案内・バージョンとリンク・ボタン)の間に足す余白(ピクセル)。
+ * @brief まとまりどうし(タブ・枠・タブの外の案内・バージョンとリンク・ボタン)の間に足す余白(ピクセル)。
  * @details 部品どうしの余白(BASE_SPACING)に足すので、間は合わせて 16px になる。
  */
 constexpr int SECTION_SPACING = 8;
+
+/**
+ * @brief タブの中の縁の余白(ピクセル)。
+ * @details タブの枠の線があるので、画面の縁(DIALOG_MARGIN)より詰める。画面が縦に伸びすぎないようにするため。
+ */
+constexpr int TAB_MARGIN = 8;
+
+/// @brief 「一般」のタブの番号。既定値のボタンを押せるのは、このタブを開いているときだけ。
+constexpr int GENERAL_TAB_INDEX = 0;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
 constexpr const char *PERCENT_SPIN_NAME = "maxSizePercent";
@@ -320,6 +335,45 @@ void update_pixel_label(QDialog *dialog)
 }
 
 /**
+ * @brief 画像の保存フォルダを、OS のファイルの画面(Windows ではエクスプローラー)で開く。
+ *
+ * @details
+ * 設定フォルダではなく、その中の images フォルダを直接開く(設定ファイルを目立たせないため)。
+ * まだ 1 枚も保存していないとフォルダがないので、作ってから開く。
+ * 開けなかったときは、ログに警告を出すだけにする(設定画面の操作は続けられるため)。
+ *
+ * @note 呼び出し元: 「表示履歴」のタブの「保存フォルダを開く」ボタン。
+ */
+void open_image_folder()
+{
+	const QString folder = QString::fromUtf8(saved_images_folder().c_str());
+	if (folder.isEmpty() || !QDir().mkpath(folder)) {
+		obs_log(LOG_WARNING, "settings: cannot create image folder %s", folder.toUtf8().constData());
+		return;
+	}
+	if (!QDesktopServices::openUrl(QUrl::fromLocalFile(folder))) {
+		obs_log(LOG_WARNING, "settings: cannot open image folder %s", folder.toUtf8().constData());
+		return;
+	}
+	obs_log(LOG_INFO, "settings: opened image folder %s", folder.toUtf8().constData());
+}
+
+/**
+ * @brief タブの中身を載せるページを作る。
+ *
+ * @param[out] layout ページの中のレイアウト。枠や案内は addWidget() で足す。
+ * @return 作ったページ(タブに追加すると、ダイアログが解放する)。
+ */
+QWidget *make_tab_page(QVBoxLayout *&layout)
+{
+	auto *page = new QWidget();
+	layout = new QVBoxLayout(page);
+	layout->setContentsMargins(TAB_MARGIN, TAB_MARGIN, TAB_MARGIN, TAB_MARGIN);
+	layout->setSpacing(BASE_SPACING);
+	return page;
+}
+
+/**
  * @brief 設定画面の入力欄をまとめたもの。設定値と画面の値の受け渡しをする。
  *
  * @details 中身はウィジェットへのポインタだけ(ウィジェット自体はダイアログが持つ)なので、
@@ -403,15 +457,24 @@ void open_settings_dialog()
 
 	/*
 	 * 並びは OBS の設定画面に合わせる: 見出し付きの枠の中に、左の列に項目名(右揃え)、
-	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスは項目名の列を空けて右の列に置く。
-	 * 枠は役割で 2 つに分ける: 画像がいつ表示され、いつ非表示になるか(表示時間・スタジオモードでの表示)と、
-	 * 表示するたびに自動で行うこと(大きさ・重なり順)
+	 * 右の列に入力欄とその説明文(薄い文字)。チェックボックスとボタンは項目名の列を空けて右の列に置く。
+	 * 項目はタブで 2 つに分ける。項目を足しても画面が縦に伸びないようにするため:
+	 * - 「一般」: 画像の表示に関わる設定。枠は役割で 2 つに分ける: 画像がいつ表示され、いつ非表示になるか
+	 *   (表示時間・スタジオモードでの表示)と、表示するたびに自動で行うこと(大きさ・重なり順)
+	 * - 「表示履歴」: 表示履歴のドックに並ぶ、保存した画像に関わること
+	 * 設定画面は、いつも「一般」のタブで開く(前に開いていたタブは覚えない)
 	 */
 	auto *layout = new QVBoxLayout(dialog);
 	layout->setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN);
 	layout->setSpacing(BASE_SPACING);
+	auto *tabs = new QTabWidget();
+	layout->addWidget(tabs);
 	SettingsWidgets widgets;
 	QFormLayout *form = nullptr;
+
+	/* ---- 「一般」のタブ ---- */
+	QVBoxLayout *general = nullptr;
+	tabs->addTab(make_tab_page(general), text("Settings.Tab.General"));
 	QGroupBox *display_group = make_group("Settings.Group.ShowHideTiming", form);
 
 	/* 表示時間: [10 秒] */
@@ -426,8 +489,8 @@ void open_settings_dialog()
 	form->addRow(QString(), make_field(widgets.studio_mode_show_on_program, "Settings.StudioModeShowOnProgram.Note",
 					   checkbox_note_spacing(widgets.studio_mode_show_on_program)));
 
-	layout->addWidget(display_group);
-	layout->addSpacing(SECTION_SPACING);
+	general->addWidget(display_group);
+	general->addSpacing(SECTION_SPACING);
 	QGroupBox *adjust_group = make_group("Settings.Group.AutoAdjust", form);
 
 	/*
@@ -451,25 +514,43 @@ void open_settings_dialog()
 	form->addRow(QString(), make_field(widgets.always_on_top, "Settings.AlwaysOnTop.Note",
 					   checkbox_note_spacing(widgets.always_on_top)));
 
-	layout->addWidget(adjust_group);
-	/* 2 つの枠で入力欄の左の位置がそろうように */
-	align_label_widths({display_label, max_size_label});
+	general->addWidget(adjust_group);
+	general->addStretch();
+
+	/* ---- 「表示履歴」のタブ ---- */
+	QVBoxLayout *history = nullptr;
+	tabs->addTab(make_tab_page(history), text("Settings.Tab.History"));
+	QGroupBox *saved_group = make_group("Settings.Group.SavedImages", form);
+
+	/* 保存フォルダを開く(ボタンなので項目名の列は空ける。押すとその場で開く) */
+	auto *open_folder = new QPushButton(text("Settings.OpenImageFolder"));
+	QObject::connect(open_folder, &QPushButton::clicked, dialog, []() { open_image_folder(); });
+	auto *saved_label = new QLabel();
+	form->addRow(saved_label, make_row({open_folder}));
+
+	history->addWidget(saved_group);
+	history->addStretch();
+
+	/* どの枠・タブでも入力欄の左の位置がそろうように */
+	align_label_widths({display_label, max_size_label, saved_label});
 
 	/*
-	 * 枠の外の案内: フェードはプラグインの設定ではないこと、反映のタイミング。
+	 * タブの外の案内: 反映のタイミング。OK を押しても表示中の画像が変わらないのを、不具合と思われないように。
+	 * どのタブの設定にも当てはまるので、タブの外に置き、タブを切り替えても消えないようにする。
 	 * 項目の補足ではなく画面全体への案内なので、薄くせず通常の濃さで表示する
-	 * (薄い文字は、そばに濃い項目名がある枠の中の説明だけに使う)
+	 * (薄い文字は、そばに濃い項目名がある枠の中の説明だけに使う)。
+	 * タブのすぐ下に詰めて置く(タブの中にも縁の余白があり、離すと間が空きすぎるため)。
+	 * フェードの変え方の案内は、プラグインの設定ではなく OBS の操作なので、マニュアルだけに書く
 	 */
-	layout->addSpacing(SECTION_SPACING);
-	for (const char *key : {"Settings.FadeNote", "Settings.ApplyNote"}) {
-		auto *note = new QLabel(text(key));
-		note->setWordWrap(true);
-		layout->addWidget(note);
-	}
+	auto *apply_note = new QLabel(text("Settings.ApplyNote"));
+	apply_note->setWordWrap(true);
+	layout->addWidget(apply_note);
 
 	/*
 	 * OK: 保存して閉じる / キャンセル: 保存せずに閉じる / 適用: 保存して開いたまま /
-	 * 既定値: 画面上の値だけ既定値に戻す(OK か適用を押すまで保存しない)。並びは OBS の設定画面に合わせる
+	 * 既定値: 画面上の値だけ既定値に戻す(OK か適用を押すまで保存しない)。並びは OBS の設定画面に合わせる。
+	 * 既定値は OBS の設定画面と同じく、開いているタブの値だけを戻す。
+	 * 今は戻す値が「一般」のタブにしかないので、ほかのタブを開いている間は押せないようにする
 	 */
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply |
 					     QDialogButtonBox::RestoreDefaults);
@@ -478,7 +559,7 @@ void open_settings_dialog()
 	buttons->button(QDialogButtonBox::Cancel)->setText(text("Settings.Cancel"));
 	buttons->button(QDialogButtonBox::Apply)->setText(text("Settings.Apply"));
 	buttons->button(QDialogButtonBox::RestoreDefaults)->setText(text("Settings.RestoreDefaults"));
-	/* 画面の一番下(ボタンの上): バージョンとリンク */
+	/* 画面の一番下(ボタンの上): バージョンとリンク。どのタブを開いていても見えるよう、タブの外に置く */
 	layout->addSpacing(SECTION_SPACING);
 	layout->addWidget(make_about_label());
 
@@ -497,6 +578,9 @@ void open_settings_dialog()
 			 [widgets]() { settings_save(widgets.values()); });
 	QObject::connect(buttons->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, dialog,
 			 [widgets]() { widgets.show_values(PluginSettings()); });
+	QObject::connect(tabs, &QTabWidget::currentChanged, dialog, [buttons](int index) {
+		buttons->button(QDialogButtonBox::RestoreDefaults)->setEnabled(index == GENERAL_TAB_INDEX);
+	});
 
 	widgets.show_values(settings_get());
 	update_pixel_label(dialog);
