@@ -546,7 +546,15 @@ private:
 		if (stopped_)
 			return;
 
-		auto *menu = new QMenu(this);
+		/*
+		 * メニューの持ち主は、この部品ではなく、載っている一番外側のウィンドウ(OBS の画面、切り離したときはドック)にする。
+		 * Qt はメニューを出すとき、持ち主から一番近い、ネイティブウィンドウを持つ部品を親のウィンドウ(transient parent)にする。
+		 * OBS はプラグインのドックを切り離した状態で作るため、組み込んだ後もドックがネイティブウィンドウを持っている。
+		 * この部品を持ち主にするとドックが親のウィンドウに選ばれ、一番外側ではないので Qt が警告を出して指定をやめる。
+		 * OBS 本体も、ドックの中のメニューは一番外側のウィンドウを持ち主にしている。
+		 * 項目を選んだときの処理はこの部品に結び付けるので、この部品がなくなれば呼ばれない
+		 */
+		auto *menu = new QMenu(window());
 		menu->setAttribute(Qt::WA_DeleteOnClose);
 		if (!path.isEmpty()) {
 			QAction *show = menu->addAction(text("Dock.Menu.Show"));
