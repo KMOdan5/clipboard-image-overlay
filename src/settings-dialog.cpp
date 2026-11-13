@@ -546,12 +546,13 @@ void open_settings_dialog()
 
 	/*
 	 * ドラッグ&ドロップした画像をすぐに表示する(チェックボックスなので項目名の列は空ける)。
-	 * 項目名から動きが分かるので、説明文は付けない。
+	 * 説明文には、管理者として起動した OBS ではドラッグ&ドロップが使えないことを書く(Windows の仕組みによる制限)。
 	 * 文言の「&」は、Qt ではキーボードの近道の印として扱われ、画面から消える。「&&」にして、そのまま表示する
 	 */
 	widgets.show_dropped_immediately =
 		new QCheckBox(text("Settings.ShowDroppedImmediately").replace(QLatin1Char('&'), QStringLiteral("&&")));
-	form->addRow(QString(), widgets.show_dropped_immediately);
+	form->addRow(QString(), make_field(widgets.show_dropped_immediately, "Settings.ShowDroppedImmediately.Note",
+					   checkbox_note_spacing(widgets.show_dropped_immediately)));
 
 	/* 保存フォルダを開く(ボタンなので項目名の列は空ける。押すとその場で開く) */
 	auto *open_folder = new QPushButton(text("Settings.OpenImageFolder"));

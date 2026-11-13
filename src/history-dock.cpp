@@ -169,7 +169,7 @@ constexpr int NOTICE_TINT_PERCENT = 25;
 /// @brief ドラッグ中にドックの縁を囲む枠の太さ(ピクセル)。
 constexpr int DROP_BORDER_WIDTH = 2;
 
-/// @brief 画像がないときの案内の 1 行目の文字の大きさ(ふだんの文字に対する倍率)。何が並ぶ場所かを先に読ませるため。
+/// @brief 画像がないときの案内の文字の大きさ(ふだんの文字に対する倍率)。何が並ぶ場所かを目立たせるため。
 constexpr qreal EMPTY_TITLE_SCALE = 1.25;
 
 /**
@@ -380,7 +380,8 @@ public:
 		});
 
 		/*
-		 * 画像がまだないときの案内。1 行目に何が並ぶ場所か(少し大きい文字)、2 行目に画像の足し方を出す。
+		 * 画像がまだないときの案内。何が並ぶ場所かを、少し大きい文字で出す。
+		 * 画像の足し方(ドラッグ&ドロップ)は書かない。管理者として起動した OBS では使えず、使えない人のほうが多いと考えられるため。
 		 * ここで右クリックしても、設定画面には行けるようにする(文字の上で右クリックしても、この部品に届く)
 		 */
 		empty_widget_ = new QWidget(this);
@@ -397,12 +398,8 @@ public:
 			base.pointSizeF() > 0
 				? QStringLiteral("font-size: %1pt;").arg(base.pointSizeF() * EMPTY_TITLE_SCALE)
 				: QStringLiteral("font-size: %1px;").arg(qRound(base.pixelSize() * EMPTY_TITLE_SCALE)));
-		auto *empty_hint = new QLabel(text("Dock.EmptyHint"), empty_widget_);
-		empty_hint->setAlignment(Qt::AlignCenter);
-		empty_hint->setWordWrap(true);
 		empty_layout->addStretch();
 		empty_layout->addWidget(empty_title);
-		empty_layout->addWidget(empty_hint);
 		empty_layout->addStretch();
 		empty_widget_->setContextMenuPolicy(Qt::CustomContextMenu);
 		QObject::connect(empty_widget_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
@@ -932,7 +929,7 @@ private:
 	HistoryDockCallbacks callbacks_;
 	/// @brief サムネイルの一覧。
 	QListWidget *list_ = nullptr;
-	/// @brief 画像がまだないときの案内(2 行の文を載せた部品)。
+	/// @brief 画像がまだないときの案内(文を載せた部品)。
 	QWidget *empty_widget_ = nullptr;
 	/// @brief ドラッグ中にドックの縁を囲む枠。ドラッグしていないときは隠す。
 	QFrame *drop_frame_ = nullptr;
