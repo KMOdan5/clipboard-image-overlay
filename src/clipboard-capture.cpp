@@ -280,7 +280,7 @@ std::optional<SavedImage> saved(const QString &path, const QSize &size, const ch
  * @return 保存した画像の情報。
  * @retval std::nullopt 保存に失敗した。
  *
- * @see save_local_file()(変換が必要なファイル)、save_clipboard_image()(画像データ)… 呼び出し元
+ * @see copy_or_convert_file()(変換が必要なファイル)、save_clipboard_image()(画像データ)… 呼び出し元
  */
 std::optional<SavedImage> save_as_png(const QImage &image)
 {
@@ -297,29 +297,22 @@ std::optional<SavedImage> save_as_png(const QImage &image)
 }
 
 /**
- * @brief コピーされたファイル 1 つを保存する。
+ * @brief コピーされたファイル 1 つを、保存フォルダにコピーするか PNG に変換して保存する。
  *
  * @details
  * 判断の流れ:
- * 0. 直前に保存した画像の元と同じファイル → 新しく保存せずに、直前の画像を返す
  * 1. Qt で画像として読めるか確認 → 読めなければ対象外(exe など)
  * 2. OBS で表示できる形式で、回転も不要 → 元ファイルをそのままコピー
  * 3. それ以外 → 画像を読み込んで PNG に変換
  *
- * 保存できたら、直前の画像として覚える(remember_file())。
- *
  * @param source コピーされたファイルのパス。
- * @return 保存した画像の情報(使い回したときは直前の画像の情報)。
+ * @return 保存した画像の情報。
  * @retval std::nullopt 画像ファイルでない・読めない・保存に失敗した。
  *
- * @see save_clipboard_image()(呼び出し元)
+ * @see save_local_file()(呼び出し元)
  */
-std::optional<SavedImage> save_local_file(const QString &source)
+std::optional<SavedImage> copy_or_convert_file(const QString &source)
 {
-	/* 直前に保存したファイルと同じなら、読み込みも保存もせずに使い回す */
-	if (auto same = find_same_as_last_file(source))
-		return same;
-
 	QImageReader reader(source);
 	/* EXIF の回転情報を反映して読み込む(手順 3 で PNG に変換するときに効く) */
 	reader.setAutoTransform(true);
@@ -352,9 +345,7 @@ std::optional<SavedImage> save_local_file(const QString &source)
 			notice_report(Notice::SaveFailed);
 			return std::nullopt;
 		}
-		auto result = saved(path, reader.size(), "copied original");
-		remember_file(source, *result);
-		return result;
+		return saved(path, reader.size(), "copied original");
 	}
 
 	/* 3. OBS で表示できない形式、または回転が必要な写真は PNG に変換する */
@@ -364,7 +355,27 @@ std::optional<SavedImage> save_local_file(const QString &source)
 			reader.errorString().toUtf8().constData());
 		return std::nullopt;
 	}
-	auto result = save_as_png(image);
+	return save_as_png(image);
+}
+
+/**
+ * @brief コピーされたファイル 1 つを保存する。直前に保存した画像の元と同じファイルなら、使い回す。
+ *
+ * @details
+ * - 直前に保存した画像の元と同じファイル → 読み込みも保存もせずに、直前の画像を返す
+ * - それ以外 → copy_or_convert_file() で保存し、直前の画像として覚える(remember_file())
+ *
+ * @param source コピーされたファイルのパス。
+ * @return 保存した画像の情報(使い回したときは直前の画像の情報)。
+ * @retval std::nullopt 画像ファイルでない・読めない・保存に失敗した。
+ *
+ * @see save_clipboard_image()(呼び出し元)
+ */
+std::optional<SavedImage> save_local_file(const QString &source)
+{
+	if (auto same = find_same_as_last_file(source))
+		return same;
+	auto result = copy_or_convert_file(source);
 	if (result)
 		remember_file(source, *result);
 	return result;
