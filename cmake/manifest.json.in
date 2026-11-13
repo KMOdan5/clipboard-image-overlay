@@ -5,6 +5,6 @@
   "description": "Shows a copied image on your stream with a single hotkey, and hides it automatically after a few seconds.",
   "urls": {
     "repository": "@PLUGIN_WEBSITE@",
-    "support": "https://docs.google.com/forms/d/e/1FAIpQLSeOoU9HNzkLZx70GtSAoAbp-y8T491vJsohMwMT1NJjwKI_xA/viewform"
+    "support": "https://github.com/KMOdan5"
   }
 }
