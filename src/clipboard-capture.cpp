@@ -136,11 +136,13 @@ std::optional<SavedImage> find_same_as_last_image(const QImage &image)
 	QElapsedTimer timer;
 	timer.start();
 	const bool same = image == last_saved.image;
-	obs_log(LOG_INFO, "clipboard: image data %s last saved image (compare: %lld ms)",
-		same ? "is the same as" : "differs from", static_cast<long long>(timer.elapsed()));
-	if (!same)
+	const long long elapsed = timer.elapsed();
+	if (!same) {
+		obs_log(LOG_INFO, "clipboard: image data differs from last saved image (compare: %lld ms)", elapsed);
 		return std::nullopt;
-	obs_log(LOG_INFO, "save: reused %s", last_saved.saved->path.c_str());
+	}
+	obs_log(LOG_INFO, "save: reused %s (same image data, compare: %lld ms)", last_saved.saved->path.c_str(),
+		elapsed);
 	return last_saved.saved;
 }
 
