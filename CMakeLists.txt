@@ -54,4 +54,12 @@ target_sources(
     src/settings-dialog.hpp
 )
 
+# このプロジェクトで足したもの: OBS のプラグインマネージャーに出す表示名と版を、data/manifest.json に書く。
+# 版は設定画面と同じ PLUGIN_DISPLAY_VERSION を入れ、buildspec.json と食い違わないようにする。
+# data に作るのは、set_target_properties_plugin() が data の中身をどの OS でも同じ仕組みで入れるため
+# (作ったファイルは .gitignore で Git の管理から外す)。
+# id は、OBS が使い道や形式を決めていないので、決まるまで書かない。
+string(JSON PLUGIN_DISPLAY_NAME GET ${buildspec} displayName)
+configure_file(cmake/manifest.json.in "${CMAKE_CURRENT_SOURCE_DIR}/data/manifest.json" @ONLY)
+
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
