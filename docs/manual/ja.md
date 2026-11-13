@@ -47,7 +47,7 @@
 3. `Win + R` を押して「ファイル名を指定して実行」を開き、`%ProgramData%\obs-studio` と入力して Enter を押します。
 4. 開いたフォルダに「plugins」フォルダがなければ作成します。
 5. 展開したフォルダの中にある「clipboard-image-overlay」フォルダを「plugins」フォルダの中に置きます。
-   置いたあとは `plugins\clipboard-image-overlay\bin\64bit\clipboard-image-overlay.dll` という構成になります。
+   置いたあとは `plugins\clipboard-image-overlay\clipboard-image-overlay.dll` という構成になります。
 6. OBS を起動し、「ツール」メニューに「Clipboard Image」があればインストール完了です。
 
 <!-- 画像: 手順 5 で plugins フォルダに置いた状態(docs/images/install-folder.png)。画像を置いたら、次の行のコメントの記号を消す -->
@@ -202,6 +202,8 @@ Stream Deck・obs-websocket・ほかのプラグインで表示した場合も�
 ### ログの見方
 
 「ヘルプ」→「ログファイル」→「現在のログファイルをアップロード」で URL を取得できます。不具合を報告するときはこの URL を添えてください。このプラグインのログは `[clipboard-image-overlay]` で始まります。
+
+OBS 33 以降では、起動時のログに `Skipping legacy plugin 'clipboard-image-overlay'` という警告が出力されます。この警告は問題ありません。
 
 <!-- 画像: ログをアップロードするメニュー(docs/images/log-upload.png)。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/log-upload.png" width="600" alt="「ヘルプ」→「ログファイル」→「現在のログファイルをアップロード」"> -->
