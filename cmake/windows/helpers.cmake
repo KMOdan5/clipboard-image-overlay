@@ -22,14 +22,20 @@ function(set_target_properties_plugin target)
 
   set_target_properties(${target} PROPERTIES VERSION 0 SOVERSION ${PLUGIN_VERSION})
 
-  install(TARGETS ${target} RUNTIME DESTINATION "${target}/bin/64bit" LIBRARY DESTINATION "${target}/bin/64bit")
+  # このプロジェクトで足したもの: DLL を、プラグインのフォルダの直下と bin/64bit の両方に入れる。
+  # OBS 33 以降はフォルダの直下を先に読み込み、bin/64bit の同じプラグインは読み込まずに飛ばす。
+  # OBS 32 以前は bin/64bit だけを探すので、直下の DLL は使われない。
+  # どちらも data フォルダは共通。最低の対応版を 33 以降にしたら、bin/64bit を外す。
+  foreach(_destination IN ITEMS "${target}" "${target}/bin/64bit")
+    install(TARGETS ${target} RUNTIME DESTINATION "${_destination}" LIBRARY DESTINATION "${_destination}")
 
-  install(
-    FILES "$<TARGET_PDB_FILE:${target}>"
-    CONFIGURATIONS RelWithDebInfo Debug Release
-    DESTINATION "${target}/bin/64bit"
-    OPTIONAL
-  )
+    install(
+      FILES "$<TARGET_PDB_FILE:${target}>"
+      CONFIGURATIONS RelWithDebInfo Debug Release
+      DESTINATION "${_destination}"
+      OPTIONAL
+    )
+  endforeach()
 
   if(TARGET plugin-support)
     target_link_libraries(${target} PRIVATE plugin-support)
