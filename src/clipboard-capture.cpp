@@ -384,6 +384,16 @@ std::optional<SavedImage> save_local_file(const QString &source)
 } // namespace
 
 /**
+ * @brief 画像ファイルを保存する(ドラッグ&ドロップしたファイル用)。
+ *
+ * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。コピーしたファイルと同じ save_local_file() を使う。
+ */
+std::optional<SavedImage> save_image_file(const std::string &path)
+{
+	return save_local_file(QString::fromUtf8(path.c_str()));
+}
+
+/**
  * @brief クリップボードの画像を保存する。
  *
  * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。

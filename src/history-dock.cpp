@@ -16,6 +16,7 @@
  *   一定時間ごと(ドックが見えている間)─→ update_current()  今の画像のカードを目立たせる
  *   ドックが見えるようになった ─→ showEvent()  見えていない間の変化に追いつく
  *   画像を表示できなかった(notice.cpp)─→ show_notice()  一覧の上端に重ねて理由を出す。10 秒かクリックで消える
+ *   画像ファイルをドラッグ&ドロップ ─→ dropEvent() ─→ callbacks_.drop(paths)  保存・表示は plugin-main.cpp が行う
  * @endcode
  *
  * 一覧の読み込み・サムネイルの作成・今の画像の問い合わせは、ドックが見えている間だけ行う。
@@ -50,6 +51,9 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QEvent>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
@@ -58,8 +62,10 @@
 #include <QImage>
 #include <QImageReader>
 #include <QLabel>
+#include <QFrame>
 #include <QListWidget>
 #include <QMenu>
+#include <QMimeData>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
@@ -73,6 +79,7 @@
 #include <QStyledItemDelegate>
 #include <QThreadPool>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -158,6 +165,40 @@ constexpr QColor NOTICE_ACCENT(255, 170, 0);
 
 /// @brief お知らせの帯の背景で、橙色を混ぜる割合(0〜100)。残りはテーマの背景色。
 constexpr int NOTICE_TINT_PERCENT = 25;
+
+/// @brief ドラッグ中にドックの縁を囲む枠の太さ(ピクセル)。
+constexpr int DROP_BORDER_WIDTH = 2;
+
+/// @brief 画像がないときの案内の 1 行目の文字の大きさ(ふだんの文字に対する倍率)。何が並ぶ場所かを先に読ませるため。
+constexpr qreal EMPTY_TITLE_SCALE = 1.25;
+
+/**
+ * @brief ドラッグしてきたデータから、受け付ける画像ファイルのパスを取り出す。
+ *
+ * @details
+ * 手元のファイル(エクスプローラーなどからのドラッグ)で、拡張子が Qt で読める画像の形式のものだけを、ドラッグした順に返す。
+ * 中身はここでは読まない(ドラッグ中に何度も呼ばれるので、ファイルを開かずに素早く判断するため)。
+ * 拡張子が画像でも中身が読めないファイルは、保存するときに分かる(plugin-main.cpp がお知らせを出す)。
+ * ブラウザからのドラッグは画像の URL だけが渡されることが多く、プラグインはインターネットに接続しないため受け付けない。
+ *
+ * @param mime ドラッグしてきたデータ。
+ * @return 画像ファイルのパス。なければ空。
+ */
+QStringList dropped_image_files(const QMimeData *mime)
+{
+	QStringList paths;
+	if (!mime || !mime->hasUrls())
+		return paths;
+	const QList<QByteArray> formats = QImageReader::supportedImageFormats();
+	for (const QUrl &url : mime->urls()) {
+		if (!url.isLocalFile())
+			continue;
+		const QString path = url.toLocalFile();
+		if (formats.contains(QFileInfo(path).suffix().toLower().toUtf8()))
+			paths.append(path);
+	}
+	return paths;
+}
 
 /**
  * @brief 翻訳した文字列を Qt の文字列で返す。
@@ -286,7 +327,8 @@ public:
 /**
  * @brief 履歴ドックの中身(ウィジェット)。
  *
- * @details サムネイルの一覧と、画像がないときの案内と、画像を表示できなかった理由のお知らせの 3 つの部品からなる。
+ * @details サムネイルの一覧と、画像がないときの案内と、画像を表示できなかった理由のお知らせと、
+ *          ドラッグ中にドックの縁を囲む枠の 4 つの部品からなる。
  *          OBS がドックとして包んで表示する(このウィジェットの持ち主は OBS)。
  */
 class HistoryWidget : public QWidget {
@@ -317,6 +359,13 @@ public:
 		list_->viewport()->setAttribute(Qt::WA_Hover);
 		list_->viewport()->setCursor(Qt::PointingHandCursor);
 		list_->installEventFilter(this);
+		/*
+		 * ドラッグ&ドロップは、一覧ではなくこの部品(HistoryWidget)で受ける。一覧が受けると、一覧の中の並べ替えとして扱われ、
+		 * ファイルのドロップを受け付けないため。一覧で受けなければ、Qt は受け付ける親(この部品)に届ける
+		 */
+		list_->setAcceptDrops(false);
+		list_->viewport()->setAcceptDrops(false);
+		setAcceptDrops(true);
 		QObject::connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
 			const QString path = item->data(PATH_ROLE).toString();
 			obs_log(LOG_INFO, "history: clicked %s", path.toUtf8().constData());
@@ -330,14 +379,43 @@ public:
 					  item ? item->data(PATH_ROLE).toString() : QString());
 		});
 
-		/* 画像がまだないときの案内。ここで右クリックしても、設定画面には行けるようにする */
-		empty_label_ = new QLabel(text("Dock.Empty"), this);
-		empty_label_->setAlignment(Qt::AlignCenter);
-		empty_label_->setWordWrap(true);
-		empty_label_->setContextMenuPolicy(Qt::CustomContextMenu);
-		QObject::connect(empty_label_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
-			show_context_menu(empty_label_->mapToGlobal(pos), QString());
+		/*
+		 * 画像がまだないときの案内。1 行目に何が並ぶ場所か(少し大きい文字)、2 行目に画像の足し方を出す。
+		 * ここで右クリックしても、設定画面には行けるようにする(文字の上で右クリックしても、この部品に届く)
+		 */
+		empty_widget_ = new QWidget(this);
+		auto *empty_layout = new QVBoxLayout(empty_widget_);
+		auto *empty_title = new QLabel(text("Dock.Empty"), empty_widget_);
+		empty_title->setAlignment(Qt::AlignCenter);
+		empty_title->setWordWrap(true);
+		/*
+		 * 文字の大きさは、テーマで決まった今の大きさに倍率をかけて、スタイルシートで指定する
+		 * (setFont() はテーマのスタイルシートに上書きされることがあるため)。テーマが px で指定していれば px で合わせる
+		 */
+		const QFont base = empty_title->font();
+		empty_title->setStyleSheet(
+			base.pointSizeF() > 0
+				? QStringLiteral("font-size: %1pt;").arg(base.pointSizeF() * EMPTY_TITLE_SCALE)
+				: QStringLiteral("font-size: %1px;").arg(qRound(base.pixelSize() * EMPTY_TITLE_SCALE)));
+		auto *empty_hint = new QLabel(text("Dock.EmptyHint"), empty_widget_);
+		empty_hint->setAlignment(Qt::AlignCenter);
+		empty_hint->setWordWrap(true);
+		empty_layout->addStretch();
+		empty_layout->addWidget(empty_title);
+		empty_layout->addWidget(empty_hint);
+		empty_layout->addStretch();
+		empty_widget_->setContextMenuPolicy(Qt::CustomContextMenu);
+		QObject::connect(empty_widget_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+			show_context_menu(empty_widget_->mapToGlobal(pos), QString());
 		});
+
+		/*
+		 * ドラッグ中にドックの縁を囲む枠。レイアウトには入れず、全体に重ねて置く(place_drop_frame())。
+		 * マウスの操作は下の部品に通す。色は今の画像の印(ThumbnailDelegate)と同じ、テーマの強調色にする
+		 */
+		drop_frame_ = new QFrame(this);
+		drop_frame_->setAttribute(Qt::WA_TransparentForMouseEvents);
+		drop_frame_->hide();
 
 		/*
 		 * 画像を表示できなかった理由のお知らせ(show_notice())。出ていないときは隠す。
@@ -356,7 +434,7 @@ public:
 		auto *layout = new QVBoxLayout(this);
 		layout->setContentsMargins(0, 0, 0, 0);
 		layout->addWidget(list_, 1);
-		layout->addWidget(empty_label_, 1);
+		layout->addWidget(empty_widget_, 1);
 		/* 最初は一覧が空(paths_ が空)なので、案内だけを出しておく。refresh() は一覧が変わったときだけ出し分けるため */
 		list_->hide();
 
@@ -471,6 +549,60 @@ protected:
 		QWidget::resizeEvent(event);
 		if (notice_label_->isVisible())
 			place_notice();
+		if (drop_frame_->isVisible())
+			drop_frame_->setGeometry(rect());
+	}
+
+	/**
+	 * @brief 画像ファイルをドラッグしてきたら、受け付けるかを決め、受け付けるならドックの縁を枠で囲む。
+	 * @details 画像ファイルが 1 つもなければ受け付けない(受け付けない印のカーソルになる)。
+	 */
+	void dragEnterEvent(QDragEnterEvent *event) override
+	{
+		if (stopped_ || dropped_image_files(event->mimeData()).isEmpty()) {
+			event->ignore();
+			return;
+		}
+		event->acceptProposedAction();
+		drop_frame_->setStyleSheet(QStringLiteral("QFrame { border: %1px solid %2; border-radius: 4px; }")
+						   .arg(DROP_BORDER_WIDTH)
+						   .arg(palette().color(QPalette::Highlight).name()));
+		drop_frame_->setGeometry(rect());
+		drop_frame_->show();
+		drop_frame_->raise();
+	}
+
+	/**
+	 * @brief ドラッグ中、受け付け続ける(ドックの中を動かしても、受け付けない印に変わらないように)。
+	 */
+	void dragMoveEvent(QDragMoveEvent *event) override { event->acceptProposedAction(); }
+
+	/**
+	 * @brief ドックの外にドラッグが出たら、縁の枠を消す。
+	 */
+	void dragLeaveEvent(QDragLeaveEvent *event) override
+	{
+		QWidget::dragLeaveEvent(event);
+		drop_frame_->hide();
+	}
+
+	/**
+	 * @brief ドロップされた画像ファイルを、保存(と表示)のために呼び出し元に渡す。
+	 */
+	void dropEvent(QDropEvent *event) override
+	{
+		drop_frame_->hide();
+		const QStringList paths = dropped_image_files(event->mimeData());
+		if (stopped_ || paths.isEmpty() || !callbacks_.drop) {
+			event->ignore();
+			return;
+		}
+		event->acceptProposedAction();
+		obs_log(LOG_INFO, "history: dropped %lld image file(s)", static_cast<long long>(paths.size()));
+		std::vector<std::string> files;
+		for (const QString &path : paths)
+			files.push_back(path.toUtf8().toStdString());
+		callbacks_.drop(files);
 	}
 
 	/**
@@ -684,7 +816,7 @@ private:
 
 		const bool empty = paths_.isEmpty();
 		list_->setVisible(!empty);
-		empty_label_->setVisible(empty);
+		empty_widget_->setVisible(empty);
 		if (has_new_image)
 			list_->scrollToTop();
 		else
@@ -790,8 +922,10 @@ private:
 	HistoryDockCallbacks callbacks_;
 	/// @brief サムネイルの一覧。
 	QListWidget *list_ = nullptr;
-	/// @brief 画像がまだないときの案内。
-	QLabel *empty_label_ = nullptr;
+	/// @brief 画像がまだないときの案内(2 行の文を載せた部品)。
+	QWidget *empty_widget_ = nullptr;
+	/// @brief ドラッグ中にドックの縁を囲む枠。ドラッグしていないときは隠す。
+	QFrame *drop_frame_ = nullptr;
 	/// @brief 画像を表示できなかった理由のお知らせの帯。出ていないときは隠す。
 	QLabel *notice_label_ = nullptr;
 	/// @brief お知らせを NOTICE_DURATION_MS 後に消すタイマー。

@@ -26,7 +26,7 @@
  * @details 文言は data/locale の ini の Notice.* にある。
  */
 enum class Notice {
-	/// @brief クリップボードに画像がない、またはコピーしたファイルを画像として読み込めない。
+	/// @brief クリップボードに画像がない、またはコピー・ドラッグ&ドロップしたファイルを画像として読み込めない。
 	ImageNotRecognized,
 	/// @brief 'Clipboard Image' という名前の、画像ではないソースがある。
 	SourceNameConflict,
