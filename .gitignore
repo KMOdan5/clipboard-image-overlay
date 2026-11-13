@@ -29,3 +29,6 @@
 
 # Exclude CMake build number cache
 /cmake/.CMakeBuildNumber
+
+# Exclude the manifest generated from cmake/manifest.json.in
+/data/manifest.json

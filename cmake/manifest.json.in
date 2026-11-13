@@ -1,0 +1,10 @@
+{
+  "display_name": "@PLUGIN_DISPLAY_NAME@",
+  "version": "@PLUGIN_DISPLAY_VERSION@",
+  "name": "@CMAKE_PROJECT_NAME@",
+  "description": "Shows a copied image on your stream with a single hotkey, and hides it automatically after a few seconds.",
+  "urls": {
+    "repository": "@PLUGIN_WEBSITE@",
+    "support": "https://github.com/KMOdan5"
+  }
+}
