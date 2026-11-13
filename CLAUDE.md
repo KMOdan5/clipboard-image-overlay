@@ -27,6 +27,10 @@
 ## 技術方針
 - C++ / Qt6、obs-frontend-api を使うフロントエンドプラグイン
 - ベースは obsproject/obs-plugintemplate。ビルド設定・CIはテンプレートに従い、大きく改変しない
+  - 元にしたテンプレートのコミットは `3e7d7ac`(2025-12-09)。テンプレートから作ったリポジトリなので、テンプレートとの共通の履歴はない。GitHub にも、テンプレートの更新を取り込む機能はない
+  - テンプレートの更新を取り込むときは、テンプレートを参照用のリモートとして取得し、元にしたコミットから後のコミットを `git cherry-pick` で 1 つずつ当てる(履歴がつながっていなくても、コミットの変更を当てられる)。取り込んだら、上のコミットを更新する
+  - テンプレートのファイルのうち、このプロジェクトで手を入れたもの(取り込むときにぶつかりやすい): `.github/workflows/`(build-project・pr-pull・push)、`.github/scripts/Package-Windows.ps1`、`CMakeLists.txt`、`CMakePresets.json`、`buildspec.json`、`cmake/common/bootstrap.cmake`、`cmake/windows/helpers.cmake`
+  - テンプレートのファイルに手を入れるときは、その箇所に「このプロジェクトで足したもの」とコメントを書く
 - 対象OBS: 31.1.1 以降(buildspec.json 準拠)。動作確認は 32 系で行う
 - 対象OS: まず Windows。macOS / Linux はビルドが通る状態を維持するが、動作保証は後回し
 - 生成した画像はプラグイン設定フォルダ(`obs_module_config_path("images")`、Windows では `%APPDATA%\obs-studio\plugin_config\clipboard-image-overlay\images`)に保存し、古いものは自動削除する
