@@ -71,7 +71,7 @@ constexpr int FIELD_NOTE_SPACING = 4;
 constexpr int ROW_SPACING = 16;
 
 /**
- * @brief まとまりどうし(タブ・枠・枠の外の案内・バージョンとリンク・ボタン)の間に足す余白(ピクセル)。
+ * @brief まとまりどうし(タブ・枠・タブの外の案内・バージョンとリンク・ボタン)の間に足す余白(ピクセル)。
  * @details 部品どうしの余白(BASE_SPACING)に足すので、間は合わせて 16px になる。
  */
 constexpr int SECTION_SPACING = 8;
@@ -515,17 +515,6 @@ void open_settings_dialog()
 					   checkbox_note_spacing(widgets.always_on_top)));
 
 	general->addWidget(adjust_group);
-
-	/*
-	 * 枠の外の案内: 反映のタイミング。OK を押しても表示中の画像が変わらないのを、不具合と思われないように。
-	 * 項目の補足ではなく、このタブの設定全体への案内なので、薄くせず通常の濃さで表示する
-	 * (薄い文字は、そばに濃い項目名がある枠の中の説明だけに使う)。
-	 * フェードの変え方の案内は、プラグインの設定ではなく OBS の操作なので、マニュアルだけに書く
-	 */
-	general->addSpacing(SECTION_SPACING);
-	auto *apply_note = new QLabel(text("Settings.ApplyNote"));
-	apply_note->setWordWrap(true);
-	general->addWidget(apply_note);
 	general->addStretch();
 
 	/* ---- 「表示履歴」のタブ ---- */
@@ -544,6 +533,18 @@ void open_settings_dialog()
 
 	/* どの枠・タブでも入力欄の左の位置がそろうように */
 	align_label_widths({display_label, max_size_label, saved_label});
+
+	/*
+	 * タブの外の案内: 反映のタイミング。OK を押しても表示中の画像が変わらないのを、不具合と思われないように。
+	 * どのタブの設定にも当てはまるので、タブの外に置き、タブを切り替えても消えないようにする。
+	 * 項目の補足ではなく画面全体への案内なので、薄くせず通常の濃さで表示する
+	 * (薄い文字は、そばに濃い項目名がある枠の中の説明だけに使う)。
+	 * タブのすぐ下に詰めて置く(タブの中にも縁の余白があり、離すと間が空きすぎるため)。
+	 * フェードの変え方の案内は、プラグインの設定ではなく OBS の操作なので、マニュアルだけに書く
+	 */
+	auto *apply_note = new QLabel(text("Settings.ApplyNote"));
+	apply_note->setWordWrap(true);
+	layout->addWidget(apply_note);
 
 	/*
 	 * OK: 保存して閉じる / キャンセル: 保存せずに閉じる / 適用: 保存して開いたまま /
