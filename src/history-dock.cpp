@@ -173,6 +173,15 @@ constexpr int DROP_BORDER_WIDTH = 2;
 constexpr qreal EMPTY_TITLE_SCALE = 1.25;
 
 /**
+ * @brief 画像がないときの案内の下に出すアイコンの画像(data フォルダからの相対パス)。
+ * @details 白一色・背景が透明の画像(余白なし)。表示するときに、テーマの薄い文字の色に塗り直す(update_empty_icon())。
+ */
+constexpr const char *EMPTY_ICON_FILE = "images/empty-history.png";
+
+/// @brief 画像がないときのアイコンの幅(ピクセル)。サムネイル 1 枚分(一番小さいときの幅)にする。高さは絵の縦横比に合わせる。
+constexpr int EMPTY_ICON_WIDTH = THUMB_MIN_WIDTH;
+
+/**
  * @brief ドラッグしてきたデータから、受け付ける画像ファイルのパスを取り出す。
  *
  * @details
@@ -400,6 +409,22 @@ public:
 				: QStringLiteral("font-size: %1px;").arg(qRound(base.pixelSize() * EMPTY_TITLE_SCALE)));
 		empty_layout->addStretch();
 		empty_layout->addWidget(empty_title);
+		/*
+		 * 案内の下のアイコン。画像が並ぶ場所であることを絵でも示す(押せるボタンには見えない絵にしている)。
+		 * 画像のファイルが読めなければ、アイコンは出さずに案内の文だけにする
+		 */
+		empty_icon_ = new QLabel(empty_widget_);
+		empty_icon_->setAlignment(Qt::AlignCenter);
+		char *icon_path = obs_module_file(EMPTY_ICON_FILE);
+		if (icon_path)
+			empty_icon_source_.load(QString::fromUtf8(icon_path));
+		bfree(icon_path);
+		if (empty_icon_source_.isNull()) {
+			obs_log(LOG_WARNING, "history: cannot load %s", EMPTY_ICON_FILE);
+			empty_icon_->hide();
+		}
+		update_empty_icon();
+		empty_layout->addWidget(empty_icon_);
 		empty_layout->addStretch();
 		empty_widget_->setContextMenuPolicy(Qt::CustomContextMenu);
 		QObject::connect(empty_widget_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
@@ -529,6 +554,8 @@ protected:
 	void showEvent(QShowEvent *event) override
 	{
 		QWidget::showEvent(event);
+		/* 別の画面(拡大率の違うモニター)に移っていることがあるので、アイコンを作り直す */
+		update_empty_icon();
 		if (stopped_)
 			return;
 		if (needs_refresh_)
@@ -548,6 +575,16 @@ protected:
 			place_notice();
 		if (drop_frame_->isVisible())
 			drop_frame_->setGeometry(rect());
+	}
+
+	/**
+	 * @brief OBS のテーマが切り替わったら、アイコンをテーマの色で塗り直す。
+	 */
+	void changeEvent(QEvent *event) override
+	{
+		QWidget::changeEvent(event);
+		if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange)
+			update_empty_icon();
 	}
 
 	/**
@@ -639,6 +676,31 @@ protected:
 	}
 
 private:
+	/**
+	 * @brief 画像がないときのアイコンを、今のテーマの薄い文字の色と、画面の拡大率に合わせて作り直す。
+	 *
+	 * @details
+	 * 元の画像は白一色なので、形(透明度)だけを使い、色はテーマの薄い文字の色(PlaceholderText)で塗る。
+	 * 暗いテーマでも明るいテーマでも、案内の文と同じ調子でなじませるため。
+	 * 高い拡大率の画面でもぼやけないよう、拡大率の分だけ大きく作ってから、画面の大きさに合わせて表示する。
+	 */
+	void update_empty_icon()
+	{
+		if (!empty_icon_ || empty_icon_source_.isNull())
+			return;
+		const qreal scale = devicePixelRatioF();
+		QImage image =
+			empty_icon_source_.scaledToWidth(qRound(EMPTY_ICON_WIDTH * scale), Qt::SmoothTransformation)
+				.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+		QPainter painter(&image);
+		painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+		painter.fillRect(image.rect(), palette().color(QPalette::PlaceholderText));
+		painter.end();
+		QPixmap pixmap = QPixmap::fromImage(image);
+		pixmap.setDevicePixelRatio(scale);
+		empty_icon_->setPixmap(pixmap);
+	}
+
 	/**
 	 * @brief お知らせの帯を、ドックの上端に、左右に NOTICE_MARGIN の余白を空けて置く。
 	 * @details 高さは、今の幅で文言を折り返したときの高さにする。
@@ -929,8 +991,12 @@ private:
 	HistoryDockCallbacks callbacks_;
 	/// @brief サムネイルの一覧。
 	QListWidget *list_ = nullptr;
-	/// @brief 画像がまだないときの案内(文を載せた部品)。
+	/// @brief 画像がまだないときの案内(文とアイコンを載せた部品)。
 	QWidget *empty_widget_ = nullptr;
+	/// @brief 画像がないときの案内の下のアイコン。
+	QLabel *empty_icon_ = nullptr;
+	/// @brief アイコンの元の画像(白一色)。読めなかったら空。
+	QImage empty_icon_source_;
 	/// @brief ドラッグ中にドックの縁を囲む枠。ドラッグしていないときは隠す。
 	QFrame *drop_frame_ = nullptr;
 	/// @brief 画像を表示できなかった理由のお知らせの帯。出ていないときは隠す。
