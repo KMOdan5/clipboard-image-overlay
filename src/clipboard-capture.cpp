@@ -18,6 +18,10 @@
  *
  * ファイル名: yyyyMMdd-HHmmss-zzz.拡張子(保存した日時)
  *
+ * 同じ画像を続けて表示したとき: クリップボードの中身が直前に保存した画像と同じなら、新しく保存せずに
+ * 直前の画像を使い回す(LastSaved)。クリップボードを変えずに表示を繰り返しても、同じ画像のファイルが増えないように。
+ * 比べる相手は直前の 1 枚だけで、過去の画像から同じものを探すことはしない。
+ *
  * 古い画像の掃除: 新しい順に MAX_SAVED_IMAGES 枚だけ残し、それより古いものを削除する
  * (cleanup_saved_images())。ファイル名の形と保存フォルダを知っているのがこのファイルなので、ここで行う。
  *
@@ -39,6 +43,7 @@
 #include <QClipboard>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -75,6 +80,114 @@ const QStringList OBS_IMAGE_FORMATS = {
 	QStringLiteral("png"), QStringLiteral("jpg"), QStringLiteral("jpeg"),
 	QStringLiteral("gif"), QStringLiteral("bmp"), QStringLiteral("tga"),
 };
+
+/**
+ * @brief 直前に保存した画像と、その元になったクリップボードの中身。同じ中身を続けて保存しないために覚えておく。
+ *
+ * @details
+ * 元の中身の覚え方は、保存のしかたで分ける(どちらか一方だけを覚え、もう一方は空にする)。
+ * - 画像データ: 画像そのもの(image)。比べるときは QImage の == でピクセルを直接比べる。
+ *   比べる相手は 1 枚だけなので、ハッシュは使わない(直接比べるほうが簡単で正確なため)。
+ *   ピクセルの形式(透明度の扱いなど)が違うと別の画像と判断するので、間違って別の画像を使い回すことはない。
+ *   覚えておくメモリは、フル HD で約 8 MB
+ * - コピーしたファイル: ファイルのパス・大きさ・更新日時(file・file_size・file_modified)。
+ *   中身は比べない。名前を変えて保存した同じ画像など、ファイルが違えば別の画像として保存する
+ *
+ * UI スレッドだけで読み書きする。
+ */
+struct LastSaved {
+	/// @brief 保存した画像。空なら、覚えている画像はない。
+	std::optional<SavedImage> saved;
+	/// @brief 元が画像データのとき、その画像。元がファイルなら空。
+	QImage image;
+	/// @brief 元がコピーしたファイルのとき、そのパス。元が画像データなら空。
+	QString file;
+	/// @brief 元のファイルの大きさ(バイト)。
+	qint64 file_size = 0;
+	/// @brief 元のファイルの更新日時。
+	QDateTime file_modified;
+};
+
+/// @brief 直前に保存した画像。remember_image()・remember_file() で更新し、find_same_as_last_*() で比べる。
+LastSaved last_saved;
+
+/**
+ * @brief 直前に保存した画像を、まだ使い回せるかを返す。
+ * @details 配信者の削除や古い画像の掃除で消えていたら、使い回さずに新しく保存させる。
+ */
+bool last_saved_exists()
+{
+	return last_saved.saved && QFileInfo::exists(QString::fromUtf8(last_saved.saved->path.c_str()));
+}
+
+/**
+ * @brief 画像データが、直前に保存した画像の元と同じかを確かめる。
+ *
+ * @details 比べるのにかかった時間をログに出す(大きな画像でラグが出ていないかを、ログで確かめられるように)。
+ *
+ * @param image クリップボードから読んだ画像。
+ * @return 同じなら、直前に保存した画像の情報。
+ * @retval std::nullopt 違う・直前の画像が画像データからではない・直前の画像が消えている。
+ */
+std::optional<SavedImage> find_same_as_last_image(const QImage &image)
+{
+	if (last_saved.image.isNull() || !last_saved_exists())
+		return std::nullopt;
+	QElapsedTimer timer;
+	timer.start();
+	const bool same = image == last_saved.image;
+	const long long elapsed = timer.elapsed();
+	if (!same) {
+		obs_log(LOG_INFO, "clipboard: image data differs from last saved image (compare: %lld ms)", elapsed);
+		return std::nullopt;
+	}
+	obs_log(LOG_INFO, "save: reused %s (same image data, compare: %lld ms)", last_saved.saved->path.c_str(),
+		elapsed);
+	return last_saved.saved;
+}
+
+/**
+ * @brief コピーしたファイルが、直前に保存した画像の元と同じかを確かめる。
+ *
+ * @details パス・大きさ・更新日時がすべて同じなら同じとみなす。中身は読まない。
+ *
+ * @param source コピーしたファイルのパス。
+ * @return 同じなら、直前に保存した画像の情報。
+ * @retval std::nullopt 違う・直前の画像がファイルからではない・直前の画像が消えている。
+ */
+std::optional<SavedImage> find_same_as_last_file(const QString &source)
+{
+	if (last_saved.file.isEmpty() || !last_saved_exists())
+		return std::nullopt;
+	const QFileInfo info(source);
+	if (QFileInfo(last_saved.file) != info || info.size() != last_saved.file_size ||
+	    info.lastModified() != last_saved.file_modified)
+		return std::nullopt;
+	obs_log(LOG_INFO, "save: reused %s (same copied file %s)", last_saved.saved->path.c_str(),
+		source.toUtf8().constData());
+	return last_saved.saved;
+}
+
+/**
+ * @brief 画像データから保存した画像を、直前の画像として覚える。
+ * @param image 元の画像データ。
+ * @param saved 保存した画像の情報。
+ */
+void remember_image(const QImage &image, const SavedImage &saved)
+{
+	last_saved = LastSaved{saved, image, QString(), 0, QDateTime()};
+}
+
+/**
+ * @brief コピーしたファイルから保存した画像を、直前の画像として覚える。
+ * @param source 元のファイルのパス。
+ * @param saved 保存した画像の情報。
+ */
+void remember_file(const QString &source, const SavedImage &saved)
+{
+	const QFileInfo info(source);
+	last_saved = LastSaved{saved, QImage(), source, info.size(), info.lastModified()};
+}
 
 /**
  * @brief このプラグインが付けた名前(yyyyMMdd-HHmmss-zzz.拡張子)かどうかを判定する正規表現。
@@ -167,7 +280,7 @@ std::optional<SavedImage> saved(const QString &path, const QSize &size, const ch
  * @return 保存した画像の情報。
  * @retval std::nullopt 保存に失敗した。
  *
- * @see save_local_file()(変換が必要なファイル)、save_clipboard_image()(画像データ)… 呼び出し元
+ * @see copy_or_convert_file()(変換が必要なファイル)、save_clipboard_image()(画像データ)… 呼び出し元
  */
 std::optional<SavedImage> save_as_png(const QImage &image)
 {
@@ -184,7 +297,7 @@ std::optional<SavedImage> save_as_png(const QImage &image)
 }
 
 /**
- * @brief コピーされたファイル 1 つを保存する。
+ * @brief コピーされたファイル 1 つを、保存フォルダにコピーするか PNG に変換して保存する。
  *
  * @details
  * 判断の流れ:
@@ -196,9 +309,9 @@ std::optional<SavedImage> save_as_png(const QImage &image)
  * @return 保存した画像の情報。
  * @retval std::nullopt 画像ファイルでない・読めない・保存に失敗した。
  *
- * @see save_clipboard_image()(呼び出し元)
+ * @see save_local_file()(呼び出し元)
  */
-std::optional<SavedImage> save_local_file(const QString &source)
+std::optional<SavedImage> copy_or_convert_file(const QString &source)
 {
 	QImageReader reader(source);
 	/* EXIF の回転情報を反映して読み込む(手順 3 で PNG に変換するときに効く) */
@@ -245,6 +358,29 @@ std::optional<SavedImage> save_local_file(const QString &source)
 	return save_as_png(image);
 }
 
+/**
+ * @brief コピーされたファイル 1 つを保存する。直前に保存した画像の元と同じファイルなら、使い回す。
+ *
+ * @details
+ * - 直前に保存した画像の元と同じファイル → 読み込みも保存もせずに、直前の画像を返す
+ * - それ以外 → copy_or_convert_file() で保存し、直前の画像として覚える(remember_file())
+ *
+ * @param source コピーされたファイルのパス。
+ * @return 保存した画像の情報(使い回したときは直前の画像の情報)。
+ * @retval std::nullopt 画像ファイルでない・読めない・保存に失敗した。
+ *
+ * @see save_clipboard_image()(呼び出し元)
+ */
+std::optional<SavedImage> save_local_file(const QString &source)
+{
+	if (auto same = find_same_as_last_file(source))
+		return same;
+	auto result = copy_or_convert_file(source);
+	if (result)
+		remember_file(source, *result);
+	return result;
+}
+
 } // namespace
 
 /**
@@ -288,7 +424,13 @@ std::optional<SavedImage> save_clipboard_image()
 		const QImage image = qvariant_cast<QImage>(mime->imageData());
 		if (!image.isNull()) {
 			obs_log(LOG_INFO, "clipboard: read image data");
-			return save_as_png(image);
+			/* 直前に保存した画像と同じなら、PNG への変換と書き込みを省いて使い回す */
+			if (auto same = find_same_as_last_image(image))
+				return same;
+			auto result = save_as_png(image);
+			if (result)
+				remember_image(image, *result);
+			return result;
 		}
 	}
 
