@@ -203,7 +203,7 @@ Stream Deck・obs-websocket・ほかのプラグインで表示した場合も�
 
 「ヘルプ」→「ログファイル」→「現在のログファイルをアップロード」で URL を取得できます。不具合を報告するときはこの URL を添えてください。このプラグインのログは `[clipboard-image-overlay]` で始まります。
 
-OBS 33 以降では、起動時に `Skipping legacy plugin 'clipboard-image-overlay'` という警告が出ます。この警告は問題ありません。
+OBS 33 以降では、起動時のログに `Skipping legacy plugin 'clipboard-image-overlay'` という警告が出力されます。この警告は問題ありません。
 
 <!-- 画像: ログをアップロードするメニュー(docs/images/log-upload.png)。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="../images/log-upload.png" width="600" alt="「ヘルプ」→「ログファイル」→「現在のログファイルをアップロード」"> -->
