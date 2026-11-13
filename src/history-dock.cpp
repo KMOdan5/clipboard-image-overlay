@@ -554,16 +554,18 @@ protected:
 	}
 
 	/**
-	 * @brief 画像ファイルをドラッグしてきたら、受け付けるかを決め、受け付けるならドックの縁を枠で囲む。
-	 * @details 画像ファイルが 1 つもなければ受け付けない(受け付けない印のカーソルになる)。
+	 * @brief ドラッグがドックに入ってきたら、ドックで受け取る。画像ファイルがあれば、ドックの縁を枠で囲む。
+	 *
+	 * @details
+	 * 画像ファイルがないドラッグも、ここではいったん受け取る(受け取らないと、Qt が親の部品に順に渡し、
+	 * OBS の画面がファイルをソースとして追加してしまうため)。受け付けない印のカーソルにするのは dragMoveEvent() で行う。
 	 */
 	void dragEnterEvent(QDragEnterEvent *event) override
 	{
-		if (stopped_ || dropped_image_files(event->mimeData()).isEmpty()) {
-			event->ignore();
-			return;
-		}
+		drag_has_images_ = !stopped_ && !dropped_image_files(event->mimeData()).isEmpty();
 		event->acceptProposedAction();
+		if (!drag_has_images_)
+			return;
 		drop_frame_->setStyleSheet(QStringLiteral("QFrame { border: %1px solid %2; border-radius: 4px; }")
 						   .arg(DROP_BORDER_WIDTH)
 						   .arg(palette().color(QPalette::Highlight).name()));
@@ -573,9 +575,17 @@ protected:
 	}
 
 	/**
-	 * @brief ドラッグ中、受け付け続ける(ドックの中を動かしても、受け付けない印に変わらないように)。
+	 * @brief ドラッグ中、画像ファイルがあれば受け付け、なければ受け付けない印のカーソルにする。
+	 * @details 受け付けないと答えても、このドラッグは親(OBS の画面)には渡らない(dragEnterEvent() で受け取っているため)。
+	 *          ドロップしても何も起きない。
 	 */
-	void dragMoveEvent(QDragMoveEvent *event) override { event->acceptProposedAction(); }
+	void dragMoveEvent(QDragMoveEvent *event) override
+	{
+		if (drag_has_images_)
+			event->acceptProposedAction();
+		else
+			event->ignore();
+	}
 
 	/**
 	 * @brief ドックの外にドラッグが出たら、縁の枠を消す。
@@ -943,6 +953,8 @@ private:
 	QString current_raw_;
 	/// @brief true なら、ドックが見えていない間に保存フォルダが変わった(または、まだ一度も読んでいない)。見えたときに読み直す。
 	bool needs_refresh_ = false;
+	/// @brief true なら、今のドラッグに画像ファイルがある。ドラッグがドックに入ったときに決める(dragEnterEvent())。
+	bool drag_has_images_ = false;
 	/// @brief true なら止めた後。届いた通知やサムネイルを処理しない。
 	bool stopped_ = false;
 
