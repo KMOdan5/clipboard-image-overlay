@@ -89,8 +89,8 @@ std::optional<SavedImage> save_image_file(const std::string &path);
  *
  * @param in_use 削除してはいけないファイルのパス(UTF-8)。
  *
- * @note 呼び出し元: plugin-main.cpp(OBS の起動完了時、画像を表示したあと、ドラッグ&ドロップで足したあと)、
- *       image-display.cpp(フェードでの差し替えが終わったあと。前の画像が使用中ではなくなるため)。
+ * @note 呼び出し元: plugin-main.cpp(OBS の起動完了時、画像をすぐに表示できたあと、ドラッグ&ドロップで足したあと)、
+ *       image-display.cpp(フェードでの差し替えが終わったあと)。表示の操作 1 回につき、完了した時点で 1 回呼ぶ。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void cleanup_saved_images(const std::vector<std::string> &in_use);

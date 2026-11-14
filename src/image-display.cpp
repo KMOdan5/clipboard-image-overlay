@@ -80,7 +80,7 @@
  *   ファイルを先に消しても、OBS は読み込んだ画像を持っているので画面に残ってしまうため
  *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
- * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、
+ * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、is_clipboard_image_swap_pending()、
  * current_clipboard_image()、clear_clipboard_image()、image_display_shutdown()(image-display.hpp)。
  */
 
@@ -966,9 +966,10 @@ bool is_pending_swap_alive()
  * @details
  * 待っている間にアイテムが削除されていたら、差し替えずに取り消す。
  *
- * 差し替えた後に、古い画像の掃除をもう一度行う。表示の操作の直後の掃除(plugin-main.cpp)では、
- * 前の画像がフェードアウト中で「使用中」なので、上限の外にあっても残る。差し替えが終わると使用中ではなくなるので、
- * ここで削除する(ここで掃除しないと、次に画像を表示するまで、上限の外の画像が残り続ける)。
+ * 差し替えた後に、古い画像の掃除を行う。掃除は、表示の操作が完了した時点で 1 回行う決まりで、
+ * 差し替えがある場合は、ここが完了の時点になる(差し替えがない場合は、plugin-main.cpp の show_saved_image() が行う)。
+ * 差し替えを待っている間は前の画像がまだ使用中なので、待ってから掃除すると、前の画像が上限の外にあれば一緒に削除できる。
+ * 差し替えが取り消されたとき(アイテムが削除されたなど)は掃除しない。次に画像を表示したときに掃除される。
  *
  * @note 呼び出し元: Qt(swap_timer の timeout)。
  * @note スレッド: UI スレッド。
@@ -997,7 +998,7 @@ void finish_swap()
 		show_on_program_copy(item, image);
 	obs_sceneitem_release(item);
 
-	/* 前の画像は、差し替えが終わって使用中ではなくなった。上限の外にあれば、ここで削除する */
+	/* 表示の操作がここで完了した。前の画像は使用中ではなくなったので、上限の外にあれば一緒に削除される */
 	cleanup_saved_images(clipboard_images_in_use());
 }
 
@@ -1499,6 +1500,16 @@ std::vector<std::string> clipboard_images_in_use()
 	}
 
 	return paths;
+}
+
+/**
+ * @brief フェードでの差し替えを待っている途中かどうかを返す。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+bool is_clipboard_image_swap_pending()
+{
+	return pending_swap.item != nullptr;
 }
 
 /**

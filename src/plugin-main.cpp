@@ -14,7 +14,7 @@
  *        ├→ save_clipboard_image()         画像を保存(clipboard-capture.cpp)
  *        └→ show_saved_image()             保存した画像を表示する共通処理
  *             ├→ show_image_on_current_scene()  シーンに表示(image-display.cpp)
- *             ├→ cleanup_saved_images()         古い画像を掃除(clipboard-capture.cpp)
+ *             ├→ cleanup_saved_images()         古い画像を掃除(clipboard-capture.cpp)。フェードで差し替えるときは、差し替えが終わった後
  *             └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
  *
  *   表示履歴のドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
@@ -153,11 +153,13 @@ void show_saved_image(const SavedImage &image)
 
 	/*
 	 * 表示するたびに古い画像を掃除する。長い配信で何枚も貼っても、保存フォルダがたまり続けないように。
-	 * 表示を始めた後に行うのは、今表示する画像と差し替え待ちの画像を「使用中」として確実に残すため。
-	 * 表示中の画像をフェードで差し替えるときは、前の画像もまだ使用中なので、ここでは残る。
-	 * 差し替えが終わったときに、image-display.cpp がもう一度掃除する
+	 * 掃除は、表示の操作が完了した時点で 1 回行う。
+	 * - すぐに表示できたとき: ここで掃除する。表示を始めた後に行うのは、今表示した画像を「使用中」として確実に残すため
+	 * - 表示中の画像をフェードで差し替えるとき: ここでは掃除せず、差し替えが終わったときに image-display.cpp が掃除する
+	 *   (待っている間は前の画像もまだ使用中で、ここで掃除しても、上限の外にある前の画像を削除できないため)
 	 */
-	cleanup_saved_images(clipboard_images_in_use());
+	if (!is_clipboard_image_swap_pending())
+		cleanup_saved_images(clipboard_images_in_use());
 
 	/* 表示できなければタイマーも動かさない */
 	if (!shown)
