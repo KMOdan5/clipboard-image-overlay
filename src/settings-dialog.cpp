@@ -34,6 +34,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPalette>
 #include <QPointer>
 #include <QPushButton>
@@ -423,6 +424,9 @@ struct SettingsWidgets {
  */
 QPointer<QDialog> settings_dialog;
 
+/// @brief 設定画面から頼む処理(settings_dialog_register() で登録する)。
+SettingsDialogCallbacks dialog_callbacks;
+
 } // namespace
 
 /**
@@ -525,8 +529,24 @@ void open_settings_dialog()
 	/* 保存フォルダを開く(ボタンなので項目名の列は空ける。押すとその場で開く) */
 	auto *open_folder = new QPushButton(text("Settings.OpenImageFolder"));
 	QObject::connect(open_folder, &QPushButton::clicked, dialog, []() { open_image_folder(); });
+	/*
+	 * 表示履歴を全て削除。数が多く押し間違えたときの影響が大きいので、確認の画面を出す(既定のボタンはキャンセル)。
+	 * 削除はごみ箱に移すだけなので、元に戻せる。OK と キャンセル は OBS の言語に合わせて Qt が表示する
+	 */
+	auto *delete_all = new QPushButton(text("Settings.DeleteAllHistory"));
+	QObject::connect(delete_all, &QPushButton::clicked, dialog, [dialog]() {
+		const auto answer = QMessageBox::question(dialog, text("Settings.DeleteAllHistory"),
+							  text("Settings.DeleteAllHistory.Confirm"),
+							  QMessageBox::Ok | QMessageBox::Cancel, QMessageBox::Cancel);
+		if (answer != QMessageBox::Ok) {
+			obs_log(LOG_INFO, "settings: delete all history canceled");
+			return;
+		}
+		if (dialog_callbacks.delete_all_history)
+			dialog_callbacks.delete_all_history();
+	});
 	auto *saved_label = new QLabel();
-	form->addRow(saved_label, make_row({open_folder}));
+	form->addRow(saved_label, make_row({open_folder, delete_all}));
 
 	history->addWidget(saved_group);
 	history->addStretch();
@@ -593,6 +613,16 @@ void open_settings_dialog()
  * @brief 設定画面が開いていれば閉じる。
  * @details 仕様の詳細は settings-dialog.hpp の宣言側を参照。
  */
+/**
+ * @brief 設定画面から頼む処理を登録する。
+ *
+ * @details 仕様の詳細は settings-dialog.hpp の宣言側を参照。
+ */
+void settings_dialog_register(SettingsDialogCallbacks callbacks)
+{
+	dialog_callbacks = std::move(callbacks);
+}
+
 void close_settings_dialog()
 {
 	if (!settings_dialog)

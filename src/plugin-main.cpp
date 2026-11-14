@@ -36,6 +36,7 @@
  *   表示できたときは、そのお知らせを消す(show_saved_image())
  *
  *   ツール > Clipboard Image > 設定... ─→ open_settings_dialog()  設定画面(settings-dialog.cpp)
+ *        └→ 「表示履歴を全て削除」 ─→ delete_all_history_images()  表示履歴の画像をすべてごみ箱に移す
  * @endcode
  *
  * 関連ファイル:
@@ -361,6 +362,43 @@ void delete_history_image(const std::string &path)
 }
 
 /**
+ * @brief 表示履歴の画像を、すべてごみ箱に移す(設定画面の「表示履歴を全て削除」)。
+ *
+ * @details
+ * 対象は、表示履歴のドックに並んでいる画像(list_saved_images())。配信者が選んで消す操作なので、
+ * 1 枚ずつの削除(delete_history_image())と同じく、今の画像も削除する。
+ * 1. 今の画像が含まれていれば、全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す。
+ *    自動非表示のタイマーと一時停止も解除する(1 枚ずつの削除と同じ理由)
+ * 2. 画像を 1 枚ずつ OS のごみ箱に送る(trash_saved_image())。確認は設定画面で済んでいる
+ *
+ * 1 を 1 回だけ行い、2 を繰り返す(1 枚ずつ delete_history_image() を呼ぶと、今の画像の確認を何度も行うことになるため)。
+ * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
+ *
+ * @note 呼び出し元: settings-dialog.cpp(確認の画面で OK を押したとき)。
+ * @note スレッド: UI スレッドで呼ぶこと。
+ */
+void delete_all_history_images()
+{
+	obs_log(LOG_INFO, "delete all history images requested");
+	if (!accept_user_action("delete all"))
+		return;
+
+	const std::vector<std::string> images = list_saved_images();
+	const std::string current = current_clipboard_image();
+	if (std::any_of(images.cbegin(), images.cend(),
+			[&current](const std::string &path) { return same_file(path, current); })) {
+		clear_clipboard_image();
+		auto_hide_on_image_hidden();
+	}
+	size_t trashed = 0;
+	for (const std::string &path : images) {
+		if (trash_saved_image(path))
+			trashed++;
+	}
+	obs_log(LOG_INFO, "delete all: moved %zu of %zu image(s) to trash", trashed, images.size());
+}
+
+/**
  * @brief 「ツール」メニューに「Clipboard Image」のサブメニューを追加する。
  *
  * @details
@@ -677,6 +715,10 @@ bool obs_module_load(void)
 	dock_callbacks.drop = on_images_dropped;
 	dock_callbacks.open_settings = open_settings_dialog;
 	history_dock_register(std::move(dock_callbacks));
+
+	SettingsDialogCallbacks dialog_callbacks;
+	dialog_callbacks.delete_all_history = delete_all_history_images;
+	settings_dialog_register(std::move(dialog_callbacks));
 
 	obs_frontend_add_save_callback(on_frontend_save, nullptr);
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);

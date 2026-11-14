@@ -10,6 +10,31 @@
 
 #pragma once
 
+#include <functional>
+
+/**
+ * @brief 設定画面から、plugin-main.cpp に処理を頼むための関数の組。
+ *
+ * @details 設定画面は画面だけを受け持ち、画像の削除のような処理は呼び出し元に任せる。
+ *          どの関数も UI スレッドで呼ばれる。空のままの関数は呼ばない。
+ */
+struct SettingsDialogCallbacks {
+	/**
+	 * @brief 表示履歴の画像を、すべてごみ箱に移す。「表示履歴を全て削除」で、確認の画面で OK を押したときに呼ぶ。
+	 */
+	std::function<void()> delete_all_history;
+};
+
+/**
+ * @brief 設定画面から頼む処理を登録する。
+ *
+ * @param callbacks 設定画面から頼む処理。
+ *
+ * @note 呼び出し元: plugin-main.cpp の obs_module_load()。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+void settings_dialog_register(SettingsDialogCallbacks callbacks);
+
 /**
  * @brief 設定画面を開く。既に開いていれば手前に出す。
  *
@@ -27,6 +52,7 @@
  * - タブ「表示履歴」(表示履歴のドックに並ぶ、保存した画像に関わること)
  *   - 枠「保存した画像」
  *     - 保存フォルダを開く(ボタン。押すとその場で、画像の保存フォルダを OS のファイルの画面で開く。フォルダがなければ作る)
+ *     - 表示履歴を全て削除(ボタン。確認の画面で OK を押すと、その場で callbacks.delete_all_history を呼ぶ)
  * 枠の中の説明文は、項目と区別できるよう薄い文字で表示する。
  * 説明文は入力欄のすぐ下に詰めて置き、項目どうしの間は広く空ける(説明文がどの項目のものか、位置で分かるように)。
  * タブの下に、反映のタイミングの案内を通常の濃さで表示する(どのタブの設定にも当てはまるので、タブを切り替えても消えない)。
