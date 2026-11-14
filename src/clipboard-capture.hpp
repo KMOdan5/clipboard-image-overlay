@@ -54,6 +54,26 @@ struct SavedImage {
 std::optional<SavedImage> save_clipboard_image();
 
 /**
+ * @brief 画像ファイルを、プラグインの画像フォルダに保存する。表示履歴のドックにドラッグ&ドロップしたファイル用。
+ *
+ * @details
+ * コピーした画像ファイルを保存するときと同じ処理を使う(save_clipboard_image() の 1)。
+ * - 原則は元ファイルをそのままコピー。OBS で表示できない場合だけ PNG に変換する
+ * - 直前に保存した画像の元と同じファイル(パス・大きさ・更新日時が同じ)なら、新しく保存せずに直前の画像を返す
+ *
+ * 保存に失敗したときは、お知らせ(SaveFailed)をここで出す。画像として読めなかったときのお知らせは、呼び出し元が出す
+ * (複数のファイルをまとめて保存するとき、1 つずつ出さないように)。
+ *
+ * @param path 画像ファイルのパス(UTF-8)。
+ * @return 保存した画像の情報(使い回したときは直前の画像の情報)。
+ * @retval std::nullopt 画像として読めない、または保存に失敗した。理由は OBS のログに出る。
+ *
+ * @note 呼び出し元: plugin-main.cpp の on_images_dropped()。
+ * @note スレッド: UI スレッドから呼ぶこと(直前に保存した画像の記録を、UI スレッドだけで読み書きするため)。
+ */
+std::optional<SavedImage> save_image_file(const std::string &path);
+
+/**
  * @brief 保存フォルダの古い画像を削除し、新しい順に 50 枚だけ残す。
  *
  * @details

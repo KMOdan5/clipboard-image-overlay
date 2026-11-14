@@ -18,6 +18,8 @@
  *             └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
  *
  *   表示履歴のドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
+ *   表示履歴のドックに画像ファイルをドラッグ&ドロップ ─→ on_images_dropped()
+ *        └→ save_image_file()  1 つずつ保存して、表示履歴に足す(表示はしない。clipboard-capture.cpp)
  *   表示履歴のドックの右クリック > 削除 ─→ delete_history_image()
  *        ├→ clear_clipboard_image()        今の画像なら、即座に非表示にして参照を外す(image-display.cpp)
  *        └→ trash_saved_image()            ごみ箱に送る(clipboard-capture.cpp)
@@ -215,6 +217,49 @@ void show_history_image(const std::string &path, const char *trigger)
 		return;
 
 	show_saved_image(*image);
+}
+
+/**
+ * @brief 表示履歴のドックにドラッグ&ドロップしたファイルを保存し、表示履歴に足す。
+ *
+ * @details
+ * ドラッグ&ドロップは、利用者ができると思った操作を受け止める保険の機能なので、表示はせずに表示履歴に足すだけにする
+ * (表示はドックのクリックで行う)。設定の項目も持たない。
+ * - ファイルは渡された順に 1 つずつ保存する(最後のファイルが一番新しい画像になる)
+ * - 保存だけならシーンに触らないので、シーンの読み込み中でも受け付ける
+ * - 表示しないので、表示のときの掃除が走らない。保存フォルダが 50 枚を超えないよう、ここで掃除する。
+ *   ただしシーンの読み込み中は掃除しない(使用中の画像を調べるときに 'Clipboard Image' を触るため。次に表示したときに掃除される)
+ *
+ * 画像かどうかは、コピーしたファイルを表示するときと同じ保存の処理(save_image_file())が、ファイルの中身で判断する。
+ * 1 枚も足せなかったとき(画像として読めるファイルがない、手元のファイルがない、など)だけ、
+ * お知らせ(ImageNotRecognized)を出す。1 枚でも足せたら、画像ではないファイルは黙って飛ばす
+ * (足した画像が並ぶので成功は分かり、混ざったファイルはたいてい選び間違いのため。
+ * お知らせを出すと、やり直したときに同じ画像が増えることもある)。
+ *
+ * @param paths ドロップした手元のファイルのパス(UTF-8)。画像ではないファイルも含む。空のこともある。
+ *
+ * @note 呼び出し元: history-dock.cpp(ドロップしたとき)。
+ * @note スレッド: UI スレッドで呼ぶこと。
+ */
+void on_images_dropped(const std::vector<std::string> &paths)
+{
+	obs_log(LOG_INFO, "images dropped: %zu file(s)", paths.size());
+	notice_begin_operation();
+
+	bool saved_any = false;
+	for (const std::string &path : paths) {
+		if (save_image_file(path))
+			saved_any = true;
+		else
+			obs_log(LOG_INFO, "drop: not an image or cannot save %s", path.c_str());
+	}
+	if (!saved_any) {
+		obs_log(LOG_INFO, "drop: no image added");
+		notice_report(Notice::ImageNotRecognized);
+		return;
+	}
+	if (scenes_ready)
+		cleanup_saved_images(clipboard_images_in_use());
 }
 
 /**
@@ -615,6 +660,7 @@ bool obs_module_load(void)
 	/*
 	 * 表示履歴のドック。クリックされた画像は、ホットキーと同じ処理で表示する。
 	 * 右クリックメニューの「削除」は delete_history_image()、「設定...」は設定画面を開く。
+	 * 画像ファイルをドラッグ&ドロップしたら on_images_dropped()。
 	 * ドックのハイライトは今の画像('Clipboard Image' が参照している画像)で、表示中か非表示かは問わない。
 	 * 問い合わせには、シーンの読み込み・切り替え・終了の途中は答えない(片付け中のシーンを触らないため)
 	 */
@@ -628,6 +674,7 @@ bool obs_module_load(void)
 		return current_clipboard_image();
 	};
 	dock_callbacks.remove = delete_history_image;
+	dock_callbacks.drop = on_images_dropped;
 	dock_callbacks.open_settings = open_settings_dialog;
 	history_dock_register(std::move(dock_callbacks));
 
