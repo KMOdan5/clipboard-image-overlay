@@ -231,8 +231,10 @@ void show_history_image(const std::string &path, const char *trigger)
  *   ただしシーンの読み込み中は掃除しない(使用中の画像を調べるときに 'Clipboard Image' を触るため。次に表示したときに掃除される)
  *
  * 画像かどうかは、コピーしたファイルを表示するときと同じ保存の処理(save_image_file())が、ファイルの中身で判断する。
- * 画像として読めないファイルがあるとき、または手元のファイルが 1 つもない(ブラウザからの URL など)ときは、
- * お知らせ(ImageNotRecognized)を出す。1 回の操作で最初の 1 つだけ出る(notice.hpp)。
+ * 1 枚も足せなかったとき(画像として読めるファイルがない、手元のファイルがない、など)だけ、
+ * お知らせ(ImageNotRecognized)を出す。1 枚でも足せたら、画像ではないファイルは黙って飛ばす
+ * (足した画像が並ぶので成功は分かり、混ざったファイルはたいてい選び間違いのため。
+ * お知らせを出すと、やり直したときに同じ画像が増えることもある)。
  *
  * @param paths ドロップした手元のファイルのパス(UTF-8)。画像ではないファイルも含む。空のこともある。
  *
@@ -243,22 +245,20 @@ void on_images_dropped(const std::vector<std::string> &paths)
 {
 	obs_log(LOG_INFO, "images dropped: %zu file(s)", paths.size());
 	notice_begin_operation();
-	if (paths.empty()) {
-		obs_log(LOG_INFO, "drop: no local file");
-		notice_report(Notice::ImageNotRecognized);
-		return;
-	}
 
 	bool saved_any = false;
 	for (const std::string &path : paths) {
-		if (save_image_file(path)) {
+		if (save_image_file(path))
 			saved_any = true;
-		} else {
+		else
 			obs_log(LOG_INFO, "drop: not an image or cannot save %s", path.c_str());
-			notice_report(Notice::ImageNotRecognized);
-		}
 	}
-	if (saved_any && scenes_ready)
+	if (!saved_any) {
+		obs_log(LOG_INFO, "drop: no image added");
+		notice_report(Notice::ImageNotRecognized);
+		return;
+	}
+	if (scenes_ready)
 		cleanup_saved_images(clipboard_images_in_use());
 }
 
