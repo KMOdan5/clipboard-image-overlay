@@ -86,6 +86,7 @@
 
 #include "image-display.hpp"
 #include "auto-hide.hpp"
+#include "clipboard-capture.hpp"
 #include "notice.hpp"
 #include "settings.hpp"
 
@@ -962,7 +963,12 @@ bool is_pending_swap_alive()
 /**
  * @brief フェードアウトが終わったときの処理。新しい画像に差し替えて、フェードインさせる。
  *
- * @details 待っている間にアイテムが削除されていたら、差し替えずに取り消す。
+ * @details
+ * 待っている間にアイテムが削除されていたら、差し替えずに取り消す。
+ *
+ * 差し替えた後に、古い画像の掃除をもう一度行う。表示の操作の直後の掃除(plugin-main.cpp)では、
+ * 前の画像がフェードアウト中で「使用中」なので、上限の外にあっても残る。差し替えが終わると使用中ではなくなるので、
+ * ここで削除する(ここで掃除しないと、次に画像を表示するまで、上限の外の画像が残り続ける)。
  *
  * @note 呼び出し元: Qt(swap_timer の timeout)。
  * @note スレッド: UI スレッド。
@@ -990,6 +996,9 @@ void finish_swap()
 	if (show_on_program)
 		show_on_program_copy(item, image);
 	obs_sceneitem_release(item);
+
+	/* 前の画像は、差し替えが終わって使用中ではなくなった。上限の外にあれば、ここで削除する */
+	cleanup_saved_images(clipboard_images_in_use());
 }
 
 /**

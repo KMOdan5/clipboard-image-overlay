@@ -85,11 +85,12 @@ std::optional<SavedImage> save_image_file(const std::string &path);
  * - 削除した枚数と、削除できなかったファイルはログに出す。削除に失敗しても処理は続ける
  *
  * 残す枚数は、設定の「上限枚数」(settings.hpp の max_saved_images。既定 50 枚)。
- * 設定を変えても、その場では削除しない。次にここが呼ばれたとき(画像を表示したあと・OBS の起動完了時)に反映する。
+ * 設定を変えても、その場では削除しない。次にここが呼ばれたときに反映する。
  *
  * @param in_use 削除してはいけないファイルのパス(UTF-8)。
  *
- * @note 呼び出し元: plugin-main.cpp(OBS の起動完了時と、画像を表示したあと)。
+ * @note 呼び出し元: plugin-main.cpp(OBS の起動完了時、画像を表示したあと、ドラッグ&ドロップで足したあと)、
+ *       image-display.cpp(フェードでの差し替えが終わったあと。前の画像が使用中ではなくなるため)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void cleanup_saved_images(const std::vector<std::string> &in_use);
