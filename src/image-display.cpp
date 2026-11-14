@@ -1479,6 +1479,25 @@ std::vector<std::string> clipboard_images_in_use()
 	if (pending_swap.item && !pending_swap.image.path.empty())
 		paths.push_back(pending_swap.image.path);
 
+	/*
+	 * スタジオモードで「ソースを複製」がオンだと、プログラムのコピーの中の Clipboard Image は別のソースになり、
+	 * 元とは別の画像ファイルを参照していることがある(次のトランジションまで、前の画像を配信に映している)。
+	 * そのファイルを消すと、OBS の画像ソースが読み直して、配信に出ている画像が消える。使用中に含めて残す
+	 */
+	obs_source_t *program_scene = obs_frontend_get_current_scene();
+	obs_source_t *copy = get_program_copy(program_scene);
+	obs_source_release(program_scene);
+	if (copy) {
+		std::vector<obs_sceneitem_t *> items = collect_managed_items(obs_scene_from_source(copy));
+		for (obs_sceneitem_t *item : items) {
+			const std::string file = image_file_of(obs_sceneitem_get_source(item));
+			if (!file.empty() && std::find(paths.cbegin(), paths.cend(), file) == paths.cend())
+				paths.push_back(file);
+		}
+		release_items(items);
+		obs_source_release(copy);
+	}
+
 	return paths;
 }
 
