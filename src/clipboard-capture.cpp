@@ -22,7 +22,7 @@
  * 直前の画像を使い回す(LastSaved)。クリップボードを変えずに表示を繰り返しても、同じ画像のファイルが増えないように。
  * 比べる相手は直前の 1 枚だけで、過去の画像から同じものを探すことはしない。
  *
- * 古い画像の掃除: 新しい順に MAX_SAVED_IMAGES 枚だけ残し、それより古いものを削除する
+ * 古い画像の掃除: 新しい順に、設定の「上限枚数」(max_saved_images)だけ残し、それより古いものを削除する
  * (cleanup_saved_images())。ファイル名の形と保存フォルダを知っているのがこのファイルなので、ここで行う。
  *
  * 表示履歴: 保存フォルダの画像を、そのまま履歴として使う。list_saved_images() で新しい順に並べ、
@@ -36,6 +36,7 @@
 
 #include "clipboard-capture.hpp"
 #include "notice.hpp"
+#include "settings.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -59,12 +60,6 @@ namespace {
 
 /// @brief プラグイン設定フォルダの中に作る、画像の保存用フォルダ名。
 constexpr const char *IMAGE_FOLDER = "images";
-
-/**
- * @brief 保存フォルダに残す画像の枚数。これより古い画像は cleanup_saved_images() で削除する。
- * @note 今は固定。枚数・容量の上限を設定画面で変えられるようにするかは #23 で検討する。
- */
-constexpr int MAX_SAVED_IMAGES = 50;
 
 /**
  * @brief OBS の画像ソースが表示できる形式(小文字の拡張子)。
@@ -456,7 +451,7 @@ std::optional<SavedImage> save_clipboard_image()
 }
 
 /**
- * @brief 保存フォルダの古い画像を削除し、新しい順に MAX_SAVED_IMAGES 枚だけ残す。
+ * @brief 保存フォルダの古い画像を削除し、新しい順に設定の枚数だけ残す。
  *
  * @details 仕様の詳細は clipboard-capture.hpp の宣言側を参照。
  */
@@ -469,7 +464,8 @@ void cleanup_saved_images(const std::vector<std::string> &in_use)
 
 	/* このプラグインが付けた名前の形のファイルだけを対象にする(配信者が置いたファイルを消さないため) */
 	const QStringList names = saved_names_newest_first(dir);
-	if (names.size() <= MAX_SAVED_IMAGES)
+	const int limit = settings_get().max_saved_images;
+	if (names.size() <= limit)
 		return;
 
 	/* 表示中・差し替え待ちの画像は、古くても消さない(消すと OBS の表示が崩れるため) */
@@ -480,7 +476,7 @@ void cleanup_saved_images(const std::vector<std::string> &in_use)
 	int removed = 0;
 	int skipped = 0;
 	int failed = 0;
-	for (qsizetype i = MAX_SAVED_IMAGES; i < names.size(); i++) {
+	for (qsizetype i = limit; i < names.size(); i++) {
 		const QFileInfo info(dir.filePath(names[i]));
 		if (std::any_of(keep.cbegin(), keep.cend(), [&info](const QFileInfo &k) { return k == info; })) {
 			skipped++;
@@ -497,7 +493,7 @@ void cleanup_saved_images(const std::vector<std::string> &in_use)
 	/* 使用中で残しただけのときは、貼るたびに同じ行が出ないようログを省く */
 	if (removed > 0 || failed > 0)
 		obs_log(LOG_INFO, "cleanup: removed %d old image(s), kept newest %d (in use: %d, failed: %d)", removed,
-			MAX_SAVED_IMAGES, skipped, failed);
+			limit, skipped, failed);
 }
 
 /**
@@ -526,12 +522,12 @@ std::vector<std::string> list_saved_images()
 	if (folder.isEmpty() || !dir.exists())
 		return paths;
 
-	for (const QString &name : saved_names_newest_first(dir)) {
+	/*
+	 * 上限枚数では打ち切らない。打ち切ると、掃除で残した画像(今の画像・上限を下げた直後の古い画像)が一覧から外れ、
+	 * 保存フォルダと表示履歴の中身が食い違うため。枚数を上限に合わせるのは、掃除(cleanup_saved_images())の役目
+	 */
+	for (const QString &name : saved_names_newest_first(dir))
 		paths.push_back(QDir::toNativeSeparators(dir.filePath(name)).toUtf8().toStdString());
-		/* 掃除が終わる前に呼ばれても、上限より多くは返さない */
-		if (static_cast<int>(paths.size()) >= MAX_SAVED_IMAGES)
-			break;
-	}
 	return paths;
 }
 

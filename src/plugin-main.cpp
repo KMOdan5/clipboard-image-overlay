@@ -14,7 +14,7 @@
  *        ├→ save_clipboard_image()         画像を保存(clipboard-capture.cpp)
  *        └→ show_saved_image()             保存した画像を表示する共通処理
  *             ├→ show_image_on_current_scene()  シーンに表示(image-display.cpp)
- *             ├→ cleanup_saved_images()         古い画像を掃除(clipboard-capture.cpp)
+ *             ├→ cleanup_saved_images()         古い画像を掃除(clipboard-capture.cpp)。フェードで差し替えるときは、差し替えが終わった後
  *             └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
  *
  *   表示履歴のドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
@@ -153,9 +153,13 @@ void show_saved_image(const SavedImage &image)
 
 	/*
 	 * 表示するたびに古い画像を掃除する。長い配信で何枚も貼っても、保存フォルダがたまり続けないように。
-	 * 表示を始めた後に行うのは、今表示する画像と差し替え待ちの画像を「使用中」として確実に残すため
+	 * 掃除は、表示の操作が完了した時点で 1 回行う。
+	 * - すぐに表示できたとき: ここで掃除する。表示を始めた後に行うのは、今表示した画像を「使用中」として確実に残すため
+	 * - 表示中の画像をフェードで差し替えるとき: ここでは掃除せず、差し替えが終わったときに image-display.cpp が掃除する
+	 *   (待っている間は前の画像もまだ使用中で、ここで掃除しても、上限の外にある前の画像を削除できないため)
 	 */
-	cleanup_saved_images(clipboard_images_in_use());
+	if (!is_clipboard_image_swap_pending())
+		cleanup_saved_images(clipboard_images_in_use());
 
 	/* 表示できなければタイマーも動かさない */
 	if (!shown)
@@ -228,7 +232,7 @@ void show_history_image(const std::string &path, const char *trigger)
  * (表示はドックのクリックで行う)。設定の項目も持たない。
  * - ファイルは渡された順に 1 つずつ保存する(最後のファイルが一番新しい画像になる)
  * - 保存だけならシーンに触らないので、シーンの読み込み中でも受け付ける
- * - 表示しないので、表示のときの掃除が走らない。保存フォルダが 50 枚を超えないよう、ここで掃除する。
+ * - 表示しないので、表示のときの掃除が走らない。保存フォルダが上限の枚数を超えないよう、ここで掃除する。
  *   ただしシーンの読み込み中は掃除しない(使用中の画像を調べるときに 'Clipboard Image' を触るため。次に表示したときに掃除される)
  *
  * 画像かどうかは、コピーしたファイルを表示するときと同じ保存の処理(save_image_file())が、ファイルの中身で判断する。
@@ -365,7 +369,8 @@ void delete_history_image(const std::string &path)
  * @brief 表示履歴の画像を、すべてごみ箱に移す(設定画面の「表示履歴を全て削除」)。
  *
  * @details
- * 対象は、表示履歴のドックに並んでいる画像(list_saved_images())。配信者が選んで消す操作なので、
+ * 対象は、表示履歴のドックに並んでいる画像(list_saved_images()。保存フォルダにある、プラグインが付けた名前の画像すべて)。
+ * 配信者が選んで消す操作なので、
  * 1 枚ずつの削除(delete_history_image())と同じく、今の画像も削除する。
  * 1. 今の画像が含まれていれば、全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す。
  *    自動非表示のタイマーと一時停止も解除する(1 枚ずつの削除と同じ理由)
