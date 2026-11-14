@@ -39,7 +39,7 @@ constexpr const char *KEY_MAX_SIZE_PERCENT = "max_size_percent";
 constexpr const char *KEY_ALWAYS_ON_TOP = "always_on_top";
 /// @brief 設定ファイルのキー名(スタジオモードでもすぐに配信画面に表示する)。
 constexpr const char *KEY_STUDIO_MODE_SHOW_ON_PROGRAM = "studio_mode_show_on_program";
-/// @brief 設定ファイルのキー名(保存する枚数)。
+/// @brief 設定ファイルのキー名(上限枚数)。
 constexpr const char *KEY_MAX_SAVED_IMAGES = "max_saved_images";
 
 /// @brief 今の設定値。settings_load() で読み込み、settings_save() で変更する。

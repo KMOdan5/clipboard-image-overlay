@@ -26,10 +26,14 @@ constexpr int DISPLAY_SECONDS_MAX = 999;
 constexpr int MAX_SIZE_PERCENT_MIN = 10;
 /// @brief 最大サイズ(画面に対する割合、%)の上限。
 constexpr int MAX_SIZE_PERCENT_MAX = 100;
-/// @brief 保存する枚数の下限。「前の画像を表示」や表示履歴からの再表示に使える枚数を残すため。
-constexpr int MAX_SAVED_IMAGES_MIN = 10;
-/// @brief 保存する枚数の上限。表示履歴のドックが、配信中の OBS に負担をかけずに並べられる枚数にとどめる。
-constexpr int MAX_SAVED_IMAGES_MAX = 200;
+/// @brief 上限枚数(保存する画像の枚数)の下限。
+constexpr int MAX_SAVED_IMAGES_MIN = 1;
+/**
+ * @brief 上限枚数(保存する画像の枚数)の上限。表示時間と同じく、入力欄に 3 桁まで入れられる、と直感的に分かる値にする。
+ * @details 表示履歴のドックはサムネイルをメモリに持つ(1 枚あたり最大で約 130KB、拡大率 150% の画面で約 290KB)。
+ *          999 枚たまると約 130〜290MB になる。
+ */
+constexpr int MAX_SAVED_IMAGES_MAX = 999;
 
 /**
  * @brief プラグインの設定値。初期値が既定値。

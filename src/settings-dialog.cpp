@@ -389,7 +389,7 @@ struct SettingsWidgets {
 	QCheckBox *always_on_top = nullptr;
 	/// @brief スタジオモードでもすぐに配信画面に表示する。
 	QCheckBox *studio_mode_show_on_program = nullptr;
-	/// @brief 保存する枚数(「表示履歴」のタブ)。
+	/// @brief 上限枚数(「表示履歴」のタブ)。
 	QSpinBox *max_saved_images = nullptr;
 
 	/**
@@ -549,7 +549,7 @@ void open_settings_dialog()
 	QGroupBox *saved_group = make_group("Settings.Group.SavedImages", form);
 
 	/*
-	 * 保存する枚数: [50 枚]。上限を超えた古い画像は、次に画像を表示したときに自動で削除される。
+	 * 上限枚数: [50 枚]。上限を超えた古い画像は、次に画像を表示したときに自動で削除される。
 	 * 下げても、その場では削除しない(設定の変更は、次に画像を表示したときから反映する)
 	 */
 	widgets.max_saved_images = new QSpinBox();
