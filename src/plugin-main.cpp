@@ -365,14 +365,14 @@ void delete_history_image(const std::string &path)
  * @brief 表示履歴の画像を、すべてごみ箱に移す(設定画面の「表示履歴を全て削除」)。
  *
  * @details
- * 対象は、表示履歴のドックに並んでいる画像(list_saved_images())と、上限枚数を下げた直後で
- * まだ掃除されていない古い画像。配信者が選んで消す操作なので、
+ * 対象は、表示履歴のドックに並んでいる画像(list_saved_images()。保存フォルダにある、プラグインが付けた名前の画像すべて)。
+ * 配信者が選んで消す操作なので、
  * 1 枚ずつの削除(delete_history_image())と同じく、今の画像も削除する。
  * 1. 今の画像が含まれていれば、全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す。
  *    自動非表示のタイマーと一時停止も解除する(1 枚ずつの削除と同じ理由)
  * 2. 画像を 1 枚ずつ OS のごみ箱に送る(trash_saved_image())。確認は設定画面で済んでいる
  *
- * 1 枚ずつ delete_history_image() を呼ばずに、一覧ごとにまとめて行う(今の画像の確認を、画像の数だけ繰り返さないため)。
+ * 1 を 1 回だけ行い、2 を繰り返す(1 枚ずつ delete_history_image() を呼ぶと、今の画像の確認を何度も行うことになるため)。
  * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
  *
  * @note 呼び出し元: settings-dialog.cpp(確認の画面で OK を押したとき)。
@@ -384,33 +384,19 @@ void delete_all_history_images()
 	if (!accept_user_action("delete all"))
 		return;
 
-	/*
-	 * 一覧が空になるまで繰り返す。上限枚数を下げた直後は、まだ掃除されていない古い画像がフォルダに残っていて、
-	 * 一覧(上限の枚数まで)を消すと、次の一覧に出てくるため。ごみ箱に送れない画像があったら、同じ画像で回り続けないようやめる
-	 */
-	size_t trashed = 0;
-	size_t total = 0;
-	for (;;) {
-		const std::vector<std::string> images = list_saved_images();
-		if (images.empty())
-			break;
-		const std::string current = current_clipboard_image();
-		if (std::any_of(images.cbegin(), images.cend(),
-				[&current](const std::string &path) { return same_file(path, current); })) {
-			clear_clipboard_image();
-			auto_hide_on_image_hidden();
-		}
-		size_t done = 0;
-		for (const std::string &path : images) {
-			if (trash_saved_image(path))
-				done++;
-		}
-		trashed += done;
-		total += images.size();
-		if (done < images.size())
-			break;
+	const std::vector<std::string> images = list_saved_images();
+	const std::string current = current_clipboard_image();
+	if (std::any_of(images.cbegin(), images.cend(),
+			[&current](const std::string &path) { return same_file(path, current); })) {
+		clear_clipboard_image();
+		auto_hide_on_image_hidden();
 	}
-	obs_log(LOG_INFO, "delete all: moved %zu of %zu image(s) to trash", trashed, total);
+	size_t trashed = 0;
+	for (const std::string &path : images) {
+		if (trash_saved_image(path))
+			trashed++;
+	}
+	obs_log(LOG_INFO, "delete all: moved %zu of %zu image(s) to trash", trashed, images.size());
 }
 
 /**

@@ -522,13 +522,12 @@ std::vector<std::string> list_saved_images()
 	if (folder.isEmpty() || !dir.exists())
 		return paths;
 
-	const int limit = settings_get().max_saved_images;
-	for (const QString &name : saved_names_newest_first(dir)) {
+	/*
+	 * 上限枚数では打ち切らない。打ち切ると、掃除で残した画像(今の画像・上限を下げた直後の古い画像)が一覧から外れ、
+	 * 保存フォルダと表示履歴の中身が食い違うため。枚数を上限に合わせるのは、掃除(cleanup_saved_images())の役目
+	 */
+	for (const QString &name : saved_names_newest_first(dir))
 		paths.push_back(QDir::toNativeSeparators(dir.filePath(name)).toUtf8().toStdString());
-		/* 掃除が終わる前に呼ばれても、上限より多くは返さない */
-		if (static_cast<int>(paths.size()) >= limit)
-			break;
-	}
 	return paths;
 }
 
