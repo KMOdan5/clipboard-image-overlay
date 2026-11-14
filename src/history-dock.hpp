@@ -44,7 +44,7 @@ struct HistoryDockCallbacks {
 	std::function<void()> open_settings;
 
 	/**
-	 * @brief ドラッグ&ドロップした画像ファイルを保存する(設定によってはすぐに表示する)。
+	 * @brief ドラッグ&ドロップした画像ファイルを保存し、表示履歴に足す(表示はしない)。
 	 * @details 引数はファイルのパス(UTF-8)。ドロップした順。画像の拡張子のファイルだけを渡す。
 	 */
 	std::function<void(const std::vector<std::string> &paths)> drop;

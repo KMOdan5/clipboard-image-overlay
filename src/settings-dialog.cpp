@@ -82,7 +82,7 @@ constexpr int SECTION_SPACING = 8;
  */
 constexpr int TAB_MARGIN = 8;
 
-/// @brief 「一般」のタブの番号。既定値のボタンで、どのタブの値を戻すかを決めるため。
+/// @brief 「一般」のタブの番号。既定値のボタンを押せるのは、このタブを開いているときだけ。
 constexpr int GENERAL_TAB_INDEX = 0;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
@@ -388,38 +388,17 @@ struct SettingsWidgets {
 	QCheckBox *always_on_top = nullptr;
 	/// @brief スタジオモードでもすぐに配信画面に表示する。
 	QCheckBox *studio_mode_show_on_program = nullptr;
-	/// @brief ドラッグ&ドロップした画像をすぐに表示する(「表示履歴」のタブ)。
-	QCheckBox *show_dropped_immediately = nullptr;
 
 	/**
-	 * @brief 設定値を「一般」のタブの各項目に表示する。
+	 * @brief 設定値を各項目に表示する。
 	 * @param settings 表示する設定値。
 	 */
-	void show_general_values(const PluginSettings &settings) const
+	void show_values(const PluginSettings &settings) const
 	{
 		display_seconds->setValue(settings.display_seconds);
 		max_size_percent->setValue(settings.max_size_percent);
 		always_on_top->setChecked(settings.always_on_top);
 		studio_mode_show_on_program->setChecked(settings.studio_mode_show_on_program);
-	}
-
-	/**
-	 * @brief 設定値を「表示履歴」のタブの各項目に表示する。
-	 * @param settings 表示する設定値。
-	 */
-	void show_history_values(const PluginSettings &settings) const
-	{
-		show_dropped_immediately->setChecked(settings.show_dropped_immediately);
-	}
-
-	/**
-	 * @brief 設定値を、すべてのタブの各項目に表示する。
-	 * @param settings 表示する設定値。
-	 */
-	void show_values(const PluginSettings &settings) const
-	{
-		show_general_values(settings);
-		show_history_values(settings);
 	}
 
 	/**
@@ -433,7 +412,6 @@ struct SettingsWidgets {
 		settings.max_size_percent = max_size_percent->value();
 		settings.always_on_top = always_on_top->isChecked();
 		settings.studio_mode_show_on_program = studio_mode_show_on_program->isChecked();
-		settings.show_dropped_immediately = show_dropped_immediately->isChecked();
 		return settings;
 	}
 };
@@ -544,16 +522,6 @@ void open_settings_dialog()
 	tabs->addTab(make_tab_page(history), text("Settings.Tab.History"));
 	QGroupBox *saved_group = make_group("Settings.Group.SavedImages", form);
 
-	/*
-	 * ドラッグ&ドロップした画像をすぐに表示する(チェックボックスなので項目名の列は空ける)。
-	 * 説明文には、管理者として起動した OBS ではドラッグ&ドロップが使えないことを書く(Windows の仕組みによる制限)。
-	 * 文言の「&」は、Qt ではキーボードの近道の印として扱われ、画面から消える。「&&」にして、そのまま表示する
-	 */
-	widgets.show_dropped_immediately =
-		new QCheckBox(text("Settings.ShowDroppedImmediately").replace(QLatin1Char('&'), QStringLiteral("&&")));
-	form->addRow(QString(), make_field(widgets.show_dropped_immediately, "Settings.ShowDroppedImmediately.Note",
-					   checkbox_note_spacing(widgets.show_dropped_immediately)));
-
 	/* 保存フォルダを開く(ボタンなので項目名の列は空ける。押すとその場で開く) */
 	auto *open_folder = new QPushButton(text("Settings.OpenImageFolder"));
 	QObject::connect(open_folder, &QPushButton::clicked, dialog, []() { open_image_folder(); });
@@ -581,7 +549,8 @@ void open_settings_dialog()
 	/*
 	 * OK: 保存して閉じる / キャンセル: 保存せずに閉じる / 適用: 保存して開いたまま /
 	 * 既定値: 画面上の値だけ既定値に戻す(OK か適用を押すまで保存しない)。並びは OBS の設定画面に合わせる。
-	 * 既定値は OBS の設定画面と同じく、開いているタブの値だけを戻す
+	 * 既定値は OBS の設定画面と同じく、開いているタブの値だけを戻す。
+	 * 今は戻す値が「一般」のタブにしかないので、ほかのタブを開いている間は押せないようにする
 	 */
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply |
 					     QDialogButtonBox::RestoreDefaults);
@@ -608,12 +577,10 @@ void open_settings_dialog()
 	QObject::connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, dialog,
 			 [widgets]() { settings_save(widgets.values()); });
 	QObject::connect(buttons->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, dialog,
-			 [widgets, tabs]() {
-				 if (tabs->currentIndex() == GENERAL_TAB_INDEX)
-					 widgets.show_general_values(PluginSettings());
-				 else
-					 widgets.show_history_values(PluginSettings());
-			 });
+			 [widgets]() { widgets.show_values(PluginSettings()); });
+	QObject::connect(tabs, &QTabWidget::currentChanged, dialog, [buttons](int index) {
+		buttons->button(QDialogButtonBox::RestoreDefaults)->setEnabled(index == GENERAL_TAB_INDEX);
+	});
 
 	widgets.show_values(settings_get());
 	update_pixel_label(dialog);

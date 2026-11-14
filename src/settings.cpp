@@ -39,8 +39,6 @@ constexpr const char *KEY_MAX_SIZE_PERCENT = "max_size_percent";
 constexpr const char *KEY_ALWAYS_ON_TOP = "always_on_top";
 /// @brief 設定ファイルのキー名(スタジオモードでもすぐに配信画面に表示する)。
 constexpr const char *KEY_STUDIO_MODE_SHOW_ON_PROGRAM = "studio_mode_show_on_program";
-/// @brief 設定ファイルのキー名(ドラッグ&ドロップした画像をすぐに表示する)。
-constexpr const char *KEY_SHOW_DROPPED_IMMEDIATELY = "show_dropped_immediately";
 
 /// @brief 今の設定値。settings_load() で読み込み、settings_save() で変更する。
 PluginSettings current;
@@ -109,22 +107,18 @@ void settings_load()
 	obs_data_set_default_int(data, KEY_MAX_SIZE_PERCENT, defaults.max_size_percent);
 	obs_data_set_default_bool(data, KEY_ALWAYS_ON_TOP, defaults.always_on_top);
 	obs_data_set_default_bool(data, KEY_STUDIO_MODE_SHOW_ON_PROGRAM, defaults.studio_mode_show_on_program);
-	obs_data_set_default_bool(data, KEY_SHOW_DROPPED_IMMEDIATELY, defaults.show_dropped_immediately);
 
 	PluginSettings loaded;
 	loaded.display_seconds = static_cast<int>(obs_data_get_int(data, KEY_DISPLAY_SECONDS));
 	loaded.max_size_percent = static_cast<int>(obs_data_get_int(data, KEY_MAX_SIZE_PERCENT));
 	loaded.always_on_top = obs_data_get_bool(data, KEY_ALWAYS_ON_TOP);
 	loaded.studio_mode_show_on_program = obs_data_get_bool(data, KEY_STUDIO_MODE_SHOW_ON_PROGRAM);
-	loaded.show_dropped_immediately = obs_data_get_bool(data, KEY_SHOW_DROPPED_IMMEDIATELY);
 	obs_data_release(data);
 
 	current = clamp_settings(loaded);
-	obs_log(LOG_INFO,
-		"settings: loaded (display %d s, max size %d%%, always on top %s, studio mode on program %s,"
-		" show dropped immediately %s)",
+	obs_log(LOG_INFO, "settings: loaded (display %d s, max size %d%%, always on top %s, studio mode on program %s)",
 		current.display_seconds, current.max_size_percent, current.always_on_top ? "on" : "off",
-		current.studio_mode_show_on_program ? "on" : "off", current.show_dropped_immediately ? "on" : "off");
+		current.studio_mode_show_on_program ? "on" : "off");
 }
 
 /**
@@ -146,17 +140,14 @@ bool settings_save(const PluginSettings &settings)
 	obs_data_set_int(data, KEY_MAX_SIZE_PERCENT, current.max_size_percent);
 	obs_data_set_bool(data, KEY_ALWAYS_ON_TOP, current.always_on_top);
 	obs_data_set_bool(data, KEY_STUDIO_MODE_SHOW_ON_PROGRAM, current.studio_mode_show_on_program);
-	obs_data_set_bool(data, KEY_SHOW_DROPPED_IMMEDIATELY, current.show_dropped_immediately);
 	const bool saved = obs_data_save_json_safe(data, path.c_str(), "tmp", "bak");
 	obs_data_release(data);
 
 	if (saved) {
 		obs_log(LOG_INFO,
-			"settings: saved (display %d s, max size %d%%, always on top %s, studio mode on program %s,"
-			" show dropped immediately %s)",
+			"settings: saved (display %d s, max size %d%%, always on top %s, studio mode on program %s)",
 			current.display_seconds, current.max_size_percent, current.always_on_top ? "on" : "off",
-			current.studio_mode_show_on_program ? "on" : "off",
-			current.show_dropped_immediately ? "on" : "off");
+			current.studio_mode_show_on_program ? "on" : "off");
 	} else {
 		obs_log(LOG_WARNING, "settings: failed to save %s", path.c_str());
 	}
