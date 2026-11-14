@@ -182,6 +182,12 @@ constexpr const char *EMPTY_ICON_FILE = "images/empty-history.png";
 constexpr int EMPTY_ICON_WIDTH = THUMB_MIN_WIDTH;
 
 /**
+ * @brief 画像がないときの案内の文とアイコンの間に足す余白(ピクセル)。
+ * @details レイアウトの標準のすき間だけだと、文とアイコンが近すぎて 1 つの塊に見えるため。
+ */
+constexpr int EMPTY_ICON_SPACING = 16;
+
+/**
  * @brief ドラッグしてきたデータから、受け付ける画像ファイルのパスを取り出す。
  *
  * @details
@@ -409,6 +415,7 @@ public:
 				: QStringLiteral("font-size: %1px;").arg(qRound(base.pixelSize() * EMPTY_TITLE_SCALE)));
 		empty_layout->addStretch();
 		empty_layout->addWidget(empty_title);
+		empty_layout->addSpacing(EMPTY_ICON_SPACING);
 		/*
 		 * 案内の下のアイコン。画像が並ぶ場所であることを絵でも示す(押せるボタンには見えない絵にしている)。
 		 * 画像のファイルが読めなければ、アイコンは出さずに案内の文だけにする
