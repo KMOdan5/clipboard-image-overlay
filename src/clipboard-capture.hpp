@@ -117,7 +117,7 @@ std::string saved_images_folder();
  *
  * @return 画像ファイルのパス(UTF-8、OS 標準の区切り文字)。先頭が一番新しい。フォルダがなければ空。
  *
- * @note 呼び出し元: history-dock.cpp(一覧)、plugin-main.cpp(「前の画像を表示」ホットキー)。
+ * @note 呼び出し元: history-dock.cpp(一覧)、plugin-main.cpp(「前の画像を表示」ホットキー・「表示履歴を全て削除」)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 std::vector<std::string> list_saved_images();
@@ -137,11 +137,11 @@ std::vector<std::string> list_saved_images();
 std::optional<SavedImage> read_saved_image(const std::string &path);
 
 /**
- * @brief 保存した画像を、OS のごみ箱に送る。表示履歴のドックで配信者が「削除」を選んだときに使う。
+ * @brief 保存した画像を、OS のごみ箱に送る。配信者が表示履歴から削除したとき(1 枚ずつ・全て)に使う。
  *
  * @details
  * - 対象は保存フォルダの直下にある、このプラグインが付けた名前のファイルだけ。それ以外は削除せずに false を返す
- * - 完全には削除せず、ごみ箱に送る(確認の画面を出さないので、元に戻せるように)。
+ * - 完全には削除せず、ごみ箱に送る(元に戻せるように。1 枚ずつの削除は確認の画面を出さないため)。
  *   ごみ箱に送れないとき(ごみ箱がない場所など)は、削除せずに false を返す
  * - 既にファイルがなければ、何もせずに true を返す
  * - 'Clipboard Image' の参照はここでは外さない。今の画像を削除するときは、先に呼び出し元で外す(clear_clipboard_image())
@@ -152,7 +152,7 @@ std::optional<SavedImage> read_saved_image(const std::string &path);
  * @return ごみ箱に送れた(または既になかった)ら true。
  * @retval false 対象外のファイル、またはごみ箱に送れなかった。理由は OBS のログに出る。
  *
- * @note 呼び出し元: plugin-main.cpp の delete_history_image()。
+ * @note 呼び出し元: plugin-main.cpp の delete_history_image()・delete_all_history_images()。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 bool trash_saved_image(const std::string &path);
