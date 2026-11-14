@@ -188,29 +188,25 @@ constexpr int EMPTY_ICON_WIDTH = THUMB_MIN_WIDTH;
 constexpr int EMPTY_ICON_SPACING = 16;
 
 /**
- * @brief ドラッグしてきたデータから、受け付ける画像ファイルのパスを取り出す。
+ * @brief ドロップされたデータから、手元のファイルのパスを取り出す。
  *
  * @details
- * 手元のファイル(エクスプローラーなどからのドラッグ)で、拡張子が Qt で読める画像の形式のものだけを、ドラッグした順に返す。
- * 中身はここでは読まない(ドラッグ中に何度も呼ばれるので、ファイルを開かずに素早く判断するため)。
- * 拡張子が画像でも中身が読めないファイルは、保存するときに分かる(plugin-main.cpp がお知らせを出す)。
- * ブラウザからのドラッグは画像の URL だけが渡されることが多く、プラグインはインターネットに接続しないため受け付けない。
+ * エクスプローラーなどからドラッグしたファイルを、ドラッグした順に返す。拡張子では選ばない。
+ * 画像かどうかは、コピーしたファイルを表示するときと同じく、保存の処理がファイルの中身で判断する(plugin-main.cpp)。
+ * ブラウザからのドラッグは画像の URL だけが渡されることが多く、手元のファイルではないので含めない
+ * (プラグインはインターネットに接続しない)。
  *
- * @param mime ドラッグしてきたデータ。
- * @return 画像ファイルのパス。なければ空。
+ * @param mime ドロップされたデータ。
+ * @return 手元のファイルのパス。なければ空。
  */
-QStringList dropped_image_files(const QMimeData *mime)
+QStringList dropped_local_files(const QMimeData *mime)
 {
 	QStringList paths;
 	if (!mime || !mime->hasUrls())
 		return paths;
-	const QList<QByteArray> formats = QImageReader::supportedImageFormats();
 	for (const QUrl &url : mime->urls()) {
-		if (!url.isLocalFile())
-			continue;
-		const QString path = url.toLocalFile();
-		if (formats.contains(QFileInfo(path).suffix().toLower().toUtf8()))
-			paths.append(path);
+		if (url.isLocalFile())
+			paths.append(url.toLocalFile());
 	}
 	return paths;
 }
@@ -595,17 +591,16 @@ protected:
 	}
 
 	/**
-	 * @brief ドラッグがドックに入ってきたら、ドックで受け取る。画像ファイルがあれば、ドックの縁を枠で囲む。
+	 * @brief ドラッグがドックに入ってきたら、中身に関係なく受け取り、ドックの縁を枠で囲む。
 	 *
 	 * @details
-	 * 画像ファイルがないドラッグも、ここではいったん受け取る(受け取らないと、Qt が親の部品に順に渡し、
-	 * OBS の画面がファイルをソースとして追加してしまうため)。受け付けない印のカーソルにするのは dragMoveEvent() で行う。
+	 * 画像ではないものも受け取る。受け取らないと、Qt が親の部品に順に渡し、OBS の画面がファイルをソースとして追加してしまうため。
+	 * 画像として使えないものは、ドロップしたときにお知らせで伝える(受け付けない印のカーソルだけでは、理由が分からないため)。
 	 */
 	void dragEnterEvent(QDragEnterEvent *event) override
 	{
-		drag_has_images_ = !stopped_ && !dropped_image_files(event->mimeData()).isEmpty();
 		event->acceptProposedAction();
-		if (!drag_has_images_)
+		if (stopped_)
 			return;
 		drop_frame_->setStyleSheet(QStringLiteral("QFrame { border: %1px solid %2; border-radius: 4px; }")
 						   .arg(DROP_BORDER_WIDTH)
@@ -616,17 +611,9 @@ protected:
 	}
 
 	/**
-	 * @brief ドラッグ中、画像ファイルがあれば受け付け、なければ受け付けない印のカーソルにする。
-	 * @details 受け付けないと答えても、このドラッグは親(OBS の画面)には渡らない(dragEnterEvent() で受け取っているため)。
-	 *          ドロップしても何も起きない。
+	 * @brief ドラッグ中、受け付け続ける(ドックの中を動かしても、受け付けない印に変わらないように)。
 	 */
-	void dragMoveEvent(QDragMoveEvent *event) override
-	{
-		if (drag_has_images_)
-			event->acceptProposedAction();
-		else
-			event->ignore();
-	}
+	void dragMoveEvent(QDragMoveEvent *event) override { event->acceptProposedAction(); }
 
 	/**
 	 * @brief ドックの外にドラッグが出たら、縁の枠を消す。
@@ -638,18 +625,17 @@ protected:
 	}
 
 	/**
-	 * @brief ドロップされた画像ファイルを、保存(と表示)のために呼び出し元に渡す。
+	 * @brief ドロップされた手元のファイルを、保存のために呼び出し元に渡す。
+	 * @details 手元のファイルがない(ブラウザからの URL や文字など)ときも、空のまま渡す。呼び出し元がお知らせを出すため。
 	 */
 	void dropEvent(QDropEvent *event) override
 	{
 		drop_frame_->hide();
-		const QStringList paths = dropped_image_files(event->mimeData());
-		if (stopped_ || paths.isEmpty() || !callbacks_.drop) {
-			event->ignore();
-			return;
-		}
 		event->acceptProposedAction();
-		obs_log(LOG_INFO, "history: dropped %lld image file(s)", static_cast<long long>(paths.size()));
+		if (stopped_ || !callbacks_.drop)
+			return;
+		const QStringList paths = dropped_local_files(event->mimeData());
+		obs_log(LOG_INFO, "history: dropped %lld local file(s)", static_cast<long long>(paths.size()));
 		std::vector<std::string> files;
 		for (const QString &path : paths)
 			files.push_back(path.toUtf8().toStdString());
@@ -1023,8 +1009,6 @@ private:
 	QString current_raw_;
 	/// @brief true なら、ドックが見えていない間に保存フォルダが変わった(または、まだ一度も読んでいない)。見えたときに読み直す。
 	bool needs_refresh_ = false;
-	/// @brief true なら、今のドラッグに画像ファイルがある。ドラッグがドックに入ったときに決める(dragEnterEvent())。
-	bool drag_has_images_ = false;
 	/// @brief true なら止めた後。届いた通知やサムネイルを処理しない。
 	bool stopped_ = false;
 

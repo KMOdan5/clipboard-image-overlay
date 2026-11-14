@@ -220,7 +220,7 @@ void show_history_image(const std::string &path, const char *trigger)
 }
 
 /**
- * @brief 表示履歴のドックにドラッグ&ドロップした画像ファイルを保存し、表示履歴に足す。
+ * @brief 表示履歴のドックにドラッグ&ドロップしたファイルを保存し、表示履歴に足す。
  *
  * @details
  * ドラッグ&ドロップは、利用者ができると思った操作を受け止める保険の機能なので、表示はせずに表示履歴に足すだけにする
@@ -230,9 +230,11 @@ void show_history_image(const std::string &path, const char *trigger)
  * - 表示しないので、表示のときの掃除が走らない。保存フォルダが 50 枚を超えないよう、ここで掃除する。
  *   ただしシーンの読み込み中は掃除しない(使用中の画像を調べるときに 'Clipboard Image' を触るため。次に表示したときに掃除される)
  *
- * 画像として読めないファイルがあれば、お知らせ(ImageNotRecognized)を出す。1 回の操作で最初の 1 つだけ出る(notice.hpp)。
+ * 画像かどうかは、コピーしたファイルを表示するときと同じ保存の処理(save_image_file())が、ファイルの中身で判断する。
+ * 画像として読めないファイルがあるとき、または手元のファイルが 1 つもない(ブラウザからの URL など)ときは、
+ * お知らせ(ImageNotRecognized)を出す。1 回の操作で最初の 1 つだけ出る(notice.hpp)。
  *
- * @param paths ドロップした画像ファイルのパス(UTF-8)。ドックが画像の拡張子で選んだもの。
+ * @param paths ドロップした手元のファイルのパス(UTF-8)。画像ではないファイルも含む。空のこともある。
  *
  * @note 呼び出し元: history-dock.cpp(ドロップしたとき)。
  * @note スレッド: UI スレッドで呼ぶこと。
@@ -241,6 +243,11 @@ void on_images_dropped(const std::vector<std::string> &paths)
 {
 	obs_log(LOG_INFO, "images dropped: %zu file(s)", paths.size());
 	notice_begin_operation();
+	if (paths.empty()) {
+		obs_log(LOG_INFO, "drop: no local file");
+		notice_report(Notice::ImageNotRecognized);
+		return;
+	}
 
 	bool saved_any = false;
 	for (const std::string &path : paths) {
