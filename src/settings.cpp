@@ -39,6 +39,8 @@ constexpr const char *KEY_MAX_SIZE_PERCENT = "max_size_percent";
 constexpr const char *KEY_ALWAYS_ON_TOP = "always_on_top";
 /// @brief 設定ファイルのキー名(スタジオモードでもすぐに配信画面に表示する)。
 constexpr const char *KEY_STUDIO_MODE_SHOW_ON_PROGRAM = "studio_mode_show_on_program";
+/// @brief 設定ファイルのキー名(保存する枚数)。
+constexpr const char *KEY_MAX_SAVED_IMAGES = "max_saved_images";
 
 /// @brief 今の設定値。settings_load() で読み込み、settings_save() で変更する。
 PluginSettings current;
@@ -52,6 +54,7 @@ PluginSettings clamp_settings(PluginSettings settings)
 {
 	settings.display_seconds = std::clamp(settings.display_seconds, DISPLAY_SECONDS_MIN, DISPLAY_SECONDS_MAX);
 	settings.max_size_percent = std::clamp(settings.max_size_percent, MAX_SIZE_PERCENT_MIN, MAX_SIZE_PERCENT_MAX);
+	settings.max_saved_images = std::clamp(settings.max_saved_images, MAX_SAVED_IMAGES_MIN, MAX_SAVED_IMAGES_MAX);
 	return settings;
 }
 
@@ -107,18 +110,22 @@ void settings_load()
 	obs_data_set_default_int(data, KEY_MAX_SIZE_PERCENT, defaults.max_size_percent);
 	obs_data_set_default_bool(data, KEY_ALWAYS_ON_TOP, defaults.always_on_top);
 	obs_data_set_default_bool(data, KEY_STUDIO_MODE_SHOW_ON_PROGRAM, defaults.studio_mode_show_on_program);
+	obs_data_set_default_int(data, KEY_MAX_SAVED_IMAGES, defaults.max_saved_images);
 
 	PluginSettings loaded;
 	loaded.display_seconds = static_cast<int>(obs_data_get_int(data, KEY_DISPLAY_SECONDS));
 	loaded.max_size_percent = static_cast<int>(obs_data_get_int(data, KEY_MAX_SIZE_PERCENT));
 	loaded.always_on_top = obs_data_get_bool(data, KEY_ALWAYS_ON_TOP);
 	loaded.studio_mode_show_on_program = obs_data_get_bool(data, KEY_STUDIO_MODE_SHOW_ON_PROGRAM);
+	loaded.max_saved_images = static_cast<int>(obs_data_get_int(data, KEY_MAX_SAVED_IMAGES));
 	obs_data_release(data);
 
 	current = clamp_settings(loaded);
-	obs_log(LOG_INFO, "settings: loaded (display %d s, max size %d%%, always on top %s, studio mode on program %s)",
+	obs_log(LOG_INFO,
+		"settings: loaded (display %d s, max size %d%%, always on top %s, studio mode on program %s,"
+		" keep %d images)",
 		current.display_seconds, current.max_size_percent, current.always_on_top ? "on" : "off",
-		current.studio_mode_show_on_program ? "on" : "off");
+		current.studio_mode_show_on_program ? "on" : "off", current.max_saved_images);
 }
 
 /**
@@ -140,14 +147,16 @@ bool settings_save(const PluginSettings &settings)
 	obs_data_set_int(data, KEY_MAX_SIZE_PERCENT, current.max_size_percent);
 	obs_data_set_bool(data, KEY_ALWAYS_ON_TOP, current.always_on_top);
 	obs_data_set_bool(data, KEY_STUDIO_MODE_SHOW_ON_PROGRAM, current.studio_mode_show_on_program);
+	obs_data_set_int(data, KEY_MAX_SAVED_IMAGES, current.max_saved_images);
 	const bool saved = obs_data_save_json_safe(data, path.c_str(), "tmp", "bak");
 	obs_data_release(data);
 
 	if (saved) {
 		obs_log(LOG_INFO,
-			"settings: saved (display %d s, max size %d%%, always on top %s, studio mode on program %s)",
+			"settings: saved (display %d s, max size %d%%, always on top %s, studio mode on program %s,"
+			" keep %d images)",
 			current.display_seconds, current.max_size_percent, current.always_on_top ? "on" : "off",
-			current.studio_mode_show_on_program ? "on" : "off");
+			current.studio_mode_show_on_program ? "on" : "off", current.max_saved_images);
 	} else {
 		obs_log(LOG_WARNING, "settings: failed to save %s", path.c_str());
 	}
