@@ -233,8 +233,15 @@ QString image_folder()
 /**
  * @brief 新しく保存するファイルのパスを決める。保存先フォルダがなければここで作る。
  *
+ * @details
+ * 名前は今の日時(ミリ秒まで)。続けて保存すると同じミリ秒になることがあるので(複数のファイルをドラッグ&ドロップしたときなど)、
+ * 前に決めた名前の日時以前なら、その 1 ミリ秒後にする。名前が重なると、コピーは失敗し、PNG への変換は前の画像を上書きしてしまうため。
+ * 保存した順と名前の順(表示履歴の並び)も、同じに保てる。
+ *
  * @param extension 拡張子(ドットなし。例: "png")。
  * @return 保存先フォルダ + 日時のファイル名。フォルダが作れなければ空文字。
+ *
+ * @note スレッド: UI スレッドから呼ぶこと(前に決めた名前の日時を、UI スレッドだけで読み書きするため)。
  */
 QString new_image_path(const QString &extension)
 {
@@ -245,9 +252,14 @@ QString new_image_path(const QString &extension)
 		return QString();
 	}
 
-	/* ミリ秒まで入れて、連続で保存してもファイル名が重ならないようにする */
-	const QString name = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz")) +
-			     QStringLiteral(".") + extension;
+	/* 前に決めた名前の日時。OBS を起動している間だけ覚えておく */
+	static QDateTime last_time;
+	QDateTime time = QDateTime::currentDateTime();
+	if (last_time.isValid() && time <= last_time)
+		time = last_time.addMSecs(1);
+	last_time = time;
+
+	const QString name = time.toString(QStringLiteral("yyyyMMdd-HHmmss-zzz")) + QStringLiteral(".") + extension;
 	return QDir(folder).filePath(name);
 }
 
