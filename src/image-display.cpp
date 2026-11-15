@@ -80,12 +80,13 @@
  *   ファイルを先に消しても、OBS は読み込んだ画像を持っているので画面に残ってしまうため
  *
  * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
- * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、
+ * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、is_clipboard_image_swap_pending()、
  * current_clipboard_image()、clear_clipboard_image()、image_display_shutdown()(image-display.hpp)。
  */
 
 #include "image-display.hpp"
 #include "auto-hide.hpp"
+#include "clipboard-capture.hpp"
 #include "notice.hpp"
 #include "settings.hpp"
 
@@ -962,7 +963,13 @@ bool is_pending_swap_alive()
 /**
  * @brief フェードアウトが終わったときの処理。新しい画像に差し替えて、フェードインさせる。
  *
- * @details 待っている間にアイテムが削除されていたら、差し替えずに取り消す。
+ * @details
+ * 待っている間にアイテムが削除されていたら、差し替えずに取り消す。
+ *
+ * 差し替えた後に、古い画像の掃除を行う。掃除は、表示の操作が完了した時点で 1 回行う決まりで、
+ * 差し替えがある場合は、ここが完了の時点になる(差し替えがない場合は、plugin-main.cpp の show_saved_image() が行う)。
+ * 差し替えを待っている間は前の画像がまだ使用中なので、待ってから掃除すると、前の画像が上限の外にあれば一緒に削除できる。
+ * 差し替えが取り消されたとき(アイテムが削除されたなど)は掃除しない。次に画像を表示したときに掃除される。
  *
  * @note 呼び出し元: Qt(swap_timer の timeout)。
  * @note スレッド: UI スレッド。
@@ -990,6 +997,9 @@ void finish_swap()
 	if (show_on_program)
 		show_on_program_copy(item, image);
 	obs_sceneitem_release(item);
+
+	/* 表示の操作がここで完了した。前の画像は使用中ではなくなったので、上限の外にあれば一緒に削除される */
+	cleanup_saved_images(clipboard_images_in_use());
 }
 
 /**
@@ -1470,7 +1480,36 @@ std::vector<std::string> clipboard_images_in_use()
 	if (pending_swap.item && !pending_swap.image.path.empty())
 		paths.push_back(pending_swap.image.path);
 
+	/*
+	 * スタジオモードで「ソースを複製」がオンだと、プログラムのコピーの中の Clipboard Image は別のソースになり、
+	 * 元とは別の画像ファイルを参照していることがある(次のトランジションまで、前の画像を配信に映している)。
+	 * そのファイルを消すと、OBS の画像ソースが読み直して、配信に出ている画像が消える。使用中に含めて残す
+	 */
+	obs_source_t *program_scene = obs_frontend_get_current_scene();
+	obs_source_t *copy = get_program_copy(program_scene);
+	obs_source_release(program_scene);
+	if (copy) {
+		std::vector<obs_sceneitem_t *> items = collect_managed_items(obs_scene_from_source(copy));
+		for (obs_sceneitem_t *item : items) {
+			const std::string file = image_file_of(obs_sceneitem_get_source(item));
+			if (!file.empty() && std::find(paths.cbegin(), paths.cend(), file) == paths.cend())
+				paths.push_back(file);
+		}
+		release_items(items);
+		obs_source_release(copy);
+	}
+
 	return paths;
+}
+
+/**
+ * @brief フェードでの差し替えを待っている途中かどうかを返す。
+ *
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+bool is_clipboard_image_swap_pending()
+{
+	return pending_swap.item != nullptr;
 }
 
 /**

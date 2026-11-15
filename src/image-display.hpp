@@ -117,13 +117,32 @@ bool is_clipboard_image_showing();
  * 古い画像を掃除するときに、消してはいけないファイルを知るために使う。
  * - 'Clipboard Image' に設定されている画像ファイル(表示中、または最後に表示した画像)
  * - 差し替え待ちの画像(フェードアウトが終わったら表示する画像)
+ * - スタジオモードのプログラムのコピーの中の Clipboard Image が参照している画像(「ソースを複製」がオンのとき、
+ *   元とは別のソースになり、次のトランジションまで前の画像を配信に映していることがある)
  *
- * @return 画像ファイルのパス(UTF-8)。'Clipboard Image' がなければ差し替え待ちの分だけ(なければ空)。
+ * どれも、ファイルを消すと OBS の画像ソースが読み直し、表示が消えてしまうもの。
+ *
+ * @return 画像ファイルのパス(UTF-8)。同じパスは 1 つにまとめる。使用中の画像がなければ空。
  *
  * @note 呼び出し元: plugin-main.cpp(cleanup_saved_images() に渡す)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 std::vector<std::string> clipboard_images_in_use();
+
+/**
+ * @brief フェードでの差し替えを待っている途中かどうかを返す。
+ *
+ * @details
+ * 表示中の画像に重ねて別の画像を表示すると、前の画像をフェードアウトさせてから差し替える。
+ * その待ち時間の間は true。差し替えが終わる・取り消されると false。
+ * 古い画像の掃除を、表示の操作が完了した時点で行うために使う(差し替え待ちの間は、前の画像がまだ使用中のため)。
+ *
+ * @return 差し替え待ちなら true。
+ *
+ * @note 呼び出し元: plugin-main.cpp の show_saved_image()。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+bool is_clipboard_image_swap_pending();
 
 /**
  * @brief 今の画像('Clipboard Image' が参照している画像ファイル)のパスを返す。

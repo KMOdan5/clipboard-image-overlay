@@ -26,6 +26,14 @@ constexpr int DISPLAY_SECONDS_MAX = 999;
 constexpr int MAX_SIZE_PERCENT_MIN = 10;
 /// @brief 最大サイズ(画面に対する割合、%)の上限。
 constexpr int MAX_SIZE_PERCENT_MAX = 100;
+/// @brief 上限枚数(保存する画像の枚数)の下限。
+constexpr int MAX_SAVED_IMAGES_MIN = 1;
+/**
+ * @brief 上限枚数(保存する画像の枚数)の上限。表示時間と同じく、入力欄に 3 桁まで入れられる、と直感的に分かる値にする。
+ * @details 表示履歴のドックはサムネイルをメモリに持つ(1 枚あたり最大で約 130KB、拡大率 150% の画面で約 290KB)。
+ *          999 枚たまると約 130〜290MB になる。
+ */
+constexpr int MAX_SAVED_IMAGES_MAX = 999;
 
 /**
  * @brief プラグインの設定値。初期値が既定値。
@@ -62,6 +70,16 @@ struct PluginSettings {
 	 * 非表示はこの設定に関係なく、いつもコピーにも行う(トランジションでプログラムに出た画像が残らないように)。
 	 */
 	bool studio_mode_show_on_program = false;
+
+	/**
+	 * @brief 保存フォルダに残す画像の枚数(= 表示履歴に並ぶ枚数)。これより古い画像は自動で削除する。
+	 * @details
+	 * 上限は枚数で決める。保存期間や容量では決めない(プラグインが動くのは画像を表示したときだけで、
+	 * 表示履歴のドックも枚数に上限がある前提で作っているため)。「削除しない」設定も持たない(画像が際限なく増えるため)。
+	 * 変更は、次に画像を表示したとき(または OBS の起動時)の掃除から反映する。下げても、その場では削除しない。
+	 * 既定は 50 枚。
+	 */
+	int max_saved_images = 50;
 };
 
 /**

@@ -83,7 +83,7 @@ constexpr int SECTION_SPACING = 8;
  */
 constexpr int TAB_MARGIN = 8;
 
-/// @brief 「一般」のタブの番号。既定値のボタンを押せるのは、このタブを開いているときだけ。
+/// @brief 「一般」のタブの番号。既定値のボタンで、どのタブの値を戻すかを決めるため。
 constexpr int GENERAL_TAB_INDEX = 0;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
@@ -389,17 +389,38 @@ struct SettingsWidgets {
 	QCheckBox *always_on_top = nullptr;
 	/// @brief スタジオモードでもすぐに配信画面に表示する。
 	QCheckBox *studio_mode_show_on_program = nullptr;
+	/// @brief 上限枚数(「表示履歴」のタブ)。
+	QSpinBox *max_saved_images = nullptr;
 
 	/**
-	 * @brief 設定値を各項目に表示する。
+	 * @brief 設定値を「一般」のタブの各項目に表示する。
 	 * @param settings 表示する設定値。
 	 */
-	void show_values(const PluginSettings &settings) const
+	void show_general_values(const PluginSettings &settings) const
 	{
 		display_seconds->setValue(settings.display_seconds);
 		max_size_percent->setValue(settings.max_size_percent);
 		always_on_top->setChecked(settings.always_on_top);
 		studio_mode_show_on_program->setChecked(settings.studio_mode_show_on_program);
+	}
+
+	/**
+	 * @brief 設定値を「表示履歴」のタブの各項目に表示する。
+	 * @param settings 表示する設定値。
+	 */
+	void show_history_values(const PluginSettings &settings) const
+	{
+		max_saved_images->setValue(settings.max_saved_images);
+	}
+
+	/**
+	 * @brief 設定値を、すべてのタブの各項目に表示する。
+	 * @param settings 表示する設定値。
+	 */
+	void show_values(const PluginSettings &settings) const
+	{
+		show_general_values(settings);
+		show_history_values(settings);
 	}
 
 	/**
@@ -413,6 +434,7 @@ struct SettingsWidgets {
 		settings.max_size_percent = max_size_percent->value();
 		settings.always_on_top = always_on_top->isChecked();
 		settings.studio_mode_show_on_program = studio_mode_show_on_program->isChecked();
+		settings.max_saved_images = max_saved_images->value();
 		return settings;
 	}
 };
@@ -526,6 +548,16 @@ void open_settings_dialog()
 	tabs->addTab(make_tab_page(history), text("Settings.Tab.History"));
 	QGroupBox *saved_group = make_group("Settings.Group.SavedImages", form);
 
+	/*
+	 * 上限枚数: [50 枚]。上限を超えた古い画像は、次に画像を表示したときに自動で削除される。
+	 * 下げても、その場では削除しない(設定の変更は、次に画像を表示したときから反映する)
+	 */
+	widgets.max_saved_images = new QSpinBox();
+	widgets.max_saved_images->setRange(MAX_SAVED_IMAGES_MIN, MAX_SAVED_IMAGES_MAX);
+	widgets.max_saved_images->setSuffix(text("Settings.MaxSavedImages.Suffix"));
+	auto *saved_label = new QLabel(text("Settings.MaxSavedImages"));
+	form->addRow(saved_label, make_field(make_row({widgets.max_saved_images}), "Settings.MaxSavedImages.Note"));
+
 	/* 保存フォルダを開く(ボタンなので項目名の列は空ける。押すとその場で開く) */
 	auto *open_folder = new QPushButton(text("Settings.OpenImageFolder"));
 	QObject::connect(open_folder, &QPushButton::clicked, dialog, []() { open_image_folder(); });
@@ -545,8 +577,7 @@ void open_settings_dialog()
 		if (dialog_callbacks.delete_all_history)
 			dialog_callbacks.delete_all_history();
 	});
-	auto *saved_label = new QLabel();
-	form->addRow(saved_label, make_row({open_folder, delete_all}));
+	form->addRow(QString(), make_row({open_folder, delete_all}));
 
 	history->addWidget(saved_group);
 	history->addStretch();
@@ -569,8 +600,7 @@ void open_settings_dialog()
 	/*
 	 * OK: 保存して閉じる / キャンセル: 保存せずに閉じる / 適用: 保存して開いたまま /
 	 * 既定値: 画面上の値だけ既定値に戻す(OK か適用を押すまで保存しない)。並びは OBS の設定画面に合わせる。
-	 * 既定値は OBS の設定画面と同じく、開いているタブの値だけを戻す。
-	 * 今は戻す値が「一般」のタブにしかないので、ほかのタブを開いている間は押せないようにする
+	 * 既定値は OBS の設定画面と同じく、開いているタブの値だけを戻す
 	 */
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply |
 					     QDialogButtonBox::RestoreDefaults);
@@ -597,10 +627,12 @@ void open_settings_dialog()
 	QObject::connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, dialog,
 			 [widgets]() { settings_save(widgets.values()); });
 	QObject::connect(buttons->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, dialog,
-			 [widgets]() { widgets.show_values(PluginSettings()); });
-	QObject::connect(tabs, &QTabWidget::currentChanged, dialog, [buttons](int index) {
-		buttons->button(QDialogButtonBox::RestoreDefaults)->setEnabled(index == GENERAL_TAB_INDEX);
-	});
+			 [widgets, tabs]() {
+				 if (tabs->currentIndex() == GENERAL_TAB_INDEX)
+					 widgets.show_general_values(PluginSettings());
+				 else
+					 widgets.show_history_values(PluginSettings());
+			 });
 
 	widgets.show_values(settings_get());
 	update_pixel_label(dialog);
