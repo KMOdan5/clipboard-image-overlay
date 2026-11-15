@@ -79,9 +79,7 @@
  * - clear_clipboard_image() で、全シーンの Clipboard Image を即座に非表示にしてから、画像ファイルの参照を外す。
  *   ファイルを先に消しても、OBS は読み込んだ画像を持っているので画面に残ってしまうため
  *
- * 公開している関数は show_image_on_current_scene()、hide_clipboard_image()、
- * image_display_watch_scenes()、is_clipboard_image_showing()、clipboard_images_in_use()、is_clipboard_image_swap_pending()、
- * current_clipboard_image()、clear_clipboard_image()、image_display_shutdown()(image-display.hpp)。
+ * 公開している関数の説明は image-display.hpp を参照。
  */
 
 #include "image-display.hpp"
@@ -377,7 +375,6 @@ void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 void set_initial_fade_transitions(obs_sceneitem_t *item)
 {
 	for (const bool show : {true, false}) {
-
 		obs_source_t *fade = obs_source_create_private(FADE_TRANSITION_ID, nullptr, nullptr);
 		if (!fade) {
 			obs_log(LOG_WARNING, "display: failed to create fade transition (%s)", show ? "show" : "hide");
@@ -410,6 +407,20 @@ bool hide_item_instantly(obs_sceneitem_t *item)
 	obs_sceneitem_set_transition(item, false, transition);
 	obs_source_release(transition);
 	return changed;
+}
+
+/**
+ * @brief 表示中のシーンアイテムを非表示にする。非表示のものには何もしない。
+ *
+ * @param item 対象のシーンアイテム。
+ * @param fade true なら非表示トランジションでフェードアウトする。false なら即座に非表示にする(hide_item_instantly())。
+ * @return 非表示に切り替えたら true(もともと非表示なら false)。
+ */
+bool hide_item(obs_sceneitem_t *item, bool fade)
+{
+	if (!obs_sceneitem_visible(item))
+		return false;
+	return fade ? obs_sceneitem_set_visible(item, false) : hide_item_instantly(item);
 }
 
 /**
@@ -477,7 +488,7 @@ obs_sceneitem_t *add_hidden_scene_item(obs_scene_t *scene, obs_source_t *source)
 }
 
 /**
- * @brief シーンの中から、指定したソースが置かれているシーンアイテムをすべて集める。グループの中も探す。
+ * @brief シーンの中から、条件に合うソースが置かれているシーンアイテムをすべて集める。グループの中も探す。
  *
  * @details
  * 配信者が同じシーンに Clipboard Image を 2 つ以上置いている場合もあるため、
@@ -494,22 +505,24 @@ obs_sceneitem_t *add_hidden_scene_item(obs_scene_t *scene, obs_source_t *source)
  * OBS 31 で obs_scene_sceneitem_from_source() が非推奨になったため、
  * シーンアイテムを順に調べる obs_scene_enum_items() で探す。
  *
- * @param scene  探す対象のシーン。
- * @param source 探すソース。
+ * @param scene   探す対象のシーン。
+ * @param matches ソース(obs_source_t *)を受け取り、集める対象なら true を返す関数。
  * @return 見つかったシーンアイテム(それぞれ参照カウント付き。release_items() で解放する)。
  *         並びは OBS のソース一覧の下から順(グループの中のものは、グループの位置に入る)。
+ *
+ * @see collect_items()(同じソース)、collect_managed_items()(名前と種類が Clipboard Image のソース)
  */
-std::vector<obs_sceneitem_t *> collect_items(obs_scene_t *scene, obs_source_t *source)
+template<typename Pred> std::vector<obs_sceneitem_t *> collect_items_if(obs_scene_t *scene, Pred matches)
 {
 	struct search {
-		obs_source_t *source;
+		Pred *matches;
 		std::vector<obs_sceneitem_t *> found;
 
 		/// @brief 1 つのアイテムを調べる。グループなら中のアイテムも同じ関数で調べる。
 		static bool visit(obs_scene_t *, obs_sceneitem_t *item, void *param)
 		{
 			auto *ctx = static_cast<search *>(param);
-			if (obs_sceneitem_get_source(item) == ctx->source) {
+			if ((*ctx->matches)(obs_sceneitem_get_source(item))) {
 				obs_sceneitem_addref(item);
 				ctx->found.push_back(item);
 			} else if (obs_sceneitem_is_group(item)) {
@@ -517,10 +530,22 @@ std::vector<obs_sceneitem_t *> collect_items(obs_scene_t *scene, obs_source_t *s
 			}
 			return true; /* 全部集めるので最後まで調べる */
 		}
-	} ctx = {source, {}};
+	} ctx = {&matches, {}};
 
 	obs_scene_enum_items(scene, search::visit, &ctx);
 	return ctx.found;
+}
+
+/**
+ * @brief シーンの中から、指定したソースが置かれているシーンアイテムをすべて集める。グループの中も探す。
+ *
+ * @param scene  探す対象のシーン。
+ * @param source 探すソース。
+ * @return 見つかったシーンアイテム(collect_items_if() と同じ)。
+ */
+std::vector<obs_sceneitem_t *> collect_items(obs_scene_t *scene, obs_source_t *source)
+{
+	return collect_items_if(scene, [source](obs_source_t *candidate) { return candidate == source; });
 }
 
 /// @brief collect_items() で集めたシーンアイテムをすべて解放する。
@@ -616,20 +641,20 @@ bool in_studio_mode()
  *
  * 次をすべて満たすものをコピーとして扱う(OBS 本体の TransitionToScene() の作り方に合わせている):
  * - スタジオモード中
- * - 出力のトランジションが今映しているもの(トランジションの途中なら切り替え先)がシーンで、元のシーンとは別物
+ * - 出力のトランジションが今映しているもの(トランジションの途中なら切り替え先)がシーンで、
+ *   元のシーン(obs_frontend_get_current_scene() が返すシーン)とは別物
  * - 非公開のシーンで、名前が元のシーンと同じ
  *
  * 「シーンを複製」がオフなら、プログラムに映っているのは元のシーンそのものなので、nullptr を返す。
  *
- * @param program_scene 元のシーン(obs_frontend_get_current_scene() の戻り値)。
  * @return コピーのシーン(参照カウント付き。使い終わったら obs_source_release() で解放する)。
  * @retval nullptr スタジオモードでない、「シーンを複製」がオフ、または取れなかった。
  *
  * @note スレッド: UI スレッドから呼ぶこと。
  */
-obs_source_t *get_program_copy(obs_source_t *program_scene)
+obs_source_t *get_program_copy()
 {
-	if (!program_scene || !obs_frontend_preview_program_mode_active())
+	if (!in_studio_mode())
 		return nullptr;
 
 	obs_source_t *output = obs_get_output_source(0);
@@ -642,10 +667,13 @@ obs_source_t *get_program_copy(obs_source_t *program_scene)
 	if (!active)
 		return nullptr;
 
+	obs_source_t *program_scene = obs_frontend_get_current_scene();
 	const char *active_name = obs_source_get_name(active);
-	const char *program_name = obs_source_get_name(program_scene);
-	const bool is_copy = active != program_scene && obs_scene_from_source(active) && obs_obj_is_private(active) &&
-			     active_name && program_name && std::strcmp(active_name, program_name) == 0;
+	const char *program_name = program_scene ? obs_source_get_name(program_scene) : nullptr;
+	const bool is_copy = program_scene && active != program_scene && obs_scene_from_source(active) &&
+			     obs_obj_is_private(active) && active_name && program_name &&
+			     std::strcmp(active_name, program_name) == 0;
+	obs_source_release(program_scene);
 	if (!is_copy) {
 		obs_source_release(active);
 		return nullptr;
@@ -666,25 +694,7 @@ obs_source_t *get_program_copy(obs_source_t *program_scene)
  */
 std::vector<obs_sceneitem_t *> collect_managed_items(obs_scene_t *scene)
 {
-	struct search {
-		std::vector<obs_sceneitem_t *> found;
-
-		/// @brief 1 つのアイテムを調べる。グループなら中のアイテムも同じ関数で調べる。
-		static bool visit(obs_scene_t *, obs_sceneitem_t *item, void *param)
-		{
-			auto *ctx = static_cast<search *>(param);
-			if (is_managed_source(obs_sceneitem_get_source(item))) {
-				obs_sceneitem_addref(item);
-				ctx->found.push_back(item);
-			} else if (obs_sceneitem_is_group(item)) {
-				obs_sceneitem_group_enum_items(item, visit, param);
-			}
-			return true;
-		}
-	} ctx;
-
-	obs_scene_enum_items(scene, search::visit, &ctx);
-	return ctx.found;
+	return collect_items_if(scene, [](obs_source_t *candidate) { return is_managed_source(candidate); });
 }
 
 /**
@@ -698,13 +708,11 @@ std::vector<obs_sceneitem_t *> collect_managed_items(obs_scene_t *scene)
 std::vector<obs_sceneitem_t *> collect_program_copy_items()
 {
 	std::vector<obs_sceneitem_t *> items;
-	obs_source_t *program_scene = obs_frontend_get_current_scene();
-	obs_source_t *copy = get_program_copy(program_scene);
+	obs_source_t *copy = get_program_copy();
 	if (copy) {
 		items = collect_managed_items(obs_scene_from_source(copy));
 		obs_source_release(copy);
 	}
-	obs_source_release(program_scene);
 	return items;
 }
 
@@ -764,9 +772,7 @@ void copy_item_layout(obs_sceneitem_t *dst, obs_sceneitem_t *src)
  */
 void show_on_program_copy(obs_sceneitem_t *original, const SavedImage &image)
 {
-	obs_source_t *program_scene = obs_frontend_get_current_scene();
-	obs_source_t *copy = get_program_copy(program_scene);
-	obs_source_release(program_scene);
+	obs_source_t *copy = get_program_copy();
 	if (!copy)
 		return;
 
@@ -820,10 +826,7 @@ int hide_on_program_copy(bool fade)
 	std::vector<obs_sceneitem_t *> items = collect_program_copy_items();
 	int hidden = 0;
 	for (obs_sceneitem_t *item : items) {
-		if (!obs_sceneitem_visible(item))
-			continue;
-		const bool changed = fade ? obs_sceneitem_set_visible(item, false) : hide_item_instantly(item);
-		if (changed)
+		if (hide_item(item, fade))
 			hidden++;
 	}
 	release_items(items);
@@ -1315,8 +1318,10 @@ bool show_image_on_current_scene(const SavedImage &image)
 	/* 現在のシーンに専用ソースが置かれているか探す(グループの中も含む)。なければ追加して画面中央に置く */
 	obs_sceneitem_t *item = find_scene_item(scene, source);
 	if (item) {
-		/* 既にある: 配信者が動かした位置を尊重し、位置は変えない */
-		/* グループの中にあるかをログに残す(不具合調査用)。戻り値は参照カウントを持たないので解放しない */
+		/*
+		 * 既にある: 配信者が動かした位置を尊重し、位置は変えない。
+		 * グループの中にあるかをログに残す(不具合調査用)。戻り値は参照カウントを持たないので解放しない
+		 */
 		obs_sceneitem_t *group = obs_sceneitem_get_group(scene, item);
 		if (group)
 			obs_log(LOG_INFO, "display: reusing item in group \"%s\" of scene \"%s\"",
@@ -1395,11 +1400,8 @@ void hide_clipboard_image(bool fade)
 	/* 全シーンの Clipboard Image のうち、表示中のものだけ非表示にする。fade なら非表示トランジションでフェードアウトする */
 	int hidden = 0;
 	for_each_item_in_all_scenes(source, [fade, &hidden](obs_sceneitem_t *item) {
-		if (obs_sceneitem_visible(item)) {
-			const bool changed = fade ? obs_sceneitem_set_visible(item, false) : hide_item_instantly(item);
-			if (changed)
-				hidden++;
-		}
+		if (hide_item(item, fade))
+			hidden++;
 		return true;
 	});
 	obs_source_release(source);
@@ -1485,19 +1487,13 @@ std::vector<std::string> clipboard_images_in_use()
 	 * 元とは別の画像ファイルを参照していることがある(次のトランジションまで、前の画像を配信に映している)。
 	 * そのファイルを消すと、OBS の画像ソースが読み直して、配信に出ている画像が消える。使用中に含めて残す
 	 */
-	obs_source_t *program_scene = obs_frontend_get_current_scene();
-	obs_source_t *copy = get_program_copy(program_scene);
-	obs_source_release(program_scene);
-	if (copy) {
-		std::vector<obs_sceneitem_t *> items = collect_managed_items(obs_scene_from_source(copy));
-		for (obs_sceneitem_t *item : items) {
-			const std::string file = image_file_of(obs_sceneitem_get_source(item));
-			if (!file.empty() && std::find(paths.cbegin(), paths.cend(), file) == paths.cend())
-				paths.push_back(file);
-		}
-		release_items(items);
-		obs_source_release(copy);
+	std::vector<obs_sceneitem_t *> copy_items = collect_program_copy_items();
+	for (obs_sceneitem_t *item : copy_items) {
+		const std::string file = image_file_of(obs_sceneitem_get_source(item));
+		if (!file.empty() && std::find(paths.cbegin(), paths.cend(), file) == paths.cend())
+			paths.push_back(file);
 	}
+	release_items(copy_items);
 
 	return paths;
 }
