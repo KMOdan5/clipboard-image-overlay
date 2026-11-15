@@ -110,7 +110,7 @@ bool scenes_ready = false;
  * @return 受け付けてよいなら true。
  *
  * @note 呼び出し元: on_show_requested()・show_history_image()・on_show_previous_requested()・delete_history_image()・
- *       on_hide_requested()・on_toggle_pause_requested()。
+ *       delete_all_history_images()・on_hide_requested()・on_toggle_pause_requested()。
  * @note スレッド: UI スレッドで呼ぶこと。
  */
 bool accept_user_action(const char *action, bool shows_image = false)
@@ -279,11 +279,27 @@ bool same_file(const std::string &a, const std::string &b)
 }
 
 /**
+ * @brief 今の画像を外す。配信者が今の画像を削除するとき、ファイルを消す前に呼ぶ。
+ *
+ * @details
+ * - 全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す(clear_clipboard_image())。
+ *   OBS の画像ソースは読み込んだ画像を持っていて、ファイルを先に消しても画面に残ってしまうため
+ * - 自動非表示のタイマーと一時停止も解除する(グループの中に置いた場合は非表示の通知が届かないため、通知を待たずにここで解除する)
+ *
+ * @note 呼び出し元: delete_history_image()・delete_all_history_images()。
+ */
+void release_current_image()
+{
+	clear_clipboard_image();
+	auto_hide_on_image_hidden();
+}
+
+/**
  * @brief 「前の画像を表示」ホットキーの処理。
  *
  * @details
  * 今の画像('Clipboard Image' が参照している画像。最後に表示した画像)より 1 つ古い画像を表示する。押すたびにさかのぼる。
- * - 表示中か非表示かに関係なく、今の画像を基準にする。履歴ドックのハイライトと同じ画像なので、
+ * - 表示中か非表示かに関係なく、今の画像を基準にする。表示履歴のドックのハイライトと同じ画像なので、
  *   押す前にドックを見れば、何が出るかが分かる
  * - 今の画像が一番古い画像なら、それより前はないので、今の画像をもう一度表示する
  *   - 非表示なら、今の画像を表示する
@@ -338,11 +354,9 @@ void on_show_previous_requested()
  *
  * @details
  * 配信者が選んで消す操作なので、今の画像でも削除する(古い画像の自動の掃除とは違い、使用中でも残さない)。
- * 1. 今の画像なら、全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す(clear_clipboard_image())。
- *    自動非表示のタイマーと一時停止も解除する(グループの中に置いた場合は非表示の通知が届かないため、通知を待たずにここで解除する)
+ * 1. 今の画像なら、全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す(release_current_image())
  * 2. ファイルを OS のごみ箱に送る(trash_saved_image())。確認の画面は出さない(ごみ箱から元に戻せるため)
  *
- * 1 を先に行うのは、OBS の画像ソースが読み込んだ画像を持っていて、ファイルを先に消しても画面に残ってしまうため。
  * ごみ箱に送れなかった場合も、1 は済んでいる(見せたくない画像が画面に出たままにならないことを優先する)。
  * 今の画像でなければ、2 だけを行う。差し替え待ちの画像は今の画像として扱うので、1 で差し替えも取り消される。
  * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
@@ -358,10 +372,8 @@ void delete_history_image(const std::string &path)
 	if (!accept_user_action("delete"))
 		return;
 
-	if (same_file(path, current_clipboard_image())) {
-		clear_clipboard_image();
-		auto_hide_on_image_hidden();
-	}
+	if (same_file(path, current_clipboard_image()))
+		release_current_image();
 	trash_saved_image(path);
 }
 
@@ -370,10 +382,8 @@ void delete_history_image(const std::string &path)
  *
  * @details
  * 対象は、表示履歴のドックに並んでいる画像(list_saved_images()。保存フォルダにある、プラグインが付けた名前の画像すべて)。
- * 配信者が選んで消す操作なので、
- * 1 枚ずつの削除(delete_history_image())と同じく、今の画像も削除する。
- * 1. 今の画像が含まれていれば、全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す。
- *    自動非表示のタイマーと一時停止も解除する(1 枚ずつの削除と同じ理由)
+ * 配信者が選んで消す操作なので、1 枚ずつの削除(delete_history_image())と同じく、今の画像も削除する。
+ * 1. 今の画像が含まれていれば、全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を外す(release_current_image())
  * 2. 画像を 1 枚ずつ OS のごみ箱に送る(trash_saved_image())。確認は設定画面で済んでいる
  *
  * 1 を 1 回だけ行い、2 を繰り返す(1 枚ずつ delete_history_image() を呼ぶと、今の画像の確認を何度も行うことになるため)。
@@ -391,10 +401,9 @@ void delete_all_history_images()
 	const std::vector<std::string> images = list_saved_images();
 	const std::string current = current_clipboard_image();
 	if (std::any_of(images.cbegin(), images.cend(),
-			[&current](const std::string &path) { return same_file(path, current); })) {
-		clear_clipboard_image();
-		auto_hide_on_image_hidden();
-	}
+			[&current](const std::string &path) { return same_file(path, current); }))
+		release_current_image();
+
 	size_t trashed = 0;
 	for (const std::string &path : images) {
 		if (trash_saved_image(path))
@@ -454,14 +463,13 @@ void on_hide_requested()
 	if (!accept_user_action("hide"))
 		return;
 
-	if (!is_clipboard_image_showing()) {
+	if (is_clipboard_image_showing()) {
+		obs_log(LOG_INFO, "hide requested (trigger: hotkey)");
+		hide_clipboard_image(true);
+	} else {
 		obs_log(LOG_INFO, "hide: no image shown");
-		auto_hide_on_image_hidden();
-		return;
 	}
-
-	obs_log(LOG_INFO, "hide requested (trigger: hotkey)");
-	hide_clipboard_image(true);
+	/* 何も表示していなくても、残っていた一時停止があれば解除する */
 	auto_hide_on_image_hidden();
 }
 
@@ -628,7 +636,7 @@ void on_frontend_save(obs_data_t *save_data, bool saving, void *)
  * - シーン一覧の変更時(SCENE_LIST_CHANGED): 追加されたシーンの通知も登録する。
  *   読み込み・切り替え・終了の途中は登録しない(scenes_ready)。
  * - 終了時(EXIT): 設定画面が開いていれば閉じ、自動で消すタイマーと、画像差し替えのタイマーを止める。
- *   履歴ドックのフォルダの見張りとサムネイルの作成も止める。
+ *   表示履歴のドックのフォルダの見張りとサムネイルの作成も止める。
  *   終了処理の途中でタイマーなどが発火し、片付け中のシーンやソース・画面を触るのを防ぐため。
  *
  * @param event 発生したイベント。
@@ -679,8 +687,8 @@ void on_frontend_event(obs_frontend_event event, void *)
 /**
  * @brief プラグインの読み込み時の処理。OBS の起動時に 1 回呼ばれる。
  *
- * @details ツールメニューの項目追加、ホットキー登録、表示履歴のドックの登録、
- *          保存処理と画面側イベント(起動完了・終了など)の登録を行う。
+ * @details 設定の読み込み、ツールメニューの項目追加、ホットキー登録、表示履歴のドックの登録、
+ *          設定画面から頼む処理の登録、保存処理と画面側イベント(起動完了・終了など)の登録を行う。
  *
  * @return true で読み込み成功。false を返すと OBS はこのプラグインを使わない。
  */

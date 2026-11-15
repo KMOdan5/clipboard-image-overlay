@@ -5,9 +5,9 @@
  * @file clipboard-capture.hpp
  * @brief クリップボードの画像を取り出して保存する機能の公開窓口。
  *
- * @details 実装は clipboard-capture.cpp。呼び出し元は plugin-main.cpp
- *          (on_show_requested()・起動完了時の掃除・表示履歴の画像の表示・「前の画像を表示」ホットキー)と、
- *          history-dock.cpp(表示履歴の一覧)。表示履歴からの削除(trash_saved_image())も plugin-main.cpp から呼ぶ。
+ * @details 実装は clipboard-capture.cpp。呼び出し元は plugin-main.cpp(保存・掃除・一覧・削除)、
+ *          image-display.cpp(フェードでの差し替えが終わったあとの掃除)、history-dock.cpp(表示履歴の一覧)、
+ *          settings-dialog.cpp(保存フォルダ)。
  */
 
 #pragma once

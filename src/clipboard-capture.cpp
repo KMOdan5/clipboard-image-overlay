@@ -29,9 +29,7 @@
  * read_saved_image() で表示に必要な大きさを読む。一覧に出すのも、掃除と同じくプラグインが付けた名前のファイルだけ。
  * 配信者が表示履歴から選んで削除するときは、trash_saved_image() で OS のごみ箱に送る(元に戻せるように)。
  *
- * 公開している関数は save_clipboard_image()・cleanup_saved_images()・saved_images_folder()・
- * list_saved_images()・read_saved_image()・trash_saved_image()(clipboard-capture.hpp)。
- * それ以外はこのファイル内だけで使う補助関数。
+ * 公開している関数の説明は clipboard-capture.hpp を参照。
  */
 
 #include "clipboard-capture.hpp"
@@ -416,8 +414,8 @@ std::optional<SavedImage> save_clipboard_image()
 		for (const QUrl &url : mime->urls()) {
 			if (!url.isLocalFile())
 				continue;
-			if (auto path = save_local_file(url.toLocalFile()))
-				return path;
+			if (auto image = save_local_file(url.toLocalFile()))
+				return image;
 		}
 	}
 
@@ -471,7 +469,7 @@ void cleanup_saved_images(const std::vector<std::string> &in_use)
 	/* 表示中・差し替え待ちの画像は、古くても消さない(消すと OBS の表示が崩れるため) */
 	QList<QFileInfo> keep;
 	for (const std::string &path : in_use)
-		keep.append(QFileInfo(QString::fromStdString(path)));
+		keep.append(QFileInfo(QString::fromUtf8(path.c_str())));
 
 	int removed = 0;
 	int skipped = 0;
