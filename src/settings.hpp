@@ -7,7 +7,7 @@
  *
  * @details
  * 実装は settings.cpp。設定画面(settings-dialog.cpp)で変更し、
- * 自動で消す処理(auto-hide.cpp)と表示処理(image-display.cpp)が読む。
+ * 自動で消す処理(auto-hide.cpp)・表示処理(image-display.cpp)・古い画像の掃除(clipboard-capture.cpp)が読む。
  *
  * 保存先: プラグインの設定フォルダの settings.json
  * (Windows: %APPDATA%/obs-studio/plugin_config/clipboard-image-overlay/settings.json)。
@@ -72,8 +72,9 @@ struct PluginSettings {
 	bool studio_mode_show_on_program = false;
 
 	/**
-	 * @brief 保存フォルダに残す画像の枚数(= 表示履歴に並ぶ枚数)。これより古い画像は自動で削除する。
+	 * @brief 保存フォルダに残す画像の枚数。これより古い画像は自動で削除する。
 	 * @details
+	 * 表示履歴のドックは保存フォルダの画像をそのまま並べるので、ふだんはこの枚数まで並ぶ。
 	 * 上限は枚数で決める。保存期間や容量では決めない(プラグインが動くのは画像を表示したときだけで、
 	 * 表示履歴のドックも枚数に上限がある前提で作っているため)。「削除しない」設定も持たない(画像が際限なく増えるため)。
 	 * 変更は、次に画像を表示したとき(または OBS の起動時)の掃除から反映する。下げても、その場では削除しない。
@@ -131,7 +132,7 @@ void settings_load();
  * @return 保存できたら true。
  * @retval false 保存に失敗した(理由は OBS のログに出る)。
  *
- * @note 呼び出し元: settings-dialog.cpp(「OK」を押したとき)。
+ * @note 呼び出し元: settings-dialog.cpp(「OK」か「適用」を押したとき)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 bool settings_save(const PluginSettings &settings);

@@ -124,7 +124,7 @@ bool is_clipboard_image_showing();
  *
  * @return 画像ファイルのパス(UTF-8)。同じパスは 1 つにまとめる。使用中の画像がなければ空。
  *
- * @note 呼び出し元: plugin-main.cpp(cleanup_saved_images() に渡す)。
+ * @note 呼び出し元: plugin-main.cpp・image-display.cpp の finish_swap()(どちらも cleanup_saved_images() に渡す)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 std::vector<std::string> clipboard_images_in_use();
@@ -148,7 +148,7 @@ bool is_clipboard_image_swap_pending();
  * @brief 今の画像('Clipboard Image' が参照している画像ファイル)のパスを返す。
  *
  * @details
- * 「前の画像を表示」ホットキーと履歴ドックのハイライトが、今の画像が履歴のどれかを知るために使う。
+ * 「前の画像を表示」ホットキーと表示履歴のドックのハイライトが、今の画像が履歴のどれかを知るために使う。
  * 非表示になっても、最後に表示した画像が今の画像のまま残る。
  * 差し替えの途中なら、差し替え後に出る画像(差し替え待ちの画像)を返す。
  * それ以外は 'Clipboard Image' に設定されている画像ファイルを返す。
@@ -165,7 +165,7 @@ std::string current_clipboard_image();
  * @brief 今の画像を外す。全シーンの 'Clipboard Image' を即座に非表示にし、画像ファイルの参照を空にする。
  *
  * @details
- * 配信者が表示履歴のドックで今の画像を削除するときに、ファイルを削除する前に呼ぶ。
+ * 配信者が今の画像を削除するとき(表示履歴のドックの「削除」・設定画面の「表示履歴を全て削除」)に、ファイルを削除する前に呼ぶ。
  * - 差し替えの途中なら取り消す
  * - 全シーン(グループの中を含む)の 'Clipboard Image' を、フェードアウトせずに即座に非表示にする。
  *   見せたくない画像を消す操作なので、一瞬も画面に残さないため
@@ -175,7 +175,7 @@ std::string current_clipboard_image();
  * 呼んだ後は今の画像がなくなる(current_clipboard_image() は空を返す)。'Clipboard Image' がなければ何もしない。
  * 自動非表示のタイマーと一時停止は、ここでは解除しない(呼び出し元で auto_hide_on_image_hidden() を呼ぶ)。
  *
- * @note 呼び出し元: plugin-main.cpp の delete_history_image()。
+ * @note 呼び出し元: plugin-main.cpp の release_current_image()。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void clear_clipboard_image();

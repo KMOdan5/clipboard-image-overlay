@@ -10,7 +10,7 @@
  * 表示する文字列はすべて data/locale の ini から読む。
  * 項目は「一般」と「表示履歴」の 2 つのタブに分ける。
  * 「OK」「適用」で settings_save()(settings.cpp)を呼び、変更は次に画像を表示したときから反映される。
- * 「表示履歴」のタブの「保存フォルダを開く」は、OK や適用を待たずにその場で動く(open_image_folder())。
+ * 「表示履歴」のタブの「保存フォルダを開く」(open_image_folder())と「表示履歴を全て削除」は、OK や適用を待たずにその場で動く。
  * 画面の一番下に、バージョンと、マニュアル・不具合・ご要望のフォームへのリンクを表示する(make_about_label())。
  * 開いたまま OBS を操作できる画面(モードレス)で、同時に開くのは 1 つだけ。
  *
@@ -26,8 +26,8 @@
 #include <plugin-support.h>
 
 #include <QCheckBox>
-#include <QDialog>
 #include <QDesktopServices>
+#include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFormLayout>
@@ -48,6 +48,7 @@
 
 #include <algorithm>
 #include <initializer_list>
+#include <utility>
 
 namespace {
 
@@ -642,12 +643,7 @@ void open_settings_dialog()
 }
 
 /**
- * @brief 設定画面が開いていれば閉じる。
- * @details 仕様の詳細は settings-dialog.hpp の宣言側を参照。
- */
-/**
  * @brief 設定画面から頼む処理を登録する。
- *
  * @details 仕様の詳細は settings-dialog.hpp の宣言側を参照。
  */
 void settings_dialog_register(SettingsDialogCallbacks callbacks)
@@ -655,6 +651,10 @@ void settings_dialog_register(SettingsDialogCallbacks callbacks)
 	dialog_callbacks = std::move(callbacks);
 }
 
+/**
+ * @brief 設定画面が開いていれば閉じる。
+ * @details 仕様の詳細は settings-dialog.hpp の宣言側を参照。
+ */
 void close_settings_dialog()
 {
 	if (!settings_dialog)

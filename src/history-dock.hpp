@@ -115,7 +115,7 @@ void history_dock_show_notice(const char *text);
 void history_dock_clear_notice();
 
 /**
- * @brief 履歴ドックの裏の処理(フォルダの見張り・今の画像の問い合わせ・サムネイルの作成)を止める。何度呼んでもよい。
+ * @brief 表示履歴のドックの裏の処理(フォルダの見張り・今の画像の問い合わせ・サムネイルの作成)を止める。何度呼んでもよい。
  *
  * @details
  * OBS の終了時に呼ぶ。終了の途中でフォルダの変化やサムネイルの完成が届き、
@@ -127,7 +127,7 @@ void history_dock_clear_notice();
 void history_dock_shutdown();
 
 /**
- * @brief 履歴ドックを OBS から外す。
+ * @brief 表示履歴のドックを OBS から外す。
  *
  * @details OBS が先にドックを片付けていた場合(終了時など)は何もしない。
  *

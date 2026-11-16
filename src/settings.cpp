@@ -77,6 +77,19 @@ std::string settings_path()
 	return result;
 }
 
+/**
+ * @brief 今の設定値をログに出す。読み込んだとき・保存したときに、不具合調査で値を確かめられるように。
+ * @param action 何をしたか("loaded" / "saved")。
+ */
+void log_current(const char *action)
+{
+	obs_log(LOG_INFO,
+		"settings: %s (display %d s, max size %d%%, always on top %s, studio mode on program %s,"
+		" keep %d images)",
+		action, current.display_seconds, current.max_size_percent, current.always_on_top ? "on" : "off",
+		current.studio_mode_show_on_program ? "on" : "off", current.max_saved_images);
+}
+
 } // namespace
 
 /**
@@ -121,11 +134,7 @@ void settings_load()
 	obs_data_release(data);
 
 	current = clamp_settings(loaded);
-	obs_log(LOG_INFO,
-		"settings: loaded (display %d s, max size %d%%, always on top %s, studio mode on program %s,"
-		" keep %d images)",
-		current.display_seconds, current.max_size_percent, current.always_on_top ? "on" : "off",
-		current.studio_mode_show_on_program ? "on" : "off", current.max_saved_images);
+	log_current("loaded");
 }
 
 /**
@@ -151,15 +160,10 @@ bool settings_save(const PluginSettings &settings)
 	const bool saved = obs_data_save_json_safe(data, path.c_str(), "tmp", "bak");
 	obs_data_release(data);
 
-	if (saved) {
-		obs_log(LOG_INFO,
-			"settings: saved (display %d s, max size %d%%, always on top %s, studio mode on program %s,"
-			" keep %d images)",
-			current.display_seconds, current.max_size_percent, current.always_on_top ? "on" : "off",
-			current.studio_mode_show_on_program ? "on" : "off", current.max_saved_images);
-	} else {
+	if (saved)
+		log_current("saved");
+	else
 		obs_log(LOG_WARNING, "settings: failed to save %s", path.c_str());
-	}
 	return saved;
 }
 

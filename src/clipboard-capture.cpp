@@ -29,9 +29,7 @@
  * read_saved_image() で表示に必要な大きさを読む。一覧に出すのも、掃除と同じくプラグインが付けた名前のファイルだけ。
  * 配信者が表示履歴から選んで削除するときは、trash_saved_image() で OS のごみ箱に送る(元に戻せるように)。
  *
- * 公開している関数は save_clipboard_image()・cleanup_saved_images()・saved_images_folder()・
- * list_saved_images()・read_saved_image()・trash_saved_image()(clipboard-capture.hpp)。
- * それ以外はこのファイル内だけで使う補助関数。
+ * 公開している関数の説明は clipboard-capture.hpp を参照。
  */
 
 #include "clipboard-capture.hpp"
@@ -235,8 +233,15 @@ QString image_folder()
 /**
  * @brief 新しく保存するファイルのパスを決める。保存先フォルダがなければここで作る。
  *
+ * @details
+ * 名前は今の日時(ミリ秒まで)。続けて保存すると同じミリ秒になることがあるので(複数のファイルをドラッグ&ドロップしたときなど)、
+ * 前に決めた名前の日時以前なら、その 1 ミリ秒後にする。名前が重なると、コピーは失敗し、PNG への変換は前の画像を上書きしてしまうため。
+ * 保存した順と名前の順(表示履歴の並び)も、同じに保てる。
+ *
  * @param extension 拡張子(ドットなし。例: "png")。
  * @return 保存先フォルダ + 日時のファイル名。フォルダが作れなければ空文字。
+ *
+ * @note スレッド: UI スレッドから呼ぶこと(前に決めた名前の日時を、UI スレッドだけで読み書きするため)。
  */
 QString new_image_path(const QString &extension)
 {
@@ -247,9 +252,14 @@ QString new_image_path(const QString &extension)
 		return QString();
 	}
 
-	/* ミリ秒まで入れて、連続で保存してもファイル名が重ならないようにする */
-	const QString name = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz")) +
-			     QStringLiteral(".") + extension;
+	/* 前に決めた名前の日時。OBS を起動している間だけ覚えておく */
+	static QDateTime last_time;
+	QDateTime time = QDateTime::currentDateTime();
+	if (last_time.isValid() && time <= last_time)
+		time = last_time.addMSecs(1);
+	last_time = time;
+
+	const QString name = time.toString(QStringLiteral("yyyyMMdd-HHmmss-zzz")) + QStringLiteral(".") + extension;
 	return QDir(folder).filePath(name);
 }
 
@@ -416,8 +426,8 @@ std::optional<SavedImage> save_clipboard_image()
 		for (const QUrl &url : mime->urls()) {
 			if (!url.isLocalFile())
 				continue;
-			if (auto path = save_local_file(url.toLocalFile()))
-				return path;
+			if (auto image = save_local_file(url.toLocalFile()))
+				return image;
 		}
 	}
 
@@ -471,7 +481,7 @@ void cleanup_saved_images(const std::vector<std::string> &in_use)
 	/* 表示中・差し替え待ちの画像は、古くても消さない(消すと OBS の表示が崩れるため) */
 	QList<QFileInfo> keep;
 	for (const std::string &path : in_use)
-		keep.append(QFileInfo(QString::fromStdString(path)));
+		keep.append(QFileInfo(QString::fromUtf8(path.c_str())));
 
 	int removed = 0;
 	int skipped = 0;

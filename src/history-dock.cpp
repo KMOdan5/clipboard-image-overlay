@@ -57,22 +57,22 @@
 #include <QEvent>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QFrame>
 #include <QHash>
+#include <QHideEvent>
 #include <QIcon>
 #include <QImage>
 #include <QImageReader>
 #include <QLabel>
-#include <QFrame>
 #include <QListWidget>
 #include <QMenu>
 #include <QMimeData>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
+#include <QResizeEvent>
 #include <QScrollBar>
 #include <QSet>
-#include <QHideEvent>
-#include <QResizeEvent>
 #include <QShowEvent>
 #include <QStyle>
 #include <QStyleOption>
@@ -336,7 +336,7 @@ public:
 };
 
 /**
- * @brief 履歴ドックの中身(ウィジェット)。
+ * @brief 表示履歴のドックの中身(ウィジェット)。
  *
  * @details サムネイルの一覧と、画像がないときの案内と、画像を表示できなかった理由のお知らせと、
  *          ドラッグ中にドックの縁を囲む枠の 4 つの部品からなる。
@@ -346,7 +346,7 @@ class HistoryWidget : public QWidget {
 public:
 	/**
 	 * @brief 部品を作り、保存フォルダの見張りを始める。
-	 * @param callbacks ドックから頼む処理(表示・今の画像の問い合わせ・削除・設定画面)。
+	 * @param callbacks ドックから頼む処理(HistoryDockCallbacks)。
 	 */
 	explicit HistoryWidget(HistoryDockCallbacks callbacks) : callbacks_(std::move(callbacks))
 	{
@@ -448,6 +448,8 @@ public:
 		 * 帯のどこをクリックしても消えるようにする(小さな × ボタンより、配信中に素早く押しやすいため)
 		 */
 		notice_label_ = new QLabel(this);
+		/* 文言は ini から読むので、記号が書式(HTML)として解釈されないよう、文字として表示する */
+		notice_label_->setTextFormat(Qt::PlainText);
 		notice_label_->setWordWrap(true);
 		notice_label_->setCursor(Qt::PointingHandCursor);
 		notice_label_->installEventFilter(this);
@@ -569,7 +571,19 @@ protected:
 	}
 
 	/**
-	 * @brief ドックの大きさが変わったら、お知らせの帯の幅と高さを合わせ直す。
+	 * @brief ドックが見えなくなったら、今の画像の問い合わせを止め、お知らせを消す。
+	 *
+	 * @details お知らせを消すのは、次にドックを開いたとき、前の失敗のお知らせが残って見えないようにするため。
+	 */
+	void hideEvent(QHideEvent *event) override
+	{
+		QWidget::hideEvent(event);
+		current_timer_.stop();
+		hide_notice();
+	}
+
+	/**
+	 * @brief ドックの大きさが変わったら、お知らせの帯とドラッグ中の枠を、今の大きさに合わせ直す。
 	 */
 	void resizeEvent(QResizeEvent *event) override
 	{
@@ -640,18 +654,6 @@ protected:
 		for (const QString &path : paths)
 			files.push_back(path.toUtf8().toStdString());
 		callbacks_.drop(files);
-	}
-
-	/**
-	 * @brief ドックが見えなくなったら、今の画像の問い合わせを止め、お知らせを消す。
-	 *
-	 * @details お知らせを消すのは、次にドックを開いたとき、前の失敗のお知らせが残って見えないようにするため。
-	 */
-	void hideEvent(QHideEvent *event) override
-	{
-		QWidget::hideEvent(event);
-		current_timer_.stop();
-		hide_notice();
 	}
 
 	/**
@@ -980,7 +982,7 @@ private:
 		}
 	}
 
-	/// @brief ドックから頼む処理(表示・今の画像の問い合わせ・削除・設定画面)。
+	/// @brief ドックから頼む処理(表示・今の画像の問い合わせ・削除・設定画面・ドロップしたファイルの保存)。
 	HistoryDockCallbacks callbacks_;
 	/// @brief サムネイルの一覧。
 	QListWidget *list_ = nullptr;
@@ -1032,7 +1034,7 @@ QPointer<HistoryWidget> dock_widget;
 } // namespace
 
 /**
- * @brief 履歴ドックを作り、OBS に登録する。
+ * @brief 表示履歴のドックを作り、OBS に登録する。
  *
  * @details 仕様の詳細は history-dock.hpp の宣言側を参照。
  */
@@ -1074,7 +1076,7 @@ void history_dock_clear_notice()
 }
 
 /**
- * @brief 履歴ドックの裏の処理を止める。
+ * @brief 表示履歴のドックの裏の処理を止める。
  *
  * @details 仕様の詳細は history-dock.hpp の宣言側を参照。
  */
@@ -1085,7 +1087,7 @@ void history_dock_shutdown()
 }
 
 /**
- * @brief 履歴ドックを OBS から外す。
+ * @brief 表示履歴のドックを OBS から外す。
  *
  * @details 仕様の詳細は history-dock.hpp の宣言側を参照。
  */
