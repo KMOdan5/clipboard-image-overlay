@@ -201,6 +201,10 @@ Stream Deck・obs-websocket・ほかのプラグインで表示した場合も�
 
 「Clipboard Image」はグループに入れずに使ってください。グループの中で手動で表示状態にしたときは自動で非表示になりません。また「常に最前面に表示する」はグループの中での最前面になります。
 
+### 複数の画面を同時に配信すると片方にしか表示されない
+
+Aitum Vertical などのプラグインで横型と縦型のように複数の画面を同時に扱う場合は、縦型のシーンにも「Clipboard Image」を置くと横型と同時に表示・非表示されます。置くときは「新規作成」ではなく「既存を追加」で「Clipboard Image」を選んでください。
+
 ## 10. 不具合・ご要望
 
 「ツール」→「Clipboard Image」→「設定...」の画面の下にある「不具合・ご要望」のリンクからお知らせください。使っている環境が自動で入力されます。設定画面を開けない場合は[不具合・ご要望フォーム](https://docs.google.com/forms/d/e/1FAIpQLSeOoU9HNzkLZx70GtSAoAbp-y8T491vJsohMwMT1NJjwKI_xA/viewform?usp=pp_url&entry.11414643=Clipboard+Image+Overlay)からお知らせください。

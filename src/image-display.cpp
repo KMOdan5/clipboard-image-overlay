@@ -3,7 +3,7 @@
 
 /**
  * @file image-display.cpp
- * @brief 保存した画像を、プラグイン専用の画像ソースとして現在のシーンに表示する。
+ * @brief 保存した画像を、プラグイン専用の画像ソースとして現在のシーン(と、別キャンバスで今映っているシーン)に表示する。
  *
  * @details
  * 使う OBS の部品:
@@ -74,6 +74,16 @@
  *   気づけないため、手動で表示したときはカウントが始まらない(既知の制限。#37 で検討する)
  * - グループの表示/非表示・位置・大きさは変えない。表示サイズはグループの拡大率に関係なく、キャンバスを基準に決める
  * - 「常に最前面に表示する」は、グループの中での最前面になる
+ *
+ * 別キャンバス(縦型配信プラグインなどが OBS のキャンバスの仕組みで作る、メイン以外の画面):
+ * - どのプラグインのキャンバスでも同じように扱う。キャンバスのシーンは obs_canvas_enum_scenes()、
+ *   今映っているシーンは、キャンバスのチャンネル 0(トランジションなら、その切り替え先)で取る
+ * - 非表示・「表示中か」の判断・通知の受け付けは、メインと同じく全キャンバスの全シーンが対象(for_each_scene())
+ * - 表示は、別キャンバスで今映っているシーンに、配信者が Clipboard Image(メインと同じソース)を置いたときだけ行う。
+ *   置いていなければ追加しない(配信者の配置を崩さないため)。追加しないので、位置・フェードは設定しない
+ * - 表示サイズ(境界が「自動」のとき)と最前面への移動は、メインと同じ決まりで行う。表示サイズはそのキャンバスの大きさで計算する
+ * - メインで差し替え(フェードアウト → 差し替え → フェードイン)をするときは、別キャンバスの画像も一緒にフェードアウトさせ、
+ *   差し替えた後に表示する。画像ファイルはメインと同じソースなので、差し替えはメインで 1 回行えば済む
  *
  * 今の画像を配信者が削除するとき(表示履歴のドックの「削除」):
  * - clear_clipboard_image() で、全シーンの Clipboard Image を即座に非表示にしてから、画像ファイルの参照を外す。
@@ -256,16 +266,18 @@ obs_source_t *get_or_create_image_source(const char *path)
 }
 
 /**
- * @brief 画面(キャンバス)の大きさを取得する。
+ * @brief キャンバスの大きさを取得する。
  *
+ * @param canvas      対象のキャンバス。nullptr ならメインのキャンバス(OBS の設定 → 映像の基本解像度)。
  * @param[out] width  キャンバスの幅(ピクセル)。
  * @param[out] height キャンバスの高さ(ピクセル)。
  * @return 取得できたら true。
  */
-bool get_canvas_size(float &width, float &height)
+bool get_canvas_size(obs_canvas_t *canvas, float &width, float &height)
 {
 	obs_video_info ovi = {};
-	if (!obs_get_video_info(&ovi) || ovi.base_width == 0 || ovi.base_height == 0) {
+	const bool ok = canvas ? obs_canvas_get_video_info(canvas, &ovi) : obs_get_video_info(&ovi);
+	if (!ok || ovi.base_width == 0 || ovi.base_height == 0) {
 		obs_log(LOG_WARNING, "display: cannot get canvas size");
 		return false;
 	}
@@ -288,7 +300,7 @@ void apply_default_position(obs_sceneitem_t *item)
 {
 	float canvas_w = 0.0f;
 	float canvas_h = 0.0f;
-	if (!get_canvas_size(canvas_w, canvas_h))
+	if (!get_canvas_size(nullptr, canvas_w, canvas_h))
 		return;
 
 	vec2 pos;
@@ -328,10 +340,11 @@ void apply_default_position(obs_sceneitem_t *item)
  * ログにも実際と違う大きさが出て調査の妨げになる。境界の種類はシーンアイテムの設定値として
  * 確実に取得できるので、それで判定する。
  *
- * @param item  対象のシーンアイテム。
- * @param image 表示する画像の情報(幅・高さを使う)。
+ * @param item   対象のシーンアイテム。
+ * @param image  表示する画像の情報(幅・高さを使う)。
+ * @param canvas item が置かれているシーンのキャンバス。nullptr ならメインのキャンバス。
  */
-void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
+void apply_display_size(obs_sceneitem_t *item, const SavedImage &image, obs_canvas_t *canvas = nullptr)
 {
 	const PluginSettings &settings = settings_get();
 	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
@@ -345,7 +358,7 @@ void apply_display_size(obs_sceneitem_t *item, const SavedImage &image)
 
 	if (image.width <= 0 || image.height <= 0) {
 		obs_log(LOG_WARNING, "display: unknown image size; showing at original size");
-	} else if (get_canvas_size(canvas_w, canvas_h)) {
+	} else if (get_canvas_size(canvas, canvas_w, canvas_h)) {
 		const float ratio = static_cast<float>(max_size_side_ratio(settings.max_size_percent));
 		const float max_w = canvas_w * ratio;
 		const float max_h = canvas_h * ratio;
@@ -557,7 +570,122 @@ void release_items(std::vector<obs_sceneitem_t *> &items)
 }
 
 /**
- * @brief 全シーン(グループの中を含む)に置かれた、指定したソースのシーンアイテムを順に処理する。
+ * @brief メイン以外のキャンバス(縦型配信プラグインなどが作るもの)を集める。
+ *
+ * @details 削除の印が付いたキャンバスは除く。obs_enum_canvases() はキャンバスの一覧をロックしたまま呼ぶので、
+ *          その中では参照を取るだけにして、処理は呼び出し元でロックの外で行う。
+ *
+ * @return キャンバス(それぞれ参照カウント付き。release_canvases() で解放する)。
+ */
+std::vector<obs_canvas_t *> collect_other_canvases()
+{
+	std::vector<obs_canvas_t *> canvases;
+	obs_enum_canvases(
+		[](void *param, obs_canvas_t *canvas) {
+			if ((obs_canvas_get_flags(canvas) & MAIN) == 0 && !obs_canvas_removed(canvas)) {
+				obs_canvas_t *ref = obs_canvas_get_ref(canvas);
+				if (ref)
+					static_cast<std::vector<obs_canvas_t *> *>(param)->push_back(ref);
+			}
+			return true;
+		},
+		&canvases);
+	return canvases;
+}
+
+/// @brief collect_other_canvases() で集めたキャンバスの参照を解放し、一覧を空にする。
+void release_canvases(std::vector<obs_canvas_t *> &canvases)
+{
+	for (obs_canvas_t *canvas : canvases)
+		obs_canvas_release(canvas);
+	canvases.clear();
+}
+
+/**
+ * @brief 出力に置かれたソースから、今映っているシーンを取り出す。
+ *
+ * @details トランジションなら、今映しているもの(トランジションの途中なら切り替え先)を返す。
+ *
+ * @param output 出力に置かれたソース(参照カウント付き)。この関数が解放する。
+ * @return 今映っているソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
+ * @retval nullptr output が nullptr、または何も映っていない。
+ */
+obs_source_t *take_active_source(obs_source_t *output)
+{
+	if (!output)
+		return nullptr;
+	obs_source_t *active = obs_source_get_type(output) == OBS_SOURCE_TYPE_TRANSITION
+				       ? obs_transition_get_active_source(output)
+				       : obs_source_get_ref(output);
+	obs_source_release(output);
+	return active;
+}
+
+/**
+ * @brief 別キャンバスで今映っているシーンを返す。
+ *
+ * @details キャンバスのチャンネル 0 に置かれたもの(トランジションなら、その切り替え先)を見る。
+ *          シーンでなければ(縦型配信プラグインが別の用途で使うキャンバスなど)扱わない。
+ *
+ * @param canvas 対象のキャンバス。
+ * @return シーン(ソースとして。参照カウント付き。使い終わったら obs_source_release() で解放する)。
+ * @retval nullptr シーンが映っていない。
+ */
+obs_source_t *get_canvas_active_scene(obs_canvas_t *canvas)
+{
+	obs_source_t *active = take_active_source(obs_canvas_get_channel(canvas, 0));
+	if (active && !obs_scene_from_source(active)) {
+		obs_source_release(active);
+		return nullptr;
+	}
+	return active;
+}
+
+/**
+ * @brief 全キャンバスの全シーンを順に処理する。
+ *
+ * @details
+ * メインのキャンバスは、OBS の画面のシーン一覧(obs_frontend_get_scenes())を使う。
+ * 別キャンバス(collect_other_canvases())は、キャンバスごとのシーン一覧(obs_canvas_enum_scenes())を使う。
+ * obs_canvas_enum_scenes() はシーンの一覧をロックしたまま呼ぶので、その中では参照を取るだけにして、処理はロックの外で行う。
+ *
+ * @param fn シーン(ソースとして)ごとに呼ぶ処理。false を返すと、そこで打ち切る。
+ *
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+template<typename Fn> void for_each_scene(Fn fn)
+{
+	std::vector<obs_source_t *> scenes;
+
+	obs_frontend_source_list main_scenes = {};
+	obs_frontend_get_scenes(&main_scenes);
+	for (size_t i = 0; i < main_scenes.sources.num; i++)
+		scenes.push_back(obs_source_get_ref(main_scenes.sources.array[i]));
+	obs_frontend_source_list_free(&main_scenes);
+
+	std::vector<obs_canvas_t *> canvases = collect_other_canvases();
+	for (obs_canvas_t *canvas : canvases) {
+		obs_canvas_enum_scenes(
+			canvas,
+			[](void *param, obs_source_t *scene_source) {
+				static_cast<std::vector<obs_source_t *> *>(param)->push_back(
+					obs_source_get_ref(scene_source));
+				return true;
+			},
+			&scenes);
+	}
+	release_canvases(canvases);
+
+	bool keep_going = true;
+	for (obs_source_t *scene_source : scenes) {
+		if (keep_going && scene_source)
+			keep_going = fn(scene_source);
+		obs_source_release(scene_source);
+	}
+}
+
+/**
+ * @brief 全キャンバスの全シーン(グループの中を含む)に置かれた、指定したソースのシーンアイテムを順に処理する。
  *
  * @details 全シーンを対象にする処理(表示中かの判断・非表示にする処理)で共通に使う。
  *          同じシーンに 2 つ以上置かれていれば、すべてを渡す。
@@ -569,14 +697,11 @@ void release_items(std::vector<obs_sceneitem_t *> &items)
  */
 template<typename Fn> void for_each_item_in_all_scenes(obs_source_t *source, Fn fn)
 {
-	obs_frontend_source_list scenes = {};
-	obs_frontend_get_scenes(&scenes);
-
-	bool keep_going = true;
-	for (size_t i = 0; i < scenes.sources.num && keep_going; i++) {
-		obs_scene_t *scene = obs_scene_from_source(scenes.sources.array[i]);
+	for_each_scene([source, &fn](obs_source_t *scene_source) {
+		obs_scene_t *scene = obs_scene_from_source(scene_source);
 		if (!scene)
-			continue;
+			return true;
+		bool keep_going = true;
 		std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
 		for (obs_sceneitem_t *item : items) {
 			if (!fn(item)) {
@@ -585,9 +710,8 @@ template<typename Fn> void for_each_item_in_all_scenes(obs_source_t *source, Fn 
 			}
 		}
 		release_items(items);
-	}
-
-	obs_frontend_source_list_free(&scenes);
+		return keep_going;
+	});
 }
 
 /**
@@ -657,13 +781,7 @@ obs_source_t *get_program_copy()
 	if (!in_studio_mode())
 		return nullptr;
 
-	obs_source_t *output = obs_get_output_source(0);
-	if (!output)
-		return nullptr;
-	obs_source_t *active = obs_source_get_type(output) == OBS_SOURCE_TYPE_TRANSITION
-				       ? obs_transition_get_active_source(output)
-				       : obs_source_get_ref(output);
-	obs_source_release(output);
+	obs_source_t *active = take_active_source(obs_get_output_source(0));
 	if (!active)
 		return nullptr;
 
@@ -918,6 +1036,72 @@ void show_new_image(obs_sceneitem_t *item, const SavedImage &image)
 }
 
 /**
+ * @brief 別キャンバスで今映っているシーンに置かれた Clipboard Image を、順に処理する。
+ *
+ * @details 表示は「今映っているシーンに、配信者が置いたものだけ」に行う決まりなので、
+ *          全シーンではなく今映っているシーンだけを見る。置いていなければ何もしない(追加しない)。
+ *
+ * @param source メインの Clipboard Image(別キャンバスにも同じソースが置かれる)。
+ * @param fn     アイテムごとに呼ぶ処理。引数はアイテム、そのキャンバス、そのシーン(ソースとして)。
+ *
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+template<typename Fn> void for_each_item_on_other_canvases(obs_source_t *source, Fn fn)
+{
+	std::vector<obs_canvas_t *> canvases = collect_other_canvases();
+	for (obs_canvas_t *canvas : canvases) {
+		obs_source_t *scene_source = get_canvas_active_scene(canvas);
+		if (!scene_source)
+			continue;
+		std::vector<obs_sceneitem_t *> items = collect_items(obs_scene_from_source(scene_source), source);
+		for (obs_sceneitem_t *item : items)
+			fn(item, canvas, scene_source);
+		release_items(items);
+		obs_source_release(scene_source);
+	}
+	release_canvases(canvases);
+}
+
+/**
+ * @brief 別キャンバスで今映っているシーンの Clipboard Image を表示する。
+ *
+ * @details
+ * 画像ファイルはメインと同じソースなので、メインで設定した画像がそのまま出る。ここでは設定し直さない。
+ * 表示サイズ(そのキャンバスの大きさで計算)と最前面への移動は、メインと同じ決まりで行う。
+ * 自動で消すカウントは呼び出し元(plugin-main.cpp)で始めるので、self_changing を立てて表示する。
+ *
+ * @param source メインの Clipboard Image。
+ * @param image  表示する画像の情報(大きさの計算に使う)。
+ */
+void show_on_other_canvases(obs_source_t *source, const SavedImage &image)
+{
+	for_each_item_on_other_canvases(source, [&image](obs_sceneitem_t *item, obs_canvas_t *canvas,
+							 obs_source_t *scene_source) {
+		if (settings_get().always_on_top)
+			obs_sceneitem_set_order(item, OBS_ORDER_MOVE_TOP);
+		apply_display_size(item, image, canvas);
+		{
+			const SelfChangeScope scope;
+			obs_sceneitem_set_visible(item, true);
+		}
+		obs_log(LOG_INFO, "display: also showing in scene \"%s\" of canvas \"%s\"",
+			obs_source_get_name(scene_source), obs_canvas_get_name(canvas));
+	});
+}
+
+/**
+ * @brief 別キャンバスで今映っているシーンの Clipboard Image を、フェードアウトさせる。差し替えを始めるときに使う。
+ *
+ * @param source メインの Clipboard Image。
+ */
+void fade_out_on_other_canvases(obs_source_t *source)
+{
+	for_each_item_on_other_canvases(source, [](obs_sceneitem_t *item, obs_canvas_t *, obs_source_t *) {
+		hide_item(item, true);
+	});
+}
+
+/**
  * @brief 待ち中の差し替えを取り消す。待ちがなければ何もしない。
  */
 void cancel_swap()
@@ -997,6 +1181,7 @@ void finish_swap()
 	pending_swap.scene = nullptr;
 
 	show_new_image(item, image);
+	show_on_other_canvases(obs_sceneitem_get_source(item), image);
 	if (show_on_program)
 		show_on_program_copy(item, image);
 	obs_sceneitem_release(item);
@@ -1013,6 +1198,8 @@ void finish_swap()
  * 待っている間にもう一度貼られた場合は、待ち時間はそのままで、差し替え先だけを最新の画像にする
  * (最後に貼った画像が表示される。途中の画像が一瞬出たりはしない)。
  *
+ * 別キャンバスで今映っているシーンの Clipboard Image も一緒にフェードアウトさせ、差し替えた後に表示する
+ * (show_on_other_canvases())。
  * 設定の studio_mode_show_on_program がオンなら、プログラムのコピーも一緒にフェードアウトさせ、
  * 差し替えた後にコピーにも表示する(show_on_program_copy())。
  *
@@ -1046,6 +1233,7 @@ void start_swap(obs_sceneitem_t *item, obs_source_t *scene_source, const SavedIm
 		has_fade ? static_cast<int>(obs_sceneitem_get_transition_duration(item, false)) + SWAP_MARGIN_MS : 0;
 
 	obs_sceneitem_set_visible(item, false); /* フェードアウト開始 */
+	fade_out_on_other_canvases(obs_sceneitem_get_source(item));
 	/* プログラムのコピーにも表示する設定なら、コピーの画像も一緒にフェードアウトさせる */
 	if (pending_swap.show_on_program)
 		hide_on_program_copy(true);
@@ -1346,8 +1534,11 @@ bool show_image_on_current_scene(const SavedImage &image)
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
 
-	/* 通知の受け付けは起動完了時などに全シーン分まとめて登録している。念のため、このシーンも確かめておく */
-	watch_scene(scene_source);
+	/*
+	 * 通知の受け付けは起動完了時などに全シーン分まとめて登録している。念のため、表示するたびに登録し直す
+	 * (別キャンバスのシーンは、OBS の画面のシーン一覧の変更の通知が届かないので、後から作られたシーンをここで拾う)
+	 */
+	image_display_watch_scenes();
 
 	/*
 	 * 後から追加されたソースに隠れないよう、最前面に移す(「常に最前面に表示する」がオンのとき。既定オン)。
@@ -1367,6 +1558,7 @@ bool show_image_on_current_scene(const SavedImage &image)
 	} else {
 		/* 非表示: 画像を設定してフェードイン */
 		show_new_image(item, image);
+		show_on_other_canvases(source, image);
 		if (settings_get().studio_mode_show_on_program && in_studio_mode())
 			show_on_program_copy(item, image);
 	}
@@ -1428,11 +1620,10 @@ void image_display_watch_scenes()
 {
 	prune_watched_scenes();
 
-	obs_frontend_source_list scenes = {};
-	obs_frontend_get_scenes(&scenes);
-	for (size_t i = 0; i < scenes.sources.num; i++)
-		watch_scene(scenes.sources.array[i]);
-	obs_frontend_source_list_free(&scenes);
+	for_each_scene([](obs_source_t *scene_source) {
+		watch_scene(scene_source);
+		return true;
+	});
 }
 
 /**
