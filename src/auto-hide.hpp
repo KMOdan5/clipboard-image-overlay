@@ -13,12 +13,37 @@
  * 2. 一時停止は、画像が表示されている間だけ続く
  *    - 新しい画像を貼って差し替えても、一時停止のまま
  *    - 画像がどのシーンにも表示されなくなった時点で(手動で非表示・削除・自動で消えた)、一時停止は解除される
- * 3. 一時停止ホットキーは表示中だけ効く。押すたびに「一時停止 ↔ 残り時間から再開」を切り替える
+ * 3. 一時停止ホットキー(表示履歴のドックの今の画像のクリック・右クリックメニューも同じ)は表示中だけ効く。
+ *    押すたびに「一時停止 ↔ 残り時間から再開」を切り替える
  *
  * 「表示中」は、いずれかのシーンで Clipboard Image が表示状態になっていること(is_clipboard_image_showing())。
  */
 
 #pragma once
+
+/**
+ * @brief 自動非表示の状態。表示履歴のドックが、今の画像のカードに状態を出すために使う。
+ */
+enum class AutoHideState {
+	/// @brief 画像が表示されていない。
+	Hidden,
+	/// @brief 表示中で、自動で非表示になるまでカウントしている。
+	Counting,
+	/// @brief 表示中で、カウントを一時停止している。
+	Paused,
+	/// @brief 表示中で、カウントしていない(表示時間 0 秒で表示したときなど。手動でのみ非表示になる)。
+	Manual,
+};
+
+/**
+ * @brief 自動非表示の状態と残り時間。auto_hide_status() が返す。
+ */
+struct AutoHideStatus {
+	/// @brief 状態。
+	AutoHideState state = AutoHideState::Hidden;
+	/// @brief 自動で非表示になるまでの残り時間(ミリ秒)。Counting と Paused のときだけ意味を持つ。
+	int remaining_ms = 0;
+};
 
 /**
  * @brief 画像を貼ったとき・手動で表示されたときに呼ぶ。自動で消すまでの残り時間を表示時間に戻す。
@@ -46,7 +71,7 @@ void auto_hide_restart();
  * - 画像が表示されていないとき: 何もしない(一時停止が残っていれば解除する)
  * - タイマーが動いていないとき(表示時間 0 で表示したときなど): 何もしない
  *
- * @note 呼び出し元: plugin-main.cpp の on_toggle_pause_requested()(シーンの準備ができているときだけ呼ぶ)。
+ * @note 呼び出し元: plugin-main.cpp の toggle_pause()(一時停止ホットキー・表示履歴のドック。シーンの準備ができているときだけ呼ぶ)。
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void auto_hide_toggle_pause();
@@ -62,6 +87,21 @@ void auto_hide_toggle_pause();
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void auto_hide_on_image_hidden();
+
+/**
+ * @brief 自動非表示の今の状態を返す。
+ *
+ * @details
+ * 表示中かどうかは is_clipboard_image_showing() で判断する(全シーン。差し替えの途中も表示中)。
+ * 表示中なら、一時停止中 → Paused、タイマーが動いている → Counting、どちらでもない → Manual。
+ * 状態を変えずに読むだけなので、何度呼んでもよい。
+ *
+ * @return 状態と残り時間。
+ *
+ * @note 呼び出し元: plugin-main.cpp(表示履歴のドックからの問い合わせ・ドックからの一時停止の操作)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+AutoHideStatus auto_hide_status();
 
 /**
  * @brief タイマーを止めて片付け、一時停止も解除する。何度呼んでもよい。

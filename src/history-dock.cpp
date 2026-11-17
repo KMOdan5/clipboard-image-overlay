@@ -68,6 +68,7 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QPointer>
 #include <QResizeEvent>
@@ -79,6 +80,7 @@
 #include <QStyledItemDelegate>
 #include <QThreadPool>
 #include <QTimer>
+#include <QToolTip>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -133,11 +135,30 @@ constexpr int PATH_ROLE = Qt::UserRole;
 constexpr int CURRENT_ROLE = Qt::UserRole + 1;
 
 /**
+ * @brief 一覧の項目に、自動非表示の状態(AutoHideState を int にしたもの)を持たせるときの役割番号。
+ * @details 今の画像の項目だけに持たせる。ほかの項目は Hidden(帯を出さない)。
+ */
+constexpr int STATE_ROLE = Qt::UserRole + 2;
+
+/// @brief 一覧の項目に、自動で非表示になるまでの残り秒数(int)を持たせるときの役割番号。今の画像の項目だけに持たせる。
+constexpr int SECONDS_ROLE = Qt::UserRole + 3;
+
+/// @brief 今の画像のカードの帯の、文字の上下と左の余白(ピクセル)。
+constexpr int BAND_PADDING = 4;
+
+/// @brief 今の画像のカードの帯の背景の濃さ(0〜255)。どんな画像の上でも白い文字が読めるよう、黒を半分より濃く重ねる。
+constexpr int BAND_BACKGROUND_ALPHA = 166;
+
+/// @brief 非表示のボタン(✕)の背景の濃さ(0〜255)。帯の上で押せる場所だと分かるよう、白を薄く重ねる。
+constexpr int CLOSE_BACKGROUND_ALPHA = 48;
+
+/**
  * @brief 今の画像を問い合わせる間隔(ミリ秒)。
  * @details 今の画像は、ホットキー・ドック・メニューのほか、配信者が OBS でソースのプロパティから画像を変えたときにも変わる。
  *          経路ごとに知らせを受けると漏れが出やすいため、ドックの側から定期的に問い合わせる。
- *          問い合わせはソースの設定を 1 つ読むだけで軽く、ドックが見えている間しか行わない。
- *          間隔は、クリックしてから枠が移るまでの遅れが気にならない長さにする。
+ *          自動非表示の状態(残り秒数・一時停止中か)も同じ間隔で問い合わせる。
+ *          どちらもソースの設定とシーンのアイテムを読むだけで軽く、ドックが見えている間しか行わない。
+ *          間隔は、クリックしてから枠が移るまでの遅れと、残り秒数の表示の遅れが気にならない長さにする。
  */
 constexpr int CURRENT_POLL_MS = 250;
 
@@ -273,6 +294,57 @@ QImage make_thumbnail(const QString &path, qreal scale)
 }
 
 /**
+ * @brief 一覧のマス目から、カード(枠を含む)の範囲を求める。
+ * @details 隣のカードと間隔を空けるため、マス目より一回り小さくする。
+ * @param cell 一覧のマス目。
+ * @return カードの範囲。
+ */
+QRectF card_rect(const QRect &cell)
+{
+	return QRectF(cell).adjusted(CARD_GAP / 2.0 + 0.5, CARD_GAP / 2.0 + 0.5, -CARD_GAP / 2.0 - 0.5,
+				     -CARD_GAP / 2.0 - 0.5);
+}
+
+/// @brief 今の画像のカードの帯と、その右端の非表示のボタン(✕)の範囲。
+struct BandRects {
+	/// @brief 帯(カードの枠の内側の下の端)。
+	QRectF band;
+	/// @brief 非表示のボタン(帯の右端の正方形)。
+	QRectF close;
+};
+
+/**
+ * @brief 今の画像のカードの、帯と非表示のボタンの範囲を求める。
+ * @details 描くとき(ThumbnailDelegate)と、クリックした場所を調べるとき(HistoryWidget)で同じ計算を使う。
+ * @param cell    一覧のマス目。
+ * @param metrics 帯の文字のフォントの大きさ。
+ * @return 帯と非表示のボタンの範囲。
+ */
+BandRects band_rects(const QRect &cell, const QFontMetrics &metrics)
+{
+	const QRectF inner = card_rect(cell).adjusted(CURRENT_BORDER_WIDTH, CURRENT_BORDER_WIDTH, -CURRENT_BORDER_WIDTH,
+						      -CURRENT_BORDER_WIDTH);
+	const qreal height = metrics.height() + BAND_PADDING * 2;
+	BandRects rects;
+	rects.band = QRectF(inner.left(), inner.bottom() - height, inner.width(), height);
+	rects.close =
+		QRectF(rects.band.right() - height, rects.band.top(), height, height)
+			.adjusted(BAND_PADDING / 2.0, BAND_PADDING / 2.0, -BAND_PADDING / 2.0, -BAND_PADDING / 2.0);
+	return rects;
+}
+
+/**
+ * @brief 自動で非表示になるまでの残り時間を、帯に出す秒数にする。
+ * @details 切り上げる(残り 0.3 秒なら 1 秒)。「0 秒」と出たまま画像が残って見えないようにするため。
+ * @param remaining_ms 残り時間(ミリ秒)。
+ * @return 秒数(1 以上)。
+ */
+int remaining_seconds(int remaining_ms)
+{
+	return std::max(1, (remaining_ms + 999) / 1000);
+}
+
+/**
  * @brief サムネイルを、枠付きのカードに載せて描く。
  *
  * @details
@@ -287,6 +359,9 @@ QImage make_thumbnail(const QString &path, qreal scale)
  *
  * 色はすべて Qt の配色(OBS のテーマ)から取るので、ダーク・ライトどちらのテーマでも浮かない。
  * 画像はカードの中央に、縦横比を保って描く。サムネイルの作成中は、カードだけを描く。
+ *
+ * 今の画像が表示されている間は、カードの下の端に帯を重ね、自動非表示の状態と非表示のボタン(✕)を描く(paint_band())。
+ * 帯は画像の上に重なるので、テーマの色ではなく、半透明の黒に白い文字で描く(どんな画像の上でも読めるように)。
  */
 class ThumbnailDelegate : public QStyledItemDelegate {
 public:
@@ -297,10 +372,7 @@ public:
 		painter->save();
 		painter->setRenderHint(QPainter::Antialiasing);
 
-		/* 隣のカードと間隔を空けるため、マス目より一回り小さく描く */
-		const QRectF card = QRectF(option.rect)
-					    .adjusted(CARD_GAP / 2.0 + 0.5, CARD_GAP / 2.0 + 0.5, -CARD_GAP / 2.0 - 0.5,
-						      -CARD_GAP / 2.0 - 0.5);
+		const QRectF card = card_rect(option.rect);
 		const bool hovered = option.state & QStyle::State_MouseOver;
 		const bool current = index.data(CURRENT_ROLE).toBool();
 		const QPalette &palette = option.palette;
@@ -331,7 +403,71 @@ public:
 				card.toAlignedRect().adjusted(CARD_PADDING, CARD_PADDING, -CARD_PADDING, -CARD_PADDING);
 			icon.paint(painter, area, Qt::AlignCenter);
 		}
+
+		const auto state = static_cast<AutoHideState>(index.data(STATE_ROLE).toInt());
+		if (current && state != AutoHideState::Hidden)
+			paint_band(painter, option, state, index.data(SECONDS_ROLE).toInt());
 		painter->restore();
+	}
+
+private:
+	/**
+	 * @brief 今の画像のカードの下の端に、自動非表示の状態と非表示のボタン(✕)を描く。
+	 *
+	 * @param painter 描く先。
+	 * @param option  カードの範囲と、文字のフォント。
+	 * @param state   自動非表示の状態(Hidden 以外)。
+	 * @param seconds 残り秒数(Counting のとき)。
+	 */
+	static void paint_band(QPainter *painter, const QStyleOptionViewItem &option, AutoHideState state, int seconds)
+	{
+		const BandRects rects = band_rects(option.rect, option.fontMetrics);
+		const QColor foreground(Qt::white);
+
+		/* 帯の下の角は、カードの角の丸みに合わせて切り取る */
+		QPainterPath clip;
+		clip.addRoundedRect(rects.band.adjusted(0, -CARD_RADIUS, 0, 0), CARD_RADIUS, CARD_RADIUS);
+		painter->save();
+		painter->setClipPath(clip);
+		painter->fillRect(rects.band, QColor(0, 0, 0, BAND_BACKGROUND_ALPHA));
+		painter->restore();
+
+		/* 非表示のボタン: 薄い四角の上に ✕ を線で描く(文字の ✕ はフォントによって形や位置が変わるため) */
+		QColor close_background(Qt::white);
+		close_background.setAlpha(CLOSE_BACKGROUND_ALPHA);
+		painter->setPen(Qt::NoPen);
+		painter->setBrush(close_background);
+		painter->drawRoundedRect(rects.close, CARD_RADIUS / 2.0, CARD_RADIUS / 2.0);
+		const qreal cross = rects.close.height() / 4.0;
+		const QPointF center = rects.close.center();
+		painter->setPen(QPen(foreground, 1.5, Qt::SolidLine, Qt::RoundCap));
+		painter->drawLine(center + QPointF(-cross, -cross), center + QPointF(cross, cross));
+		painter->drawLine(center + QPointF(-cross, cross), center + QPointF(cross, -cross));
+
+		/* 状態の文字: カウント中は残り秒数、一時停止中は一時停止の印と文字。カウントしていなければ出さない */
+		QRectF text_area = rects.band.adjusted(BAND_PADDING * 2, 0, -rects.close.width() - BAND_PADDING * 2, 0);
+		QString label;
+		if (state == AutoHideState::Counting) {
+			label = text("Dock.Remaining").arg(seconds);
+		} else if (state == AutoHideState::Paused) {
+			/* 一時停止の印(縦棒 2 本)。文字の高さに合わせる */
+			const qreal bar_height = option.fontMetrics.capHeight();
+			const qreal bar_width = std::max(2.0, bar_height / 4.0);
+			const qreal top = text_area.center().y() - bar_height / 2.0;
+			painter->setPen(Qt::NoPen);
+			painter->setBrush(foreground);
+			painter->drawRect(QRectF(text_area.left(), top, bar_width, bar_height));
+			painter->drawRect(QRectF(text_area.left() + bar_width * 2, top, bar_width, bar_height));
+			text_area.setLeft(text_area.left() + bar_width * 3 + BAND_PADDING);
+			label = text("Dock.Paused");
+		}
+		if (!label.isEmpty()) {
+			painter->setPen(foreground);
+			painter->setFont(option.font);
+			painter->drawText(text_area, Qt::AlignLeft | Qt::AlignVCenter,
+					  option.fontMetrics.elidedText(label, Qt::ElideRight,
+									qRound(text_area.width())));
+		}
 	}
 };
 
@@ -370,6 +506,8 @@ public:
 		list_->viewport()->setAttribute(Qt::WA_Hover);
 		list_->viewport()->setCursor(Qt::PointingHandCursor);
 		list_->installEventFilter(this);
+		/* 今の画像のカードの非表示のボタン(✕)は一覧の項目ではなく描いただけなので、押されたかを一覧の中身で調べる */
+		list_->viewport()->installEventFilter(this);
 		/*
 		 * ドラッグ&ドロップは、一覧ではなくこの部品(HistoryWidget)で受ける。一覧が受けると、一覧の中の並べ替えとして扱われ、
 		 * ファイルのドロップを受け付けないため。一覧で受けなければ、Qt は受け付ける親(この部品)に届ける
@@ -380,7 +518,12 @@ public:
 		QObject::connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
 			const QString path = item->data(PATH_ROLE).toString();
 			obs_log(LOG_INFO, "history: clicked %s", path.toUtf8().constData());
-			show_image(path);
+			/* 表示中の今の画像は、表示し直さずに一時停止と再開を切り替える。カウントしていなければ何もしない */
+			const AutoHideState state = showing_state(path);
+			if (state == AutoHideState::Counting || state == AutoHideState::Paused)
+				toggle_pause();
+			else if (state == AutoHideState::Hidden)
+				show_image(path);
 		});
 		/* 右クリックメニュー。一覧の位置は、スクロールする中身(viewport)の座標で届く */
 		list_->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -658,6 +801,7 @@ protected:
 
 	/**
 	 * @brief 一覧の大きさが変わったら、1 行の枚数とサムネイルの大きさを決め直す。お知らせの帯をクリックしたら消す。
+	 *        今の画像のカードの非表示のボタン(✕)が押されたら、非表示にする。
 	 */
 	bool eventFilter(QObject *watched, QEvent *event) override
 	{
@@ -665,6 +809,8 @@ protected:
 			hide_notice();
 			return true;
 		}
+		if (watched == list_->viewport() && handle_close_button(event))
+			return true;
 		if (watched == list_ && event->type() == QEvent::Resize)
 			update_layout();
 		return QWidget::eventFilter(watched, event);
@@ -722,6 +868,100 @@ private:
 	}
 
 	/**
+	 * @brief 画像が、表示中の今の画像なら、その自動非表示の状態を返す。
+	 *
+	 * @details クリックやメニューの操作を決めるときに使う。定期的な問い合わせの結果(最大 0.25 秒前)ではなく、
+	 *          その場で問い合わせる(非表示になった直後のクリックを、一時停止と取り違えないように)。
+	 *
+	 * @param path 画像ファイルのパス。
+	 * @return 自動非表示の状態。今の画像でない、または表示されていなければ Hidden。
+	 */
+	AutoHideState showing_state(const QString &path) const
+	{
+		if (!callbacks_.current || !callbacks_.status)
+			return AutoHideState::Hidden;
+		const QString current = QString::fromUtf8(callbacks_.current().c_str());
+		if (current.isEmpty() || QFileInfo(current) != QFileInfo(path))
+			return AutoHideState::Hidden;
+		return callbacks_.status().state;
+	}
+
+	/// @brief 自動非表示の一時停止と再開を切り替え、帯の表示を次の問い合わせを待たずに直す。
+	void toggle_pause()
+	{
+		if (callbacks_.toggle_pause)
+			callbacks_.toggle_pause();
+		update_current();
+	}
+
+	/// @brief 画像を非表示にし、帯の表示を次の問い合わせを待たずに消す。
+	void hide_image()
+	{
+		if (callbacks_.hide)
+			callbacks_.hide();
+		update_current();
+	}
+
+	/**
+	 * @brief 一覧の中の位置が、今の画像のカードの非表示のボタン(✕)の上かを調べる。
+	 * @param pos 一覧の中身(viewport)の座標。
+	 * @return ボタンの上なら true。帯が出ていない(画像が表示されていない)ときは false。
+	 */
+	bool is_on_close_button(const QPoint &pos) const
+	{
+		const QListWidgetItem *item = list_->itemAt(pos);
+		if (!item || !item->data(CURRENT_ROLE).toBool() ||
+		    static_cast<AutoHideState>(item->data(STATE_ROLE).toInt()) == AutoHideState::Hidden)
+			return false;
+		return band_rects(list_->visualItemRect(item), list_->fontMetrics()).close.contains(pos);
+	}
+
+	/**
+	 * @brief 非表示のボタン(✕)への操作を処理する。
+	 *
+	 * @details
+	 * ボタンの上で押して離したら非表示にする(押した後にボタンの外で離したら何もしない。ふつうのボタンと同じ)。
+	 * ボタンの上の押す・離すは一覧に渡さない。渡すと、カードのクリック(一時停止)としても扱われるため。
+	 * マウスを乗せたら、ボタンの名前を出す。
+	 *
+	 * @param event 一覧の中身(viewport)に届いたイベント。
+	 * @return ここで処理したら true(一覧には渡さない)。
+	 */
+	bool handle_close_button(QEvent *event)
+	{
+		switch (event->type()) {
+		case QEvent::MouseButtonPress:
+		case QEvent::MouseButtonDblClick: {
+			const auto *mouse = static_cast<QMouseEvent *>(event);
+			if (mouse->button() != Qt::LeftButton || !is_on_close_button(mouse->position().toPoint()))
+				return false;
+			close_pressed_ = true;
+			return true;
+		}
+		case QEvent::MouseButtonRelease: {
+			if (!close_pressed_)
+				return false;
+			close_pressed_ = false;
+			const auto *mouse = static_cast<QMouseEvent *>(event);
+			if (is_on_close_button(mouse->position().toPoint())) {
+				obs_log(LOG_INFO, "history: hide button clicked");
+				hide_image();
+			}
+			return true;
+		}
+		case QEvent::ToolTip: {
+			const auto *help = static_cast<QHelpEvent *>(event);
+			if (!is_on_close_button(help->pos()))
+				return false;
+			QToolTip::showText(help->globalPos(), text("Dock.Menu.Hide"), list_->viewport());
+			return true;
+		}
+		default:
+			return false;
+		}
+	}
+
+	/**
 	 * @brief 右クリックメニューを出す。
 	 *
 	 * @details
@@ -752,7 +992,23 @@ private:
 		 */
 		auto *menu = new QMenu(window());
 		menu->setAttribute(Qt::WA_DeleteOnClose);
-		if (!path.isEmpty()) {
+		const AutoHideState state = path.isEmpty() ? AutoHideState::Hidden : showing_state(path);
+		if (state != AutoHideState::Hidden) {
+			/* 表示中の今の画像: 「表示」の代わりに「非表示」を出し、カウントの状態に合わせて「一時停止」か「再開」を加える */
+			QAction *hide = menu->addAction(text("Dock.Menu.Hide"));
+			QObject::connect(hide, &QAction::triggered, this, [this]() {
+				obs_log(LOG_INFO, "history: hide from menu");
+				hide_image();
+			});
+			if (state == AutoHideState::Counting || state == AutoHideState::Paused) {
+				QAction *pause = menu->addAction(
+					text(state == AutoHideState::Paused ? "Dock.Menu.Resume" : "Dock.Menu.Pause"));
+				QObject::connect(pause, &QAction::triggered, this, [this]() {
+					obs_log(LOG_INFO, "history: pause/resume from menu");
+					toggle_pause();
+				});
+			}
+		} else if (!path.isEmpty()) {
 			QAction *show = menu->addAction(text("Dock.Menu.Show"));
 			QObject::connect(show, &QAction::triggered, this, [this, path]() {
 				obs_log(LOG_INFO, "history: show from menu %s", path.toUtf8().constData());
@@ -891,11 +1147,12 @@ private:
 	}
 
 	/**
-	 * @brief 今の画像を問い合わせ、そのカードに印を付ける(印は ThumbnailDelegate が描く)。
+	 * @brief 今の画像を問い合わせ、そのカードに印を付ける(印は ThumbnailDelegate が描く)。自動非表示の状態も反映する。
 	 *
 	 * @details
-	 * 今の画像が前回と同じなら何もしない(ほとんどの問い合わせはここで終わる)。
+	 * 今の画像が前回と同じなら、印は付け直さない(ほとんどの問い合わせはここで終わる)。
 	 * 変わっていたら、一覧の中から同じファイルを探して印を付け直す。
+	 * どちらの場合も、最後に自動非表示の状態を反映する(update_status())。
 	 * 'Clipboard Image' に設定されたパスと一覧のパスは区切り文字の向きなどが違うことがあるため、
 	 * 文字列ではなくファイルとして比べる。一覧にない画像(掃除で消えた・配信者が別の画像を設定した)なら、どれにも印を付けない。
 	 * ドックが見えていない間は問い合わせない(見えたときに追いつく。showEvent())。
@@ -908,19 +1165,43 @@ private:
 			return;
 
 		const QString current = QString::fromUtf8(callbacks_.current().c_str());
-		if (!force && current == current_raw_)
-			return;
-		current_raw_ = current;
+		if (force || current != current_raw_) {
+			current_raw_ = current;
+			const QFileInfo current_file(current);
+			bool found = false;
+			for (int i = 0; i < list_->count(); i++) {
+				QListWidgetItem *item = list_->item(i);
+				const bool is_current = !found && !current.isEmpty() &&
+							QFileInfo(item->data(PATH_ROLE).toString()) == current_file;
+				found = found || is_current;
+				if (item->data(CURRENT_ROLE).toBool() != is_current)
+					item->setData(CURRENT_ROLE, is_current);
+			}
+		}
+		update_status();
+	}
 
-		const QFileInfo current_file(current);
-		bool found = false;
+	/**
+	 * @brief 自動非表示の状態を問い合わせ、今の画像のカードの帯に反映する。
+	 *
+	 * @details
+	 * 今の画像の問い合わせ(update_current())のたびに呼ぶ。残り秒数は 1 秒ごとに変わるので、毎回問い合わせる。
+	 * 状態と秒数は今の画像の項目だけに持たせ、ほかの項目は Hidden にする。
+	 * 前回と同じなら項目に触らない(描き直しを起こさないため。ほとんどの問い合わせはここで終わる)。
+	 */
+	void update_status()
+	{
+		const AutoHideStatus status = callbacks_.status ? callbacks_.status() : AutoHideStatus();
+		const bool counting = status.state == AutoHideState::Counting || status.state == AutoHideState::Paused;
+		const int seconds = counting ? remaining_seconds(status.remaining_ms) : 0;
 		for (int i = 0; i < list_->count(); i++) {
 			QListWidgetItem *item = list_->item(i);
-			const bool is_current = !found && !current.isEmpty() &&
-						QFileInfo(item->data(PATH_ROLE).toString()) == current_file;
-			found = found || is_current;
-			if (item->data(CURRENT_ROLE).toBool() != is_current)
-				item->setData(CURRENT_ROLE, is_current);
+			const bool is_current = item->data(CURRENT_ROLE).toBool();
+			const int state = static_cast<int>(is_current ? status.state : AutoHideState::Hidden);
+			if (item->data(STATE_ROLE).toInt() != state)
+				item->setData(STATE_ROLE, state);
+			if (is_current && item->data(SECONDS_ROLE).toInt() != seconds)
+				item->setData(SECONDS_ROLE, seconds);
 		}
 	}
 
@@ -1020,6 +1301,8 @@ private:
 	QTimer refresh_timer_;
 	/// @brief 今の画像を定期的に問い合わせるタイマー。
 	QTimer current_timer_;
+	/// @brief 非表示のボタン(✕)の上でマウスを押したら true。離したときに、押したボタンかを見分けるため。
+	bool close_pressed_ = false;
 	/**
 	 * @brief サムネイルを作るスレッド。
 	 * @details OBS 全体で共有のスレッドではなく専用のものを使う。ドックを消すときに、

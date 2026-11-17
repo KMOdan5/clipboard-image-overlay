@@ -25,7 +25,8 @@
  * 関連ファイル:
  * - image-display.cpp … hide_clipboard_image()(画像を消す)、非表示の検知(auto_hide_on_image_hidden() を呼ぶ)、
  *   手動の表示の検知(auto_hide_restart() を呼ぶ)
- * - plugin-main.cpp … 貼ったときに auto_hide_restart()、一時停止ホットキーで auto_hide_toggle_pause() を呼ぶ
+ * - plugin-main.cpp … 貼ったときに auto_hide_restart()、一時停止ホットキーと表示履歴のドックから auto_hide_toggle_pause() を呼ぶ。
+ *   表示履歴のドックの状態の表示のために auto_hide_status() を呼ぶ
  */
 
 #include "auto-hide.hpp"
@@ -152,6 +153,28 @@ void auto_hide_toggle_pause()
 	hide_timer->stop();
 	paused = true;
 	obs_log(LOG_INFO, "auto-hide: paused (%d ms left)", remaining_ms);
+}
+
+/**
+ * @brief 自動非表示の今の状態を返す。
+ *
+ * @details 仕様の詳細は auto-hide.hpp の宣言側を参照。
+ */
+AutoHideStatus auto_hide_status()
+{
+	AutoHideStatus status;
+	if (!is_clipboard_image_showing())
+		return status;
+	if (paused) {
+		status.state = AutoHideState::Paused;
+		status.remaining_ms = remaining_ms;
+	} else if (hide_timer && hide_timer->isActive()) {
+		status.state = AutoHideState::Counting;
+		status.remaining_ms = hide_timer->remainingTime();
+	} else {
+		status.state = AutoHideState::Manual;
+	}
+	return status;
 }
 
 /**
