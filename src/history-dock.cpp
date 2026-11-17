@@ -444,7 +444,7 @@ private:
 		painter->drawLine(center + QPointF(-cross, -cross), center + QPointF(cross, cross));
 		painter->drawLine(center + QPointF(-cross, cross), center + QPointF(cross, -cross));
 
-		/* 状態の文字: カウント中は残り秒数、一時停止中は一時停止の印と文字。カウントしていなければ出さない */
+		/* 状態の文字: カウント中は残り秒数、一時停止中は一時停止の印と文字 */
 		QRectF text_area = rects.band.adjusted(BAND_PADDING * 2, 0, -rects.close.width() - BAND_PADDING * 2, 0);
 		QString label;
 		if (state == AutoHideState::Counting) {
@@ -518,11 +518,10 @@ public:
 		QObject::connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
 			const QString path = item->data(PATH_ROLE).toString();
 			obs_log(LOG_INFO, "history: clicked %s", path.toUtf8().constData());
-			/* 表示中の今の画像は、表示し直さずに一時停止と再開を切り替える。カウントしていなければ何もしない */
-			const AutoHideState state = showing_state(path);
-			if (state == AutoHideState::Counting || state == AutoHideState::Paused)
+			/* 表示中の今の画像は、表示し直さずに一時停止と再開を切り替える */
+			if (showing_state(path) != AutoHideState::Hidden)
 				toggle_pause();
-			else if (state == AutoHideState::Hidden)
+			else
 				show_image(path);
 		});
 		/* 右クリックメニュー。一覧の位置は、スクロールする中身(viewport)の座標で届く */
@@ -994,20 +993,18 @@ private:
 		menu->setAttribute(Qt::WA_DeleteOnClose);
 		const AutoHideState state = path.isEmpty() ? AutoHideState::Hidden : showing_state(path);
 		if (state != AutoHideState::Hidden) {
-			/* 表示中の今の画像: 「表示」の代わりに「非表示」を出し、カウントの状態に合わせて「一時停止」か「再開」を加える */
+			/* 表示中の今の画像: 「表示」の代わりに「非表示」を出し、カウントの状態に合わせて「一時停止」か「再開」を続ける */
 			QAction *hide = menu->addAction(text("Dock.Menu.Hide"));
 			QObject::connect(hide, &QAction::triggered, this, [this]() {
 				obs_log(LOG_INFO, "history: hide from menu");
 				hide_image();
 			});
-			if (state == AutoHideState::Counting || state == AutoHideState::Paused) {
-				QAction *pause = menu->addAction(
-					text(state == AutoHideState::Paused ? "Dock.Menu.Resume" : "Dock.Menu.Pause"));
-				QObject::connect(pause, &QAction::triggered, this, [this]() {
-					obs_log(LOG_INFO, "history: pause/resume from menu");
-					toggle_pause();
-				});
-			}
+			QAction *pause = menu->addAction(
+				text(state == AutoHideState::Paused ? "Dock.Menu.Resume" : "Dock.Menu.Pause"));
+			QObject::connect(pause, &QAction::triggered, this, [this]() {
+				obs_log(LOG_INFO, "history: pause/resume from menu");
+				toggle_pause();
+			});
 		} else if (!path.isEmpty()) {
 			QAction *show = menu->addAction(text("Dock.Menu.Show"));
 			QObject::connect(show, &QAction::triggered, this, [this, path]() {
@@ -1192,8 +1189,8 @@ private:
 	void update_status()
 	{
 		const AutoHideStatus status = callbacks_.status ? callbacks_.status() : AutoHideStatus();
-		const bool counting = status.state == AutoHideState::Counting || status.state == AutoHideState::Paused;
-		const int seconds = counting ? remaining_seconds(status.remaining_ms) : 0;
+		const int seconds = status.state == AutoHideState::Counting ? remaining_seconds(status.remaining_ms)
+									    : 0;
 		for (int i = 0; i < list_->count(); i++) {
 			QListWidgetItem *item = list_->item(i);
 			const bool is_current = item->data(CURRENT_ROLE).toBool();
