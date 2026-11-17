@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "auto-hide.hpp"
+
 #include <functional>
 #include <string>
 #include <vector>
@@ -33,6 +35,24 @@ struct HistoryDockCallbacks {
 	 *          表示中か非表示かは問わない。'Clipboard Image' がなければ空を返す。
 	 */
 	std::function<std::string()> current;
+
+	/**
+	 * @brief 自動非表示の状態を問い合わせる。今の画像のカードに、残り秒数や一時停止中かを出すために使う。
+	 * @details 今の画像の問い合わせ(current)と一緒に、ドックが見えている間だけ定期的に呼ぶ。
+	 */
+	std::function<AutoHideStatus()> status;
+
+	/**
+	 * @brief 自動非表示の一時停止と再開を切り替える(一時停止ホットキーと同じ)。
+	 * @details 表示中の今の画像のカードをクリックしたときと、右クリックメニューの「一時停止」「再開」で呼ぶ。
+	 */
+	std::function<void()> toggle_pause;
+
+	/**
+	 * @brief 画像を非表示にする(非表示ホットキーと同じ)。
+	 * @details 今の画像のカードの非表示のボタン(✕)と、右クリックメニューの「非表示」で呼ぶ。
+	 */
+	std::function<void()> hide;
 
 	/**
 	 * @brief 画像を削除する。右クリックメニューの「削除」で呼ぶ。
@@ -63,8 +83,17 @@ struct HistoryDockCallbacks {
  *   表示中か非表示かに関係なく目立たせる(どれを選んでいるかを示す)。今の画像は callbacks.current に問い合わせる
  *   (ホットキー・ドック・目のアイコンなど、どこから表示/非表示にしても追いつくよう、ドックが見えている間、定期的に問い合わせる)
  * - サムネイルを 1 回クリックすると callbacks.show を呼ぶ。表示の処理は呼び出し元(plugin-main.cpp)が行う
+ * - 今の画像が表示されている間は、そのカードの下の端に帯を出し、自動非表示の状態を示す(callbacks.status に問い合わせる)
+ *   - カウント中: 自動で非表示になるまでの残り秒数(切り上げ。0 秒とは出ない)
+ *   - 一時停止中: 一時停止の印と「一時停止中」
+ *     (表示時間 0 秒で表示したときも、残り 0 秒の一時停止として、これを出す)
+ *   - どちらの状態でも、帯の右端に非表示のボタン(✕)を出す。押すと callbacks.hide を呼ぶ
+ * - 表示中の今の画像のカードをクリックすると、表示し直さずに一時停止と再開を切り替える(callbacks.toggle_pause)。
+ *   非表示の今の画像や、ほかの画像のクリックは callbacks.show のまま
  * - 右クリックメニュー
  *   - 画像の上: 「表示」(callbacks.show)・「設定...」(callbacks.open_settings)・区切り線・「削除」(callbacks.remove)
+ *   - 表示中の今の画像の上: 「表示」の代わりに「非表示」(callbacks.hide)を出し、
+ *     カウント中なら「一時停止」、一時停止中なら「再開」(callbacks.toggle_pause)を続ける
  *   - 空いている所(画像がないときの案内の上を含む): 「設定...」だけ
  *   - 「表示」を一番上、「削除」を一番下に置く。右クリックの直後に誤ってクリックしても、削除にならないように
  * - 保存フォルダの変化(新しい画像・掃除や削除で消えた画像)を見張り、一覧に自動で反映する。

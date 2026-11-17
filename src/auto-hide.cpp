@@ -16,6 +16,8 @@
  *                          ↑ 貼る: 一時停止のまま、残り時間を表示時間に戻す
  * @endcode
  *
+ * 表示時間 0 秒(手動でのみ非表示)は、残り 0 秒の [一時停止中] として扱う。再開すると、すぐに非表示になる。
+ *
  * タイマーは 1 つだけ持ち、使い回す。表示のたびに新しいタイマーを作ると、
  * 古いタイマーが後から発火して、延長したはずの画像が早く消えてしまうため。
  *
@@ -25,7 +27,8 @@
  * 関連ファイル:
  * - image-display.cpp … hide_clipboard_image()(画像を消す)、非表示の検知(auto_hide_on_image_hidden() を呼ぶ)、
  *   手動の表示の検知(auto_hide_restart() を呼ぶ)
- * - plugin-main.cpp … 貼ったときに auto_hide_restart()、一時停止ホットキーで auto_hide_toggle_pause() を呼ぶ
+ * - plugin-main.cpp … 貼ったときに auto_hide_restart()、一時停止ホットキーと表示履歴のドックから auto_hide_toggle_pause() を呼ぶ。
+ *   表示履歴のドックの状態の表示のために auto_hide_status() を呼ぶ
  */
 
 #include "auto-hide.hpp"
@@ -94,13 +97,16 @@ void auto_hide_restart()
 	/* 表示時間は設定画面で変えられる。読むのは表示するたび(変更は次に表示したときから反映) */
 	const int seconds = settings_get().display_seconds;
 
-	/* 表示時間 0 は「自動で消さない」。一時停止も意味がなくなるので解除する
-	   (残しておくと、表示時間を戻したあとに貼った画像が一時停止のまま消えなくなる) */
+	/*
+	 * 表示時間 0 は「手動でのみ非表示」。残り 0 秒の一時停止として扱う(再開すると、すぐに非表示になる)。
+	 * カウント中・一時停止中の 2 つの状態だけで、ホットキーと表示履歴のドックの操作をそろえられるため
+	 */
 	if (seconds <= 0) {
-		clear_pause();
 		if (hide_timer)
 			hide_timer->stop();
-		obs_log(LOG_INFO, "auto-hide: disabled (stays until hidden manually)");
+		paused = true;
+		remaining_ms = 0;
+		obs_log(LOG_INFO, "auto-hide: display time is 0; paused with no time left (hides when resumed)");
 		return;
 	}
 
@@ -132,18 +138,15 @@ void auto_hide_toggle_pause()
 		return;
 	}
 
-	if (paused) {
-		/* 再開: 覚えておいた残り時間から数え直す */
-		const int resume_ms = remaining_ms;
+	/*
+	 * 再開: 覚えておいた残り時間から数え直す。残りが 0 なら、すぐに非表示になる。
+	 * 一時停止中でなくタイマーも止まっているとき(表示中なのに数えていない)も、残り 0 秒の一時停止として扱う(auto_hide_status() と同じ)
+	 */
+	if (paused || !hide_timer || !hide_timer->isActive()) {
+		const int resume_ms = paused ? remaining_ms : 0;
 		clear_pause();
 		ensure_timer()->start(resume_ms);
 		obs_log(LOG_INFO, "auto-hide: resumed (%d ms left)", resume_ms);
-		return;
-	}
-
-	/* 表示時間 0(自動で消さない)のときは、タイマーが動いていないのでここで何もしない */
-	if (!hide_timer || !hide_timer->isActive()) {
-		obs_log(LOG_INFO, "auto-hide: pause ignored (timer is not running)");
 		return;
 	}
 
@@ -152,6 +155,26 @@ void auto_hide_toggle_pause()
 	hide_timer->stop();
 	paused = true;
 	obs_log(LOG_INFO, "auto-hide: paused (%d ms left)", remaining_ms);
+}
+
+/**
+ * @brief 自動非表示の今の状態を返す。
+ *
+ * @details 仕様の詳細は auto-hide.hpp の宣言側を参照。
+ */
+AutoHideStatus auto_hide_status()
+{
+	AutoHideStatus status;
+	if (!is_clipboard_image_showing())
+		return status;
+	if (!paused && hide_timer && hide_timer->isActive()) {
+		status.state = AutoHideState::Counting;
+		status.remaining_ms = hide_timer->remainingTime();
+	} else {
+		status.state = AutoHideState::Paused;
+		status.remaining_ms = paused ? remaining_ms : 0;
+	}
+	return status;
 }
 
 /**

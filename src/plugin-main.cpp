@@ -18,6 +18,7 @@
  *             └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
  *
  *   表示履歴のドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
+ *        (表示中の今の画像のクリックは、表示ではなく一時停止/再開。下の toggle_pause())
  *   表示履歴のドックに画像ファイルをドラッグ&ドロップ ─→ on_images_dropped()
  *        └→ save_image_file()  1 つずつ保存して、表示履歴に足す(表示はしない。clipboard-capture.cpp)
  *   表示履歴のドックの右クリック > 削除 ─→ delete_history_image()
@@ -25,10 +26,12 @@
  *        └→ trash_saved_image()            ごみ箱に送る(clipboard-capture.cpp)
  *   「前の画像を表示」ホットキー ─→ on_show_previous_requested() ─→ show_history_image()
  *
- *   非表示ホットキー 押下 ──→ on_hide_requested() ─→ hide_clipboard_image()  全シーンでフェードアウト(image-display.cpp)
+ *   非表示ホットキー 押下 ──→ on_hide_requested() ─→ hide_image() ─→ hide_clipboard_image()  全シーンでフェードアウト(image-display.cpp)
+ *   表示履歴のドックの非表示のボタン・右クリック > 非表示 ─→ hide_image()
  *
- *   一時停止ホットキー 押下 ──→ on_toggle_pause_requested() ─→ auto_hide_toggle_pause()
+ *   一時停止ホットキー 押下 ──→ on_toggle_pause_requested() ─→ toggle_pause() ─→ auto_hide_toggle_pause()
  *                                自動で非表示にするタイマーの一時停止/再開(auto-hide.cpp)
+ *   表示履歴のドックの表示中の今の画像をクリック・右クリック > 一時停止/再開 ─→ toggle_pause()
  *
  *   シーンの読み込み・切り替え・終了の途中に受け付けた操作は、何もせずに無視する(accept_user_action())
  *
@@ -110,7 +113,7 @@ bool scenes_ready = false;
  * @return 受け付けてよいなら true。
  *
  * @note 呼び出し元: on_show_requested()・show_history_image()・on_show_previous_requested()・delete_history_image()・
- *       delete_all_history_images()・on_hide_requested()・on_toggle_pause_requested()。
+ *       delete_all_history_images()・hide_image()・toggle_pause()。
  * @note スレッド: UI スレッドで呼ぶこと。
  */
 bool accept_user_action(const char *action, bool shows_image = false)
@@ -455,16 +458,18 @@ void add_tools_submenu()
  *
  * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
  *
+ * @param trigger 操作の入り口(ログ用。"hotkey" / "history")。
+ *
  * @note スレッド: UI スレッドで呼ぶこと。
- * @see hotkeys(呼び出し元)
+ * @see on_hide_requested()(ホットキー)、history_dock_register()(表示履歴のドックの非表示のボタン・右クリックメニュー)
  */
-void on_hide_requested()
+void hide_image(const char *trigger)
 {
 	if (!accept_user_action("hide"))
 		return;
 
 	if (is_clipboard_image_showing()) {
-		obs_log(LOG_INFO, "hide requested (trigger: hotkey)");
+		obs_log(LOG_INFO, "hide requested (trigger: %s)", trigger);
 		hide_clipboard_image(true);
 	} else {
 		obs_log(LOG_INFO, "hide: no image shown");
@@ -473,20 +478,35 @@ void on_hide_requested()
 	auto_hide_on_image_hidden();
 }
 
+/// @brief 「'Clipboard Image' を非表示」ホットキーの処理。hide_image() を呼ぶ。
+void on_hide_requested()
+{
+	hide_image("hotkey");
+}
+
 /**
- * @brief 「自動非表示を一時停止/再開」ホットキーの処理。
+ * @brief 自動非表示の一時停止と再開を切り替える。
  *
  * @details auto_hide_toggle_pause() を呼ぶ。シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
  *          表示中かどうかを調べるときに、片付け中のシーンを触らないため。
  *
+ * @param trigger 操作の入り口(ログ用。"hotkey" / "history")。
+ *
  * @note スレッド: UI スレッドで呼ぶこと。
- * @see hotkeys(呼び出し元)
+ * @see on_toggle_pause_requested()(ホットキー)、history_dock_register()(表示履歴のドックのクリック・右クリックメニュー)
  */
-void on_toggle_pause_requested()
+void toggle_pause(const char *trigger)
 {
 	if (!accept_user_action("toggle pause"))
 		return;
+	obs_log(LOG_INFO, "toggle pause requested (trigger: %s)", trigger);
 	auto_hide_toggle_pause();
+}
+
+/// @brief 「自動非表示を一時停止/再開」ホットキーの処理。toggle_pause() を呼ぶ。
+void on_toggle_pause_requested()
+{
+	toggle_pause("hotkey");
 }
 
 /**
@@ -713,6 +733,7 @@ bool obs_module_load(void)
 	 * 右クリックメニューの「削除」は delete_history_image()、「設定...」は設定画面を開く。
 	 * 画像ファイルをドラッグ&ドロップしたら on_images_dropped()。
 	 * ドックのハイライトは今の画像('Clipboard Image' が参照している画像)で、表示中か非表示かは問わない。
+	 * 今の画像のカードには自動非表示の状態を出し、クリックで一時停止・再開、非表示のボタンで非表示にする(ホットキーと同じ処理)。
 	 * 問い合わせには、シーンの読み込み・切り替え・終了の途中は答えない(片付け中のシーンを触らないため)
 	 */
 	HistoryDockCallbacks dock_callbacks;
@@ -723,6 +744,17 @@ bool obs_module_load(void)
 		if (!scenes_ready)
 			return std::string();
 		return current_clipboard_image();
+	};
+	dock_callbacks.status = []() {
+		if (!scenes_ready)
+			return AutoHideStatus();
+		return auto_hide_status();
+	};
+	dock_callbacks.toggle_pause = []() {
+		toggle_pause("history");
+	};
+	dock_callbacks.hide = []() {
+		hide_image("history");
 	};
 	dock_callbacks.remove = delete_history_image;
 	dock_callbacks.drop = on_images_dropped;
