@@ -12,6 +12,7 @@
  *
  * 専用ソースは名前「Clipboard Image」で作り、毎回それを使い回す。
  * こうすることで、新しい画像を貼ると前の画像と差し替わり、画面に画像が溜まらない。
+ * 作るときは、画像ソースのプロパティ「表示されていないときに画像を読み込まない」をオンにする(create_image_source())。
  *
  * 画像ソースを増やす(「画像を新しい 'Clipboard Image' に表示」):
  * - 新しい画像ソースを「Clipboard Image 2」「3」… と番号付きの名前で作り、それに表示する。前の画像ソースはそのまま残す
@@ -20,6 +21,8 @@
  * - プラグインが操作するのは、番号が一番大きい画像ソース(アクティブ)だけ。無印の「Clipboard Image」は 1 番として数える。
  *   どのシーンにあるかに関係なく、全体で一番大きい番号を見る(シーンごとに見ると、シーンを切り替えるたびに操作の対象が変わるため)
  * - アクティブ以外(非アクティブ)の画像ソースは、表示/非表示も含めて一切触らない(表示したまま残るのは配信者が消す)。
+ * - アクティブを削除すると、一つ前の画像ソースがアクティブに戻る。それが表示中でも、自動で非表示にするタイマーは止め、
+ *   表示したまま残す(削除した画像のための残り時間で、配信者が残していた画像を非表示にしないため。item_removed_task())
  *   古い画像の掃除では、非アクティブの画像ソースが参照している画像も残す(clipboard_images_in_use())
  * - 以下の説明の「Clipboard Image」「専用ソース」は、アクティブの画像ソースのこと
  *
@@ -120,6 +123,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -319,6 +323,9 @@ std::string image_file_of(obs_source_t *source)
  * @details
  * base を渡したときは、base の画像ソースのプロパティ(「表示されていないときに画像を読み込まない」など)とフィルタを写す。
  * 画像ファイルだけは path にする。同じシーンで続けて別の画像を出すときに、設定が変わらないようにするため。
+ * base がないときは、「表示されていないときに画像を読み込まない」をオンにして作る(OBS の既定はオフ)。
+ * 表示するたびに別の画像に差し替えるので、非表示の間に画像を持っておいても使い道がないため。
+ * 作った後は、配信者が変えた設定を上書きしない。
  *
  * @param name 作るソースの名前。
  * @param path 設定する画像ファイルのパス(UTF-8)。
@@ -333,6 +340,8 @@ obs_source_t *create_image_source(const std::string &name, const char *path, obs
 		obs_data_t *base_settings = obs_source_get_settings(base);
 		obs_data_apply(settings, base_settings);
 		obs_data_release(base_settings);
+	} else {
+		obs_data_set_bool(settings, "unload", true);
 	}
 	obs_data_set_string(settings, "file", path);
 	obs_source_t *source = obs_source_create(IMAGE_SOURCE_ID, name.c_str(), settings, nullptr);
@@ -1424,15 +1433,18 @@ std::vector<obs_weak_source_t *> watched_scenes;
  * 通知が届くまでの間に状態が変わっていても(貼った・消した・削除した)、今の状態に合った動きになるため。
  * 1. 差し替え中のアイテムが削除されていたら、差し替えを取り消す
  * 2. 差し替え中なら何もしない(表示が続いている扱い。カウントは貼ったときに始めている)
- * 3. どのシーンにも表示されていなければ、一時停止を解除してタイマーを止める
- *    (一時停止は、画像がどこかに表示されている間だけ続ける。残ったままだと、次に表示した画像が非表示にならないため)
+ * 3. どのシーンにも表示されていない、またはアクティブの画像ソースが削除されたなら、一時停止を解除してタイマーを止める
+ *    (一時停止は、画像がどこかに表示されている間だけ続ける。残ったままだと、次に表示した画像が非表示にならないため)。
+ *    アクティブが削除されると、一つ前の画像ソースがアクティブに戻る。それが表示中でも、削除した画像のタイマーでは非表示にしない
+ *    (表示したまま残す。タイマーが止まっているので、ドックには残り 0 秒の一時停止中と出る)
  * 4. 配信者が表示した(表示・追加の通知)なら、貼ったときと同じくカウントを始める
  *    (既にどこかに表示中でカウントしていた場合は、表示時間に戻る)
  *
- * @param shown 配信者が表示した通知(表示にした・表示状態で追加した)なら true。
- *              非表示にした・削除した通知なら false。
+ * @param shown          配信者が表示した通知(表示にした・表示状態で追加した)なら true。
+ *                       非表示にした・削除した通知なら false。
+ * @param active_removed 削除の通知で、通知のときのアクティブの画像ソースが、もうアクティブでないなら true。
  */
-void handle_visibility_changed(bool shown)
+void handle_visibility_changed(bool shown, bool active_removed = false)
 {
 	if (pending_swap.item && !is_pending_swap_alive()) {
 		obs_log(LOG_INFO, "display: swap target was removed");
@@ -1440,6 +1452,12 @@ void handle_visibility_changed(bool shown)
 	}
 	if (pending_swap.item)
 		return;
+
+	if (active_removed) {
+		obs_log(LOG_INFO, "display: the active source was removed");
+		auto_hide_on_image_hidden();
+		return;
+	}
 
 	if (!is_visible_in_any_scene()) {
 		obs_log(LOG_INFO, "display: Clipboard Image is not shown in any scene");
@@ -1480,6 +1498,32 @@ void queue_visibility_changed(bool shown)
 {
 	const uintptr_t value = (watch_generation.load() << 1) | (shown ? 1 : 0);
 	obs_queue_task(OBS_TASK_UI, visibility_changed_task, reinterpret_cast<void *>(value), false);
+}
+
+/// @brief 削除の通知を UI スレッドに回すときに渡す内容。
+struct RemovedNotice {
+	uintptr_t generation; ///< 通知を回したときの watch_generation。
+	std::string name;     ///< 削除されたアイテムのソースの名前(通知のときのアクティブの名前)。
+};
+
+/**
+ * @brief UI スレッドで、削除の通知を handle_visibility_changed() に渡す。
+ *
+ * @details
+ * アクティブの画像ソースそのものを削除したかは、通知のときのアクティブと今のアクティブを比べて判断する。
+ * OBS がソースを片付け終わるのは削除の通知より後で、この処理がその前に動くか後に動くかは決まっていない。
+ * - 片付けの前: アクティブは変わっていないが、どのシーンにも置かれていないので「非表示」になる
+ * - 片付けの後: アクティブが一つ前の画像ソースに変わっている
+ * どちらでも同じ動き(タイマーを止める)になるよう、後者も削除として扱う。
+ *
+ * @param param RemovedNotice(new で作ったもの。ここで解放する)。
+ */
+void item_removed_task(void *param)
+{
+	std::unique_ptr<RemovedNotice> notice(static_cast<RemovedNotice *>(param));
+	if (notice->generation != watch_generation.load())
+		return; /* 片付ける前に届いた古い通知 */
+	handle_visibility_changed(false, active_source_name() != notice->name);
 }
 
 /**
@@ -1547,6 +1591,7 @@ void on_item_add(void *, calldata_t *cd)
  * アイテムやソース・シーンを削除したときは、item_visible 通知は来ず、この通知だけが来る。
  * 削除で画面から消えたら、非表示と同じく一時停止を解除する(一時停止が残って、次の画像が消えなくなるのを防ぐ)。
  * ソースを削除したときは描画スレッドからシーンをロックしたまま届くので、UI スレッドに回すだけにする。
+ * アクティブの画像ソースそのものを削除したかを UI スレッドで判断できるよう、ソースの名前を一緒に渡す(item_removed_task())。
  *
  * @param cd 通知の内容("item": 削除されたシーンアイテム)。
  *
@@ -1555,9 +1600,11 @@ void on_item_add(void *, calldata_t *cd)
  */
 void on_item_remove(void *, calldata_t *cd)
 {
-	if (!clipboard_item_from(cd))
+	obs_sceneitem_t *item = clipboard_item_from(cd);
+	if (!item)
 		return;
-	queue_visibility_changed(false);
+	auto *notice = new RemovedNotice{watch_generation.load(), obs_source_get_name(obs_sceneitem_get_source(item))};
+	obs_queue_task(OBS_TASK_UI, item_removed_task, notice, false);
 }
 
 /// @brief watch_scene() で登録する通知と、その受け取り関数の組み合わせ。
