@@ -12,7 +12,7 @@
  *                                                 └→ request_thumbnail()  まだないサムネイルを裏で作る
  *   ドックの大きさの変化 ─→ update_layout()  1 行の枚数とサムネイルの大きさを決め直す
  *   サムネイルをクリック ─→ callbacks_.show(path)  表示は plugin-main.cpp が行う
- *   右クリック ─→ show_context_menu()  「表示」「設定...」「削除」(処理は plugin-main.cpp が行う)
+ *   右クリック ─→ show_context_menu()  「表示」「追加して表示」「設定...」「削除」など(処理は plugin-main.cpp が行う)
  *   一定時間ごと(ドックが見えている間)─→ update_current()  今の画像のカードを目立たせる
  *   ドックが見えるようになった ─→ showEvent()  見えていない間の変化に追いつく
  *   画像を表示できなかった(notice.cpp)─→ show_notice()  一覧の上端に重ねて理由を出す。10 秒かクリックで消える
@@ -1015,6 +1015,17 @@ private:
 			QObject::connect(show, &QAction::triggered, this, [this, path]() {
 				obs_log(LOG_INFO, "history: show from menu %s", path.toUtf8().constData());
 				show_image(path);
+			});
+		}
+		if (!path.isEmpty()) {
+			/* 表示中の今の画像でも出す。同じ画像を、もう 1 つの画像ソースに出す使い方もあるため */
+			QAction *show_new = menu->addAction(text("Dock.Menu.ShowInNewSource"));
+			QObject::connect(show_new, &QAction::triggered, this, [this, path]() {
+				obs_log(LOG_INFO, "history: show in new source from menu %s",
+					path.toUtf8().constData());
+				if (callbacks_.show_new)
+					callbacks_.show_new(path.toUtf8().toStdString());
+				update_current();
 			});
 		}
 		QAction *settings = menu->addAction(text("Menu.Settings"));

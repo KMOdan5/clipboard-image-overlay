@@ -30,6 +30,12 @@ struct HistoryDockCallbacks {
 	std::function<void(const std::string &path)> show;
 
 	/**
+	 * @brief 画像を、新しい画像ソースに表示する(「画像を新しい 'Clipboard Image' に表示」ホットキーと同じ)。
+	 * @details 右クリックメニューの「追加して表示」で呼ぶ。引数は画像ファイルのパス(UTF-8)。
+	 */
+	std::function<void(const std::string &path)> show_new;
+
+	/**
 	 * @brief 今の画像を問い合わせる。
 	 * @details 'Clipboard Image' が参照している画像ファイル(最後に表示した画像)のパス(UTF-8)を返す。
 	 *          表示中か非表示かは問わない。'Clipboard Image' がなければ空を返す。
@@ -91,9 +97,11 @@ struct HistoryDockCallbacks {
  * - 表示中の今の画像のカードをクリックすると、表示し直さずに一時停止と再開を切り替える(callbacks.toggle_pause)。
  *   非表示の今の画像や、ほかの画像のクリックは callbacks.show のまま
  * - 右クリックメニュー
- *   - 画像の上: 「表示」(callbacks.show)・「設定...」(callbacks.open_settings)・区切り線・「削除」(callbacks.remove)
+ *   - 画像の上: 「表示」(callbacks.show)・「追加して表示」(callbacks.show_new)・「設定...」(callbacks.open_settings)・
+ *     区切り線・「削除」(callbacks.remove)
  *   - 表示中の今の画像の上: 「表示」の代わりに「非表示」(callbacks.hide)を出し、
- *     カウント中なら「一時停止」、一時停止中なら「再開」(callbacks.toggle_pause)を続ける
+ *     カウント中なら「一時停止」、一時停止中なら「再開」(callbacks.toggle_pause)を続ける。その後に「追加して表示」を出す
+ *     (表示中の画像を、もう 1 つの画像ソースにも出せるように)
  *   - 空いている所(画像がないときの案内の上を含む): 「設定...」だけ
  *   - 「表示」を一番上、「削除」を一番下に置く。右クリックの直後に誤ってクリックしても、削除にならないように
  * - 保存フォルダの変化(新しい画像・掃除や削除で消えた画像)を見張り、一覧に自動で反映する。
