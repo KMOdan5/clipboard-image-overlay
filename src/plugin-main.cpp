@@ -21,6 +21,7 @@
  *
  *   表示履歴のドックのサムネイルをクリック ─→ show_history_image() ─→ show_saved_image()
  *        (表示中の今の画像のクリックは、表示ではなく一時停止/再開。下の toggle_pause())
+ *   表示履歴のドックの右クリック > 追加して表示 ─→ show_history_image(new_source = true) ─→ show_saved_image()
  *   表示履歴のドックに画像ファイルをドラッグ&ドロップ ─→ on_images_dropped()
  *        └→ save_image_file()  1 つずつ保存して、表示履歴に足す(表示はしない。clipboard-capture.cpp)
  *   表示履歴のドックの右クリック > 削除 ─→ delete_history_image()
@@ -215,15 +216,17 @@ void on_show_requested(const char *trigger, bool new_source = false)
  * 掃除などでファイルが消えていた場合は、理由をログに残して何もしない。
  * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
  *
- * @param path    画像ファイルのパス(UTF-8)。
- * @param trigger どこから呼ばれたか("history" / "previous hotkey")。ログ用。
+ * @param path       画像ファイルのパス(UTF-8)。
+ * @param trigger    どこから呼ばれたか("history" / "previous hotkey")。ログ用。
+ * @param new_source true なら、新しい画像ソースを作って表示する(ドックの「追加して表示」)。
  *
  * @note スレッド: UI スレッドで呼ぶこと。
  * @see history_dock_register()(クリックされたとき)、on_show_previous_requested()(呼び出し元)
  */
-void show_history_image(const std::string &path, const char *trigger)
+void show_history_image(const std::string &path, const char *trigger, bool new_source = false)
 {
-	obs_log(LOG_INFO, "show history image requested (trigger: %s): %s", trigger, path.c_str());
+	obs_log(LOG_INFO, "show history image requested (trigger: %s%s): %s", trigger, new_source ? ", new source" : "",
+		path.c_str());
 	if (!accept_user_action("show history image", true))
 		return;
 
@@ -231,7 +234,7 @@ void show_history_image(const std::string &path, const char *trigger)
 	if (!image)
 		return;
 
-	show_saved_image(*image);
+	show_saved_image(*image, new_source);
 }
 
 /**
@@ -739,6 +742,7 @@ bool obs_module_load(void)
 
 	/*
 	 * 表示履歴のドック。クリックされた画像は、ホットキーと同じ処理で表示する。
+	 * 右クリックメニューの「追加して表示」は、「画像を新しい 'Clipboard Image' に表示」ホットキーと同じく、新しい画像ソースに表示する。
 	 * 右クリックメニューの「削除」は delete_history_image()、「設定...」は設定画面を開く。
 	 * 画像ファイルをドラッグ&ドロップしたら on_images_dropped()。
 	 * ドックのハイライトは今の画像('Clipboard Image' が参照している画像)で、表示中か非表示かは問わない。
@@ -748,6 +752,9 @@ bool obs_module_load(void)
 	HistoryDockCallbacks dock_callbacks;
 	dock_callbacks.show = [](const std::string &path) {
 		show_history_image(path, "history");
+	};
+	dock_callbacks.show_new = [](const std::string &path) {
+		show_history_image(path, "history", true);
 	};
 	dock_callbacks.current = []() {
 		if (!scenes_ready)
