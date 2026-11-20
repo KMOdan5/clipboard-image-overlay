@@ -15,6 +15,8 @@
  *
  * 画像ソースを増やす(「画像を新しい 'Clipboard Image' に表示」):
  * - 新しい画像ソースを「Clipboard Image 2」「3」… と番号付きの名前で作り、それに表示する。前の画像ソースはそのまま残す
+ * - 新しい画像ソースには、それまでのアクティブのプロパティ・フィルタと、今のシーンでの見た目(位置を除く)を引き継ぐ。
+ *   位置は画面中央にする。今のシーンに置かれていなければ、見た目は初めて追加したときと同じ(画面中央とフェード)
  * - プラグインが操作するのは、番号が一番大きい画像ソース(アクティブ)だけ。無印の「Clipboard Image」は 1 番として数える。
  *   どのシーンにあるかに関係なく、全体で一番大きい番号を見る(シーンごとに見ると、シーンを切り替えるたびに操作の対象が変わるため)
  * - アクティブ以外(非アクティブ)の画像ソースは、表示/非表示も含めて一切触らない(表示したまま残るのは配信者が消す)。
@@ -313,17 +315,33 @@ std::string image_file_of(obs_source_t *source)
 
 /**
  * @brief 画像ソースを作る。
+ *
+ * @details
+ * base を渡したときは、base の画像ソースのプロパティ(「表示されていないときに画像を読み込まない」など)とフィルタを写す。
+ * 画像ファイルだけは path にする。同じシーンで続けて別の画像を出すときに、設定が変わらないようにするため。
+ *
  * @param name 作るソースの名前。
  * @param path 設定する画像ファイルのパス(UTF-8)。
+ * @param base 設定を写す元の画像ソース。nullptr なら OBS の既定の設定で作る。
  * @return 画像ソース(参照カウント付き)。
  * @retval nullptr 作成に失敗した(お知らせも出す)。
  */
-obs_source_t *create_image_source(const std::string &name, const char *path)
+obs_source_t *create_image_source(const std::string &name, const char *path, obs_source_t *base = nullptr)
 {
 	obs_data_t *settings = obs_data_create();
+	if (base) {
+		obs_data_t *base_settings = obs_source_get_settings(base);
+		obs_data_apply(settings, base_settings);
+		obs_data_release(base_settings);
+	}
 	obs_data_set_string(settings, "file", path);
 	obs_source_t *source = obs_source_create(IMAGE_SOURCE_ID, name.c_str(), settings, nullptr);
 	obs_data_release(settings);
+
+	if (source && base) {
+		obs_source_copy_filters(source, base);
+		obs_log(LOG_INFO, "display: copied settings and filters from \"%s\"", obs_source_get_name(base));
+	}
 
 	if (source) {
 		obs_log(LOG_INFO, "display: created source \"%s\"", name.c_str());
@@ -346,13 +364,15 @@ obs_source_t *create_image_source(const std::string &name, const char *path)
  *
  * new_source が true なら、アクティブがあっても新しい画像ソースを作る。名前は、一番大きい番号 + 1(ほかのソースが
  * その名前を使っていれば、空いている次の番号)。プラグインの画像ソースが 1 つもなければ、無印の「Clipboard Image」を作る。
+ * 新しい画像ソースには、base のプロパティとフィルタを写す(create_image_source())。
  *
  * @param path       新しく作るときに設定する画像ファイルのパス(UTF-8)。
  * @param new_source true なら、新しい画像ソースを作る(「画像を新しい 'Clipboard Image' に表示」)。
+ * @param base       new_source が true のとき、設定を写す元の画像ソース(それまでのアクティブ)。nullptr なら写さない。
  * @return 画像ソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
  * @retval nullptr 作成に失敗した、同じ名前の別種類のソースがある、または削除の途中。
  */
-obs_source_t *get_or_create_image_source(const char *path, bool new_source)
+obs_source_t *get_or_create_image_source(const char *path, bool new_source, obs_source_t *base = nullptr)
 {
 	const int highest = highest_managed_number();
 	if (new_source && highest > 0) {
@@ -361,7 +381,7 @@ obs_source_t *get_or_create_image_source(const char *path, bool new_source)
 			const std::string name = managed_name(number);
 			obs_source_t *existing = obs_get_source_by_name(name.c_str());
 			if (!existing)
-				return create_image_source(name, path);
+				return create_image_source(name, path, base);
 			obs_source_release(existing);
 		}
 	}
@@ -420,11 +440,13 @@ bool get_canvas_size(obs_canvas_t *canvas, float &width, float &height)
  * @details
  * 基準点(配置)を中央にしてから画面中央に置く。基準点が中央なので、
  * 後で表示サイズが変わっても、画像は画面中央を中心に大きくなったり小さくなったりする。
- * 境界は「自動」(OBS_BOUNDS_NONE)にする(理由はファイル冒頭の説明を参照)。
+ * reset_bounds が true なら、境界は「自動」(OBS_BOUNDS_NONE)にする(理由はファイル冒頭の説明を参照)。
+ * 前の画像ソースの見た目を写したときは false にし、写した境界を残す。
  *
- * @param item 配置するシーンアイテム。
+ * @param item         配置するシーンアイテム。
+ * @param reset_bounds true なら、境界を「自動」にする。
  */
-void apply_default_position(obs_sceneitem_t *item)
+void apply_default_position(obs_sceneitem_t *item, bool reset_bounds = true)
 {
 	float canvas_w = 0.0f;
 	float canvas_h = 0.0f;
@@ -438,7 +460,8 @@ void apply_default_position(obs_sceneitem_t *item)
 	obs_sceneitem_defer_update_begin(item);
 	obs_sceneitem_set_alignment(item, OBS_ALIGN_CENTER);
 	obs_sceneitem_set_pos(item, &pos);
-	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_NONE);
+	if (reset_bounds)
+		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_NONE);
 	obs_sceneitem_defer_update_end(item);
 
 	obs_log(LOG_INFO, "display: placed at center (%.0f, %.0f)", pos.x, pos.y);
@@ -969,8 +992,10 @@ std::vector<obs_sceneitem_t *> collect_program_copy_items()
  * @brief シーンアイテムの位置・大きさ・切り抜き・トランジションなどを、別のシーンアイテムに写す。
  *
  * @details
- * プログラムのコピーに Clipboard Image がまだないとき(コピーが作られた後に元のシーンへ追加したとき)に、
- * 元のシーンと同じ見た目で置くために使う。OBS 本体がシーンを複製するとき(duplicate_item_data())と同じ項目を写す。
+ * 次の 2 つの場面で使う。OBS 本体がシーンを複製するとき(duplicate_item_data())と同じ項目を写す。
+ * - プログラムのコピーに Clipboard Image がまだないとき(コピーが作られた後に元のシーンへ追加したとき)に、
+ *   元のシーンと同じ見た目で置く
+ * - 画像ソースを増やしたときに、新しい画像ソースのシーンアイテムに、それまでのアクティブの見た目を引き継ぐ
  * トランジションは、OBS 本体と同じく非公開のコピーを作って設定する(元のアイテムと共有しない)。
  *
  * @param dst 写し先のシーンアイテム。
@@ -1628,8 +1653,18 @@ bool show_image_on_current_scene(const SavedImage &image, bool new_source)
 		return false;
 	}
 
-	obs_source_t *source = get_or_create_image_source(image.path.c_str(), new_source);
+	/*
+	 * 新しい画像ソースを作るときは、それまでのアクティブ(prev)の設定を引き継ぐ。
+	 * 同じシーンで続けて別の画像を出すのに、画像ソースを増やすたびに見た目が変わらないようにするため。
+	 * プロパティとフィルタはソースが持つのでいつも写す。位置などはシーンアイテムが持つので、今のシーンに置かれているときだけ写す
+	 */
+	obs_source_t *prev = new_source ? find_managed_source() : nullptr;
+	obs_sceneitem_t *prev_item = prev ? find_scene_item(scene, prev) : nullptr;
+
+	obs_source_t *source = get_or_create_image_source(image.path.c_str(), new_source, prev);
+	obs_source_release(prev);
 	if (!source) {
+		obs_sceneitem_release(prev_item);
 		obs_source_release(scene_source);
 		return false;
 	}
@@ -1655,15 +1690,28 @@ bool show_image_on_current_scene(const SavedImage &image, bool new_source)
 			obs_log(LOG_WARNING, "display: failed to add source to scene \"%s\"",
 				obs_source_get_name(scene_source));
 			notice_report(Notice::DisplayFailed);
+			obs_sceneitem_release(prev_item);
 			obs_source_release(source);
 			obs_source_release(scene_source);
 			return false;
 		}
-		/* 初めて追加したときだけの設定: 位置(画面中央)と、表示・非表示のフェード。以降は設定し直さない */
-		apply_default_position(item);
-		set_initial_fade_transitions(item);
+		/*
+		 * 初めて追加したときだけの設定(以降は設定し直さない)。
+		 * - 前の画像ソースが今のシーンにある: その見た目(回転・切り抜き・境界・トランジションなど)を写し、
+		 *   位置だけは、初めて追加したときと同じく画面中央にする
+		 * - ない: 画面中央に置き、表示・非表示のフェードを設定する
+		 */
+		if (prev_item) {
+			copy_item_layout(item, prev_item);
+			apply_default_position(item, false);
+			obs_log(LOG_INFO, "display: copied layout from the previous source");
+		} else {
+			apply_default_position(item);
+			set_initial_fade_transitions(item);
+		}
 		obs_log(LOG_INFO, "display: added to scene \"%s\"", obs_source_get_name(scene_source));
 	}
+	obs_sceneitem_release(prev_item);
 
 	/*
 	 * 通知の受け付けは起動完了時などに全シーン分まとめて登録している。念のため、表示するたびに登録し直す
