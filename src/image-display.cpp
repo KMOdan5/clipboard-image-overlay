@@ -10,8 +10,16 @@
  * - 画像ソース(内部 ID: image_source)… 画像ファイルを表示する OBS 標準のソース。GIF のアニメーションも再生される
  * - シーンアイテム … シーンに置かれたソース。位置・大きさ・表示/非表示はここで持つ
  *
- * 専用ソースは名前「Clipboard Image」で 1 つだけ作り、毎回それを使い回す。
+ * 専用ソースは名前「Clipboard Image」で作り、毎回それを使い回す。
  * こうすることで、新しい画像を貼ると前の画像と差し替わり、画面に画像が溜まらない。
+ *
+ * 画像ソースを増やす(「画像を新しい 'Clipboard Image' に表示」):
+ * - 新しい画像ソースを「Clipboard Image 2」「3」… と番号付きの名前で作り、それに表示する。前の画像ソースはそのまま残す
+ * - プラグインが操作するのは、番号が一番大きい画像ソース(アクティブ)だけ。無印の「Clipboard Image」は 1 番として数える。
+ *   どのシーンにあるかに関係なく、全体で一番大きい番号を見る(シーンごとに見ると、シーンを切り替えるたびに操作の対象が変わるため)
+ * - アクティブ以外(非アクティブ)の画像ソースは、表示/非表示も含めて一切触らない(表示したまま残るのは配信者が消す)。
+ *   古い画像の掃除では、非アクティブの画像ソースが参照している画像も残す(clipboard_images_in_use())
+ * - 以下の説明の「Clipboard Image」「専用ソース」は、アクティブの画像ソースのこと
  *
  * 大きさの決め方:
  * - 境界(バウンディングボックス)は使わない(OBS の既定と同じ「自動」)。
@@ -110,6 +118,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -150,49 +159,138 @@ void set_image_file(obs_source_t *source, const char *path)
 }
 
 /**
- * @brief ソースが、このプラグインが使う 'Clipboard Image' かどうかを判断する。
+ * @brief 名前が、プラグインの画像ソースの名前の形なら、その番号を返す。
+ *
+ * @details 無印の「Clipboard Image」は 1、「Clipboard Image 2」は 2。番号は 2 以上で、先頭に 0 を付けない形だけを数える。
+ *
+ * @param name ソースの名前(nullptr でもよい)。
+ * @return 番号。プラグインの名前の形でなければ 0。
+ *
+ * @note スレッド: どのスレッドから呼んでもよい(文字列を見るだけ)。
+ */
+int managed_number(const char *name)
+{
+	if (!name)
+		return 0;
+	const size_t base = std::strlen(SOURCE_NAME);
+	if (std::strncmp(name, SOURCE_NAME, base) != 0)
+		return 0;
+	const char *rest = name + base;
+	if (*rest == '\0')
+		return 1;
+	if (rest[0] != ' ' || rest[1] < '1' || rest[1] > '9')
+		return 0;
+	long number = 0;
+	for (const char *p = rest + 1; *p; ++p) {
+		/* 数字以外が混じる、または桁が多すぎる名前は、プラグインの名前として扱わない */
+		if (*p < '0' || *p > '9' || number > 1000000)
+			return 0;
+		number = number * 10 + (*p - '0');
+	}
+	return number >= 2 ? static_cast<int>(number) : 0;
+}
+
+/// @brief 番号から、プラグインの画像ソースの名前を作る(1 なら無印の「Clipboard Image」)。
+std::string managed_name(int number)
+{
+	return number <= 1 ? std::string(SOURCE_NAME) : std::string(SOURCE_NAME) + " " + std::to_string(number);
+}
+
+/// @brief ソースが OBS 標準の画像ソースかどうか。
+bool is_image_source(obs_source_t *source)
+{
+	const char *id = source ? obs_source_get_unversioned_id(source) : nullptr;
+	return id && std::strcmp(id, IMAGE_SOURCE_ID) == 0;
+}
+
+/**
+ * @brief 今のアクティブの画像ソースの名前。シーンの通知(UI スレッド以外からも届く)で見分けるために覚えておく。
+ * @details UI スレッドで active_source_name() を呼ぶたびに更新する。読み書きは active_name_mutex で守る。
+ */
+std::string active_name = SOURCE_NAME;
+/// @brief active_name を守るロック。
+std::mutex active_name_mutex;
+
+/**
+ * @brief プラグインの画像ソースのうち、一番大きい番号を返す。
+ * @details 削除の途中のソースと、画像ソース以外(配信者が同じ名前で作ったテキストなど)は数えない。
+ * @return 一番大きい番号。プラグインの画像ソースがなければ 0。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+int highest_managed_number()
+{
+	int highest = 0;
+	obs_enum_sources(
+		[](void *param, obs_source_t *source) {
+			if (is_image_source(source) && !obs_source_removed(source)) {
+				int *value = static_cast<int *>(param);
+				*value = std::max(*value, managed_number(obs_source_get_name(source)));
+			}
+			return true;
+		},
+		&highest);
+	return highest;
+}
+
+/**
+ * @brief アクティブの画像ソース(番号が一番大きいもの)の名前を求め、覚えておく。
+ * @return アクティブの名前。プラグインの画像ソースがなければ無印の「Clipboard Image」(次に作る名前)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+std::string active_source_name()
+{
+	const std::string name = managed_name(highest_managed_number());
+	const std::lock_guard<std::mutex> lock(active_name_mutex);
+	active_name = name;
+	return name;
+}
+
+/**
+ * @brief ソースが、このプラグインのアクティブの 'Clipboard Image' かどうかを判断する。
  *
  * @details
- * 名前が SOURCE_NAME で、OBS 標準の画像ソースのものを、このプラグインのソースとして扱う。
+ * 名前がアクティブの名前で、OBS 標準の画像ソースのものを、このプラグインのソースとして扱う。
  * 配信者が同じ名前で別の種類のソース(テキストなど)を作っていても、それは触らない。
+ * 非アクティブの画像ソース(番号が一番大きくないもの)も、ここでは対象にしない(プラグインは触らないため)。
  * 削除の途中かどうかはここでは見ない。ソースを削除したときに届く通知(アイテムの削除)も、
  * このプラグインのソースのものとして受け取る必要があるため。使えるかどうかは find_managed_source() で判断する。
  *
  * プラグインのソースかどうかの判断は、すべてこの関数と find_managed_source() で行う。
- * 見分け方を変えるとき(名前以外の印で見分ける、複数のソースを扱うなど)は、この 2 つだけを直せばよいようにするため。
  *
  * @param source 調べるソース(nullptr でもよい)。
- * @param name   プラグインのソースの名前。省略すると SOURCE_NAME。
- * @return このプラグインのソースなら true。
+ * @param name   アクティブの名前。省略すると、最後に active_source_name() で求めた名前(シーンの通知から呼ぶとき用)。
+ * @return このプラグインのアクティブのソースなら true。
  *
  * @note スレッド: どのスレッドから呼んでもよい(シーンの通知の中からも呼ばれる)。
  */
-bool is_managed_source(obs_source_t *source, const char *name = SOURCE_NAME)
+bool is_managed_source(obs_source_t *source, const char *name = nullptr)
 {
-	if (!source || !name)
+	if (!source || !is_image_source(source))
 		return false;
 	const char *source_name = obs_source_get_name(source);
-	const char *source_id = obs_source_get_unversioned_id(source);
-	return source_name && source_id && std::strcmp(source_name, name) == 0 &&
-	       std::strcmp(source_id, IMAGE_SOURCE_ID) == 0;
+	if (!source_name)
+		return false;
+	if (name)
+		return std::strcmp(source_name, name) == 0;
+	const std::lock_guard<std::mutex> lock(active_name_mutex);
+	return active_name == source_name;
 }
 
 /**
- * @brief このプラグインが使う 'Clipboard Image' を探す。作りはしない。
+ * @brief このプラグインのアクティブの 'Clipboard Image'(番号が一番大きい画像ソース)を探す。作りはしない。
  *
- * @param name 探すソースの名前。省略すると SOURCE_NAME。名前を選んで探す場合に備えて、名前を渡せるようにしている。
  * @return 見つかったソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
- * @retval nullptr ない、別の種類のソースが同じ名前を使っている、または削除の途中。
+ * @retval nullptr ない、または削除の途中。
  *
+ * @note スレッド: UI スレッドから呼ぶこと。
  * @see is_managed_source()(判断の決まり)、get_or_create_image_source()(なければ作る)
  */
-obs_source_t *find_managed_source(const char *name = SOURCE_NAME)
+obs_source_t *find_managed_source()
 {
-	if (!name)
-		return nullptr;
-	obs_source_t *source = obs_get_source_by_name(name);
+	const std::string name = active_source_name();
+	obs_source_t *source = obs_get_source_by_name(name.c_str());
 	/* 削除の途中(OBS が片付けるまでの一瞬)のソースは使わない。消えるソースに画像を出してしまうため */
-	if (source && (!is_managed_source(source, name) || obs_source_removed(source))) {
+	if (source && (!is_managed_source(source, name.c_str()) || obs_source_removed(source))) {
 		obs_source_release(source);
 		return nullptr;
 	}
@@ -214,6 +312,31 @@ std::string image_file_of(obs_source_t *source)
 }
 
 /**
+ * @brief 画像ソースを作る。
+ * @param name 作るソースの名前。
+ * @param path 設定する画像ファイルのパス(UTF-8)。
+ * @return 画像ソース(参照カウント付き)。
+ * @retval nullptr 作成に失敗した(お知らせも出す)。
+ */
+obs_source_t *create_image_source(const std::string &name, const char *path)
+{
+	obs_data_t *settings = obs_data_create();
+	obs_data_set_string(settings, "file", path);
+	obs_source_t *source = obs_source_create(IMAGE_SOURCE_ID, name.c_str(), settings, nullptr);
+	obs_data_release(settings);
+
+	if (source) {
+		obs_log(LOG_INFO, "display: created source \"%s\"", name.c_str());
+		/* 作ったソースがアクティブになる(番号が一番大きい)。通知で見分けられるよう、すぐに覚え直す */
+		active_source_name();
+	} else {
+		obs_log(LOG_WARNING, "display: failed to create source \"%s\"", name.c_str());
+		notice_report(Notice::DisplayFailed);
+	}
+	return source;
+}
+
+/**
  * @brief 専用の画像ソースを取得する。なければ作る。
  *
  * @details
@@ -221,12 +344,28 @@ std::string image_file_of(obs_source_t *source)
  * 既存のソースの画像ファイルは、ここでは変えない。表示中の画像をフェードアウトしてから
  * 差し替える必要があるため、差し替えのタイミングは呼び出し元が決める。
  *
- * @param path 新しく作るときに設定する画像ファイルのパス(UTF-8)。
+ * new_source が true なら、アクティブがあっても新しい画像ソースを作る。名前は、一番大きい番号 + 1(ほかのソースが
+ * その名前を使っていれば、空いている次の番号)。プラグインの画像ソースが 1 つもなければ、無印の「Clipboard Image」を作る。
+ *
+ * @param path       新しく作るときに設定する画像ファイルのパス(UTF-8)。
+ * @param new_source true なら、新しい画像ソースを作る(「画像を新しい 'Clipboard Image' に表示」)。
  * @return 画像ソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。
  * @retval nullptr 作成に失敗した、同じ名前の別種類のソースがある、または削除の途中。
  */
-obs_source_t *get_or_create_image_source(const char *path)
+obs_source_t *get_or_create_image_source(const char *path, bool new_source)
 {
+	const int highest = highest_managed_number();
+	if (new_source && highest > 0) {
+		/* 番号は増やす一方にする。名前が別の種類のソースで使われていれば、空いている次の番号にする */
+		for (int number = highest + 1;; number++) {
+			const std::string name = managed_name(number);
+			obs_source_t *existing = obs_get_source_by_name(name.c_str());
+			if (!existing)
+				return create_image_source(name, path);
+			obs_source_release(existing);
+		}
+	}
+
 	obs_source_t *source = find_managed_source();
 	if (source)
 		return source;
@@ -237,32 +376,21 @@ obs_source_t *get_or_create_image_source(const char *path)
 	 * - 削除の途中(OBS が片付けるまでの一瞬): 消えるソースに画像を出してしまうため
 	 * OBS は同じ名前のソースを 2 つ作れないので、新しく作ることもできない。
 	 */
-	source = obs_get_source_by_name(SOURCE_NAME);
+	const std::string name = managed_name(highest);
+	source = obs_get_source_by_name(name.c_str());
 	if (source) {
 		if (obs_source_removed(source)) {
-			obs_log(LOG_WARNING, "display: \"%s\" is being removed; try again", SOURCE_NAME);
+			obs_log(LOG_WARNING, "display: \"%s\" is being removed; try again", name.c_str());
 			notice_report(Notice::DisplayFailed);
 		} else {
 			obs_log(LOG_WARNING, "display: a source named \"%s\" exists but is not an image source (%s)",
-				SOURCE_NAME, obs_source_get_unversioned_id(source));
+				name.c_str(), obs_source_get_unversioned_id(source));
 			notice_report(Notice::SourceNameConflict);
 		}
 		obs_source_release(source);
 		return nullptr;
 	}
-
-	obs_data_t *settings = obs_data_create();
-	obs_data_set_string(settings, "file", path);
-	source = obs_source_create(IMAGE_SOURCE_ID, SOURCE_NAME, settings, nullptr);
-	obs_data_release(settings);
-
-	if (source) {
-		obs_log(LOG_INFO, "display: created source \"%s\"", SOURCE_NAME);
-	} else {
-		obs_log(LOG_WARNING, "display: failed to create source \"%s\"", SOURCE_NAME);
-		notice_report(Notice::DisplayFailed);
-	}
-	return source;
+	return create_image_source(name, path);
 }
 
 /**
@@ -812,7 +940,10 @@ obs_source_t *get_program_copy()
  */
 std::vector<obs_sceneitem_t *> collect_managed_items(obs_scene_t *scene)
 {
-	return collect_items_if(scene, [](obs_source_t *candidate) { return is_managed_source(candidate); });
+	const std::string name = active_source_name();
+	return collect_items_if(scene, [&name](obs_source_t *candidate) {
+		return is_managed_source(candidate, name.c_str());
+	});
 }
 
 /**
@@ -1481,7 +1612,7 @@ void prune_watched_scenes()
  * @note 呼び出し元: plugin-main.cpp の show_saved_image()。
  * @note スレッド: UI スレッド。
  */
-bool show_image_on_current_scene(const SavedImage &image)
+bool show_image_on_current_scene(const SavedImage &image, bool new_source)
 {
 	/*
 	 * 配信に出ているシーン(スタジオモードではプログラム側)を取得する。
@@ -1497,7 +1628,7 @@ bool show_image_on_current_scene(const SavedImage &image)
 		return false;
 	}
 
-	obs_source_t *source = get_or_create_image_source(image.path.c_str());
+	obs_source_t *source = get_or_create_image_source(image.path.c_str(), new_source);
 	if (!source) {
 		obs_source_release(scene_source);
 		return false;
@@ -1585,7 +1716,7 @@ void hide_clipboard_image(bool fade)
 
 	obs_source_t *source = find_managed_source();
 	if (!source) {
-		obs_log(LOG_INFO, "display: nothing to hide (no \"%s\")", SOURCE_NAME);
+		obs_log(LOG_INFO, "display: nothing to hide (no \"%s\")", active_source_name().c_str());
 		return;
 	}
 
@@ -1674,6 +1805,27 @@ std::vector<std::string> clipboard_images_in_use()
 		paths.push_back(pending_swap.image.path);
 
 	/*
+	 * 非アクティブの画像ソース(番号が一番大きくないもの)も、表示したまま残していることがある。
+	 * プラグインは触らないが、参照している画像を掃除で消すと画面から消えるので、使用中に含めて残す。
+	 * obs_enum_sources() はソースの一覧をロックしたまま呼ぶので、その中では参照を取るだけにする
+	 */
+	std::vector<obs_source_t *> managed;
+	obs_enum_sources(
+		[](void *param, obs_source_t *candidate) {
+			if (is_image_source(candidate) && managed_number(obs_source_get_name(candidate)) > 0)
+				static_cast<std::vector<obs_source_t *> *>(param)->push_back(
+					obs_source_get_ref(candidate));
+			return true;
+		},
+		&managed);
+	for (obs_source_t *candidate : managed) {
+		const std::string file = candidate ? image_file_of(candidate) : std::string();
+		if (!file.empty() && std::find(paths.cbegin(), paths.cend(), file) == paths.cend())
+			paths.push_back(file);
+		obs_source_release(candidate);
+	}
+
+	/*
 	 * スタジオモードで「ソースを複製」がオンだと、プログラムのコピーの中の Clipboard Image は別のソースになり、
 	 * 元とは別の画像ファイルを参照していることがある(次のトランジションまで、前の画像を配信に映している)。
 	 * そのファイルを消すと、OBS の画像ソースが読み直して、配信に出ている画像が消える。使用中に含めて残す
@@ -1748,6 +1900,6 @@ void clear_clipboard_image()
 		}
 		release_items(items);
 	}
+	obs_log(LOG_INFO, "display: cleared the image of \"%s\"", obs_source_get_name(source));
 	obs_source_release(source);
-	obs_log(LOG_INFO, "display: cleared the image of \"%s\"", SOURCE_NAME);
 }

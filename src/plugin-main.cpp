@@ -13,6 +13,8 @@
  *   表示ホットキー 押下 ────────────────────────────┘     (UI スレッド)
  *        ├→ save_clipboard_image()         画像を保存(clipboard-capture.cpp)
  *        └→ show_saved_image()             保存した画像を表示する共通処理
+ *   「画像を新しい 'Clipboard Image' に表示」ホットキー ─→ on_show_requested(new_source = true)
+ *        新しい画像ソース(「Clipboard Image 2」など)を作って表示し、それをアクティブにする(上と同じ流れ)
  *             ├→ show_image_on_current_scene()  シーンに表示(image-display.cpp)
  *             ├→ cleanup_saved_images()         古い画像を掃除(clipboard-capture.cpp)。フェードで差し替えるときは、差し替えが終わった後
  *             └→ auto_hide_restart()            一定時間後に自動で非表示(auto-hide.cpp)
@@ -136,12 +138,16 @@ bool accept_user_action(const char *action, bool shows_image = false)
  * 表示履歴から出したときも、ここを通す(フェード・自動で非表示・一時停止が同じように効くように)。
  * 表示中にもう一度呼ばれると、画像が差し替わり、タイマーも最初からやり直す(表示時間の延長)。
  *
- * @param image 表示する画像(保存フォルダにあるもの)。
+ * new_source が true なら、新しい画像ソースを作って表示する(show_image_on_current_scene())。
+ * 一時停止中なら一時停止のまま、カウントだけ最初からにする(別の画像を表示したときと同じ。auto_hide_restart())。
+ *
+ * @param image      表示する画像(保存フォルダにあるもの)。
+ * @param new_source true なら、新しい画像ソースを作って表示する(「画像を新しい 'Clipboard Image' に表示」)。
  *
  * @note スレッド: UI スレッドで呼ぶこと。
  * @see on_show_requested(), show_history_image()(呼び出し元)
  */
-void show_saved_image(const SavedImage &image)
+void show_saved_image(const SavedImage &image, bool new_source = false)
 {
 	/*
 	 * 何も表示されていないのに一時停止が残っていたら、貼る前に解除する。
@@ -152,7 +158,7 @@ void show_saved_image(const SavedImage &image)
 		auto_hide_on_image_hidden();
 
 	/* 保存した画像を現在のシーンに表示する */
-	const bool shown = show_image_on_current_scene(image);
+	const bool shown = show_image_on_current_scene(image, new_source);
 
 	/*
 	 * 表示するたびに古い画像を掃除する。長い配信で何枚も貼っても、保存フォルダがたまり続けないように。
@@ -182,12 +188,13 @@ void show_saved_image(const SavedImage &image)
  * 画像が取れなければ、理由をログに残して何もしない。
  * シーンの読み込み・切り替え・終了の途中は、何もしない(accept_user_action())。
  *
- * @param trigger どこから呼ばれたか("menu" / "hotkey")。ログ用。
+ * @param trigger    どこから呼ばれたか("menu" / "hotkey" / "new source hotkey")。ログ用。
+ * @param new_source true なら、新しい画像ソースを作って表示する(「画像を新しい 'Clipboard Image' に表示」ホットキー)。
  *
  * @note スレッド: 必ず UI スレッドで呼ぶこと(Qt のクリップボードは UI スレッドからしか触れないため)。
  * @see add_tools_submenu()、hotkeys(呼び出し元)
  */
-void on_show_requested(const char *trigger)
+void on_show_requested(const char *trigger, bool new_source = false)
 {
 	obs_log(LOG_INFO, "show requested (trigger: %s)", trigger);
 	if (!accept_user_action("show", true))
@@ -198,7 +205,7 @@ void on_show_requested(const char *trigger)
 	if (!image)
 		return;
 
-	show_saved_image(*image);
+	show_saved_image(*image, new_source);
 }
 
 /**
@@ -567,6 +574,8 @@ void on_hotkey_pressed(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 HotkeyEntry hotkeys[] = {
 	{"clipboard_image_overlay.show", "Hotkey.ShowClipboardImage", "show_hotkey",
 	 []() { on_show_requested("hotkey"); }, OBS_INVALID_HOTKEY_ID},
+	{"clipboard_image_overlay.show_new_source", "Hotkey.ShowInNewSource", "show_new_source_hotkey",
+	 []() { on_show_requested("new source hotkey", true); }, OBS_INVALID_HOTKEY_ID},
 	{"clipboard_image_overlay.show_previous", "Hotkey.ShowPrevious", "previous_hotkey", on_show_previous_requested,
 	 OBS_INVALID_HOTKEY_ID},
 	{"clipboard_image_overlay.hide", "Hotkey.Hide", "hide_hotkey", on_hide_requested, OBS_INVALID_HOTKEY_ID},
