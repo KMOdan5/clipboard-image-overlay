@@ -21,6 +21,8 @@
  * - プラグインが操作するのは、番号が一番大きい画像ソース(アクティブ)だけ。無印の「Clipboard Image」は 1 番として数える。
  *   どのシーンにあるかに関係なく、全体で一番大きい番号を見る(シーンごとに見ると、シーンを切り替えるたびに操作の対象が変わるため)
  * - アクティブ以外(非アクティブ)の画像ソースは、表示/非表示も含めて一切触らない(表示したまま残るのは配信者が消す)。
+ *   例外: カウント中に増やしたときは、前のアクティブを、残り時間がたったら一度だけ非表示にしてから手放す
+ *   (次々に出した画像が、古いものから順に消えるように。残したいときは一時停止してから増やす。retire_source())
  * - アクティブを削除すると、一つ前の画像ソースがアクティブに戻る。それが表示中でも、自動で非表示にするタイマーは止め、
  *   表示したまま残す(削除した画像のための残り時間で、配信者が残していた画像を非表示にしないため。item_removed_task())
  *   古い画像の掃除では、非アクティブの画像ソースが参照している画像も残す(clipboard_images_in_use())
@@ -1677,6 +1679,96 @@ void prune_watched_scenes()
 } // namespace
 
 /**
+ * @brief 画像ソースを増やしたときに、前のアクティブの自動非表示を最後まで行うための記録。
+ *
+ * @details
+ * 前のアクティブは、増やした時点でアクティブではなくなり、プラグインは触らなくなる。
+ * ただしカウント中に増やしたときだけは、残り時間がたったら一度だけ非表示にしてから手放す。
+ * 次々に画像を出したとき、古い画像から順に消えていくようにするため(残したいときは、一時停止してから増やす)。
+ * 一時停止中に増やしたときは、記録しない(前の画像ソースはそのまま残る)。
+ */
+struct RetiringSource {
+	obs_weak_source_t *source; ///< 前のアクティブの画像ソース(弱い参照。配信者が削除したら消える)。
+	QTimer *timer;             ///< 残り時間を数えるタイマー。
+};
+
+/// @brief 自動非表示を待っている、前のアクティブの画像ソースの一覧。
+std::vector<RetiringSource> retiring_sources;
+
+/**
+ * @brief 前のアクティブの画像ソースを、全シーンで非表示にして手放す(retire_source() のタイマーが切れたとき)。
+ *
+ * @details
+ * 非表示にするのは表示中のアイテムだけ(フェードあり)。別キャンバスと、スタジオモードのプログラムのコピーも含める
+ * (アクティブを非表示にするときと同じ範囲)。配信者がすでに非表示にしていた・削除していたときは、何もしない。
+ *
+ * @param timer 切れたタイマー。
+ */
+void finish_retiring(QTimer *timer)
+{
+	auto it = std::find_if(retiring_sources.begin(), retiring_sources.end(),
+			       [timer](const RetiringSource &entry) { return entry.timer == timer; });
+	if (it == retiring_sources.end())
+		return;
+
+	obs_source_t *source = obs_weak_source_get_source(it->source);
+	if (source && !obs_source_removed(source)) {
+		int hidden = 0;
+		for_each_item_in_all_scenes(source, [&hidden](obs_sceneitem_t *item) {
+			if (hide_item(item, true))
+				hidden++;
+			return true;
+		});
+		fade_out_on_other_canvases(source);
+		if (in_studio_mode()) {
+			obs_source_t *copy = get_program_copy();
+			if (copy) {
+				std::vector<obs_sceneitem_t *> items =
+					collect_items(obs_scene_from_source(copy), source);
+				for (obs_sceneitem_t *item : items)
+					hide_item(item, true);
+				release_items(items);
+				obs_source_release(copy);
+			}
+		}
+		obs_log(LOG_INFO, "display: previous source \"%s\" hidden by its remaining time (%d item(s))",
+			obs_source_get_name(source), hidden);
+	}
+	obs_source_release(source);
+
+	obs_weak_source_release(it->source);
+	it->timer->deleteLater();
+	retiring_sources.erase(it);
+}
+
+/**
+ * @brief 前のアクティブの画像ソースを、残り時間がたったら一度だけ非表示にするよう記録する。
+ *
+ * @param source       前のアクティブの画像ソース。
+ * @param remaining_ms 自動で非表示になるまでの残り時間(ミリ秒)。
+ */
+void retire_source(obs_source_t *source, int remaining_ms)
+{
+	auto *timer = new QTimer();
+	timer->setSingleShot(true);
+	QObject::connect(timer, &QTimer::timeout, [timer]() { finish_retiring(timer); });
+	retiring_sources.push_back({obs_source_get_weak_source(source), timer});
+	timer->start(remaining_ms);
+	obs_log(LOG_INFO, "display: previous source \"%s\" will be hidden in %d ms", obs_source_get_name(source),
+		remaining_ms);
+}
+
+/// @brief 自動非表示を待っている前のアクティブを、すべて忘れる(非表示にはしない)。片付けのときに呼ぶ。
+void clear_retiring_sources()
+{
+	for (RetiringSource &entry : retiring_sources) {
+		delete entry.timer;
+		obs_weak_source_release(entry.source);
+	}
+	retiring_sources.clear();
+}
+
+/**
  * @brief 画像ファイルを、現在のシーンに表示する。
  *
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
@@ -1707,8 +1799,13 @@ bool show_image_on_current_scene(const SavedImage &image, bool new_source)
 	 */
 	obs_source_t *prev = new_source ? find_managed_source() : nullptr;
 	obs_sceneitem_t *prev_item = prev ? find_scene_item(scene, prev) : nullptr;
+	/* 前のアクティブがカウント中か。アクティブが変わる前(新しい画像ソースを作る前)に問い合わせる */
+	const AutoHideStatus prev_status = prev ? auto_hide_status() : AutoHideStatus();
 
 	obs_source_t *source = get_or_create_image_source(image.path.c_str(), new_source, prev);
+	/* 前のアクティブがカウント中なら、残り時間がたったら一度だけ非表示にする(一時停止中なら、そのまま残す) */
+	if (source && prev && source != prev && prev_status.state == AutoHideState::Counting)
+		retire_source(prev, prev_status.remaining_ms);
 	obs_source_release(prev);
 	if (!source) {
 		obs_sceneitem_release(prev_item);
@@ -1865,6 +1962,7 @@ void image_display_shutdown()
 	cancel_swap();
 	delete swap_timer;
 	swap_timer = nullptr;
+	clear_retiring_sources();
 }
 
 /**
