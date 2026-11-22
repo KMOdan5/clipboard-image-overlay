@@ -213,3 +213,61 @@ void clear_clipboard_image();
  * @note スレッド: UI スレッドから呼ぶこと。
  */
 void image_display_shutdown();
+
+/**
+ * @brief プラグインの画像ソース 1 つ分の情報。設定画面の「ソース」のタブに並べるために使う。
+ */
+struct ClipboardSourceInfo {
+	std::string name;                  ///< ソースの名前(「Clipboard Image」「Clipboard Image 2」など)。
+	std::vector<std::string> scenes;   ///< 置かれているシーンの名前。
+	std::vector<std::string> canvases; ///< scenes と同じ並びで、別キャンバスならその名前。メインのキャンバスなら空。
+	std::string image_path;            ///< 参照している画像ファイルのパス(UTF-8)。なければ空。
+	bool visible = false;              ///< どこかのシーンで、目のアイコンがオン(表示中)なら true。
+};
+
+/**
+ * @brief プラグインの画像ソース(無印と番号付き)を、番号の大きい順に一覧にする。
+ *
+ * @details
+ * - 置かれているシーンは、メインのキャンバスのシーン(OBS のシーン一覧の順)の後に、別キャンバスのシーンを並べる。
+ *   グループの中に置かれていれば、グループを含むシーンを並べる
+ * - どのシーンにも置かれていない画像ソースも並べる(scenes が空)
+ * - 削除の途中のソースと、画像ソース以外(配信者が同じ名前で作ったテキストなど)は並べない
+ *
+ * @return 画像ソースの情報。番号の大きい順(先頭がアクティブ)。
+ *
+ * @note 呼び出し元: plugin-main.cpp(設定画面の「ソース」のタブ)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+std::vector<ClipboardSourceInfo> list_clipboard_sources();
+
+/**
+ * @brief プラグインの画像ソースを 1 つ、すべてのシーンから削除する。
+ *
+ * @details
+ * OBS の obs_source_remove() で削除する。置かれているすべてのシーン(グループの中・別キャンバスを含む)から一度に消える。
+ * 表示中でも削除する。削除の後の処理(自動非表示のタイマー・アクティブの切り替え)は、
+ * シーンの削除の通知を受けた処理(item_removed_task())に任せる。表示履歴の画像ファイルは消さない。
+ *
+ * @param name 削除するソースの名前。
+ * @return 削除したら true。
+ * @retval false その名前のプラグインの画像ソースがない(配信者が先に削除した・名前を変えたなど)。
+ *
+ * @note 呼び出し元: plugin-main.cpp(設定画面の「ソース」のタブのごみ箱のボタン)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+bool remove_clipboard_source(const std::string &name);
+
+/**
+ * @brief プラグインの画像ソース(無印と番号付き)を、すべてのシーンからすべて削除する。
+ *
+ * @details
+ * ソースの一覧を調べている間(obs_enum_sources() の中)は一覧に鍵がかかっているので、先に対象を集め、
+ * 調べ終わってから 1 つずつ削除する。削除のしかたは remove_clipboard_source() と同じ。
+ *
+ * @return 削除した数。
+ *
+ * @note 呼び出し元: plugin-main.cpp(設定画面の「ソース」のタブの「全て削除」)。
+ * @note スレッド: UI スレッドから呼ぶこと。
+ */
+int remove_all_clipboard_sources();

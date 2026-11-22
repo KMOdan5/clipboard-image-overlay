@@ -8,7 +8,9 @@
  * @details
  * Qt のウィジェットを組み合わせて作る(.ui ファイルや Q_OBJECT は使わない。項目が少ないため)。
  * 表示する文字列はすべて data/locale の ini から読む。
- * 項目は「一般」と「表示履歴」の 2 つのタブに分ける。
+ * 項目は「一般」「表示履歴」「ソース」の 3 つのタブに分ける。
+ * 「ソース」のタブは設定の項目ではなく、プラグインの画像ソースの一覧と削除のボタン(make_sources_page())。
+ * 一覧はタブを開いたときと「更新」を押したときだけ読み込み、削除はその場で行う(OK や適用を待たない)。
  * 「OK」「適用」で settings_save()(settings.cpp)を呼び、変更は次に画像を表示したときから反映される。
  * 「表示履歴」のタブの「保存フォルダを開く」(open_image_folder())と「表示履歴を全て削除」は、OK や適用を待たずにその場で動く。
  * 画面の一番下に、バージョンと、マニュアル・不具合・ご要望のフォームへのリンクを表示する(make_about_label())。
@@ -30,9 +32,11 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPalette>
@@ -43,12 +47,15 @@
 #include <QStyle>
 #include <QSysInfo>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
 #include <initializer_list>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -86,6 +93,30 @@ constexpr int TAB_MARGIN = 8;
 
 /// @brief 「一般」のタブの番号。既定値のボタンで、どのタブの値を戻すかを決めるため。
 constexpr int GENERAL_TAB_INDEX = 0;
+
+/// @brief 「表示履歴」のタブの番号。
+constexpr int HISTORY_TAB_INDEX = 1;
+
+/// @brief 「ソース」のタブの番号。開いたときに一覧を読み込むためと、既定値のボタンを押せなくするため。
+constexpr int SOURCES_TAB_INDEX = 2;
+
+/// @brief 「ソース」のタブの一覧の objectName。読み直すときに findChild() で探すため。
+constexpr const char *SOURCES_TABLE_NAME = "sourcesTable";
+
+/// @brief 「ソース」のタブの、画像ソースがないときの案内の objectName。
+constexpr const char *SOURCES_EMPTY_NAME = "sourcesEmpty";
+
+/// @brief 「ソース」のタブの「全て削除」のボタンの objectName。
+constexpr const char *SOURCES_REMOVE_ALL_NAME = "sourcesRemoveAll";
+
+/// @brief 「ソース」のタブの一覧の列。
+enum SourcesColumn { COLUMN_SOURCE = 0, COLUMN_SCENES, COLUMN_LAST_SHOWN, COLUMN_VISIBLE, COLUMN_REMOVE, COLUMN_COUNT };
+
+/// @brief 一覧の文字の列の、文字の幅に足す余白(ピクセル)。セルの左右の余白の分。
+constexpr int COLUMN_PADDING = 16;
+
+/// @brief 一覧のアイコンの列(表示状態・削除)の幅(ピクセル)。
+constexpr int ICON_COLUMN_WIDTH = 32;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
 constexpr const char *PERCENT_SPIN_NAME = "maxSizePercent";
@@ -450,6 +481,194 @@ QPointer<QDialog> settings_dialog;
 /// @brief 設定画面から頼む処理(settings_dialog_register() で登録する)。
 SettingsDialogCallbacks dialog_callbacks;
 
+/**
+ * @brief 「ソース」のタブに出す、シーンの名前。別キャンバスのシーンには、キャンバスの名前を添える。
+ *
+ * @param scene  シーンの名前(UTF-8)。
+ * @param canvas キャンバスの名前(UTF-8)。メインのキャンバスなら空。
+ * @return 表示する名前。
+ */
+QString scene_label(const std::string &scene, const std::string &canvas)
+{
+	if (canvas.empty())
+		return QString::fromStdString(scene);
+	return text("Settings.Sources.SceneWithCanvas")
+		.arg(QString::fromStdString(scene), QString::fromStdString(canvas));
+}
+
+void refresh_sources(QWidget *page);
+
+/**
+ * @brief 削除の確認の画面を出す。既定のボタンはキャンセル(押し間違えたときの影響が大きいため)。
+ *
+ * @param parent  画面の親。
+ * @param title   画面の題(ボタンの名前と同じにする)。
+ * @param message 確認の文。
+ * @return OK を押したら true。
+ */
+bool confirm_remove(QWidget *parent, const QString &title, const QString &message)
+{
+	const auto answer = QMessageBox::question(parent, title, message, QMessageBox::Ok | QMessageBox::Cancel,
+						  QMessageBox::Cancel);
+	return answer == QMessageBox::Ok;
+}
+
+/**
+ * @brief 「ソース」のタブの一覧を、今の画像ソースで作り直す。
+ *
+ * @details
+ * - ソース: 名前。シーン: 置かれているシーン(入りきらなければ「…」で省略し、マウスを乗せると改行区切りで全部出す)
+ * - 最終表示: 参照している画像ファイルの保存日時(OBS のソースには更新日時の記録がないため)
+ * - 表示状態: 表示中なら、OBS のソース一覧と同じ目のアイコン(テーマの見た目を借りる。押しても何もしない)
+ * - 削除: OBS のソース一覧と同じごみ箱のアイコンのボタン。テーマにアイコンがなければ記号で代わりにする
+ * 画像ソースが 1 つもなければ、一覧の代わりに案内を出し、「全て削除」を押せなくする。
+ *
+ * @param page 「ソース」のタブのページ。
+ */
+void refresh_sources(QWidget *page)
+{
+	auto *table = page->findChild<QTableWidget *>(SOURCES_TABLE_NAME);
+	auto *empty = page->findChild<QLabel *>(SOURCES_EMPTY_NAME);
+	auto *remove_all = page->findChild<QPushButton *>(SOURCES_REMOVE_ALL_NAME);
+	if (!table || !empty || !remove_all)
+		return;
+
+	const std::vector<ClipboardSourceInfo> sources =
+		dialog_callbacks.list_sources ? dialog_callbacks.list_sources() : std::vector<ClipboardSourceInfo>();
+
+	table->setRowCount(0);
+	table->setRowCount(static_cast<int>(sources.size()));
+	QPointer<QWidget> page_ref(page);
+	for (int row = 0; row < static_cast<int>(sources.size()); row++) {
+		const ClipboardSourceInfo &info = sources[static_cast<size_t>(row)];
+		const QString name = QString::fromStdString(info.name);
+		table->setItem(row, COLUMN_SOURCE, new QTableWidgetItem(name));
+
+		QStringList scenes;
+		for (size_t i = 0; i < info.scenes.size(); i++)
+			scenes << scene_label(info.scenes[i],
+					      i < info.canvases.size() ? info.canvases[i] : std::string());
+		auto *scenes_item = new QTableWidgetItem(scenes.join(text("Settings.Sources.SceneSeparator")));
+		scenes_item->setToolTip(scenes.join(QStringLiteral("\n")));
+		table->setItem(row, COLUMN_SCENES, scenes_item);
+
+		const QFileInfo file(QString::fromStdString(info.image_path));
+		const QString date = (!info.image_path.empty() && file.exists())
+					     ? file.lastModified().toString(QStringLiteral("yyyy-MM-dd"))
+					     : QString();
+		table->setItem(row, COLUMN_LAST_SHOWN, new QTableWidgetItem(date));
+
+		if (info.visible) {
+			/* OBS のソース一覧の目のアイコンと同じクラスを付け、テーマの見た目を借りる。表示だけなので押せなくする */
+			auto *eye = new QCheckBox();
+			eye->setProperty("class", QStringLiteral("indicator-visibility"));
+			eye->setChecked(true);
+			eye->setFocusPolicy(Qt::NoFocus);
+			eye->setAttribute(Qt::WA_TransparentForMouseEvents);
+			eye->setToolTip(text("Settings.Sources.Visible"));
+			table->setCellWidget(row, COLUMN_VISIBLE, eye);
+		}
+
+		/* OBS のソース一覧のごみ箱と同じクラスを付け、テーマのアイコンを借りる */
+		auto *trash = new QPushButton();
+		trash->setProperty("class", QStringLiteral("icon-trash"));
+		trash->setFlat(true);
+		trash->setFocusPolicy(Qt::NoFocus);
+		trash->setToolTip(text("Settings.Sources.Remove"));
+		table->setCellWidget(row, COLUMN_REMOVE, trash);
+		trash->ensurePolished();
+		if (trash->icon().isNull())
+			trash->setText(QStringLiteral("\u2715"));
+		QObject::connect(trash, &QPushButton::clicked, page, [page_ref, name]() {
+			if (!page_ref)
+				return;
+			if (!confirm_remove(page_ref, text("Settings.Sources.Remove"),
+					    text("Settings.Sources.Remove.Confirm").arg(name))) {
+				obs_log(LOG_INFO, "settings: remove source canceled");
+				return;
+			}
+			if (dialog_callbacks.remove_source)
+				dialog_callbacks.remove_source(name.toStdString());
+			refresh_sources(page_ref);
+		});
+	}
+
+	table->setVisible(!sources.empty());
+	empty->setVisible(sources.empty());
+	remove_all->setEnabled(!sources.empty());
+	obs_log(LOG_INFO, "settings: listed %d source(s)", static_cast<int>(sources.size()));
+}
+
+/**
+ * @brief 「ソース」のタブのページを作る。中身(一覧)は refresh_sources() で入れる。
+ *
+ * @details
+ * 設定の項目ではないので、枠は使わず、一覧をタブいっぱいに出す。設定画面の横幅を広げないよう、
+ * ソース名・最終表示・アイコンの列は中身に合う幅で固定し、残りの幅をシーンの列に回す。
+ * 一覧の下に、左に「更新」、右に「全て削除」を置く。
+ *
+ * @return 作ったページ(タブに追加すると、ダイアログが解放する)。
+ */
+QWidget *make_sources_page()
+{
+	QVBoxLayout *layout = nullptr;
+	QWidget *page = make_tab_page(layout);
+
+	auto *table = new QTableWidget(0, COLUMN_COUNT);
+	table->setObjectName(SOURCES_TABLE_NAME);
+	table->setHorizontalHeaderLabels({text("Settings.Sources.Column.Source"),
+					  text("Settings.Sources.Column.Scenes"),
+					  text("Settings.Sources.Column.LastShown"), QString(), QString()});
+	table->verticalHeader()->hide();
+	table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+	table->setSelectionMode(QAbstractItemView::NoSelection);
+	table->setFocusPolicy(Qt::NoFocus);
+	table->setWordWrap(false);
+	table->setTextElideMode(Qt::ElideRight);
+	QHeaderView *header = table->horizontalHeader();
+	const QFontMetrics metrics = table->fontMetrics();
+	header->setSectionResizeMode(QHeaderView::Fixed);
+	header->setSectionResizeMode(COLUMN_SCENES, QHeaderView::Stretch);
+	table->setColumnWidth(COLUMN_SOURCE,
+			      metrics.horizontalAdvance(QStringLiteral("Clipboard Image 99")) + COLUMN_PADDING);
+	table->setColumnWidth(COLUMN_LAST_SHOWN,
+			      std::max(metrics.horizontalAdvance(QStringLiteral("2026-11-22")),
+				       metrics.horizontalAdvance(text("Settings.Sources.Column.LastShown"))) +
+				      COLUMN_PADDING);
+	table->setColumnWidth(COLUMN_VISIBLE, ICON_COLUMN_WIDTH);
+	table->setColumnWidth(COLUMN_REMOVE, ICON_COLUMN_WIDTH);
+	layout->addWidget(table, 1);
+
+	auto *empty = new QLabel(text("Settings.Sources.Empty"));
+	empty->setObjectName(SOURCES_EMPTY_NAME);
+	empty->setAlignment(Qt::AlignCenter);
+	make_muted(empty);
+	empty->hide();
+	layout->addWidget(empty, 1);
+
+	auto *refresh = new QPushButton(text("Settings.Sources.Refresh"));
+	auto *remove_all = new QPushButton(text("Settings.Sources.RemoveAll"));
+	remove_all->setObjectName(SOURCES_REMOVE_ALL_NAME);
+	auto *buttons = new QHBoxLayout();
+	buttons->addWidget(refresh);
+	buttons->addStretch();
+	buttons->addWidget(remove_all);
+	layout->addLayout(buttons);
+
+	QObject::connect(refresh, &QPushButton::clicked, page, [page]() { refresh_sources(page); });
+	QObject::connect(remove_all, &QPushButton::clicked, page, [page]() {
+		if (!confirm_remove(page, text("Settings.Sources.RemoveAll"),
+				    text("Settings.Sources.RemoveAll.Confirm"))) {
+			obs_log(LOG_INFO, "settings: remove all sources canceled");
+			return;
+		}
+		if (dialog_callbacks.remove_all_sources)
+			dialog_callbacks.remove_all_sources();
+		refresh_sources(page);
+	});
+	return page;
+}
+
 } // namespace
 
 /**
@@ -583,6 +802,10 @@ void open_settings_dialog()
 	history->addWidget(saved_group);
 	history->addStretch();
 
+	/* ---- 「ソース」のタブ ---- 一覧は、タブを開いたときに読み込む(見えていない間は読み込まない) */
+	QWidget *sources_page = make_sources_page();
+	tabs->addTab(sources_page, text("Settings.Tab.Sources"));
+
 	/* どの枠・タブでも入力欄の左の位置がそろうように */
 	align_label_widths({display_label, max_size_label, saved_label});
 
@@ -631,9 +854,17 @@ void open_settings_dialog()
 			 [widgets, tabs]() {
 				 if (tabs->currentIndex() == GENERAL_TAB_INDEX)
 					 widgets.show_general_values(PluginSettings());
-				 else
+				 else if (tabs->currentIndex() == HISTORY_TAB_INDEX)
 					 widgets.show_history_values(PluginSettings());
 			 });
+
+	/* 「ソース」のタブは設定の項目がないので、既定値のボタンを押せなくする。開いたときに一覧を読み込む */
+	QPushButton *restore = buttons->button(QDialogButtonBox::RestoreDefaults);
+	QObject::connect(tabs, &QTabWidget::currentChanged, dialog, [restore, sources_page](int index) {
+		restore->setEnabled(index != SOURCES_TAB_INDEX);
+		if (index == SOURCES_TAB_INDEX)
+			refresh_sources(sources_page);
+	});
 
 	widgets.show_values(settings_get());
 	update_pixel_label(dialog);

@@ -779,6 +779,13 @@ bool obs_module_load(void)
 
 	SettingsDialogCallbacks dialog_callbacks;
 	dialog_callbacks.delete_all_history = delete_all_history_images;
+	dialog_callbacks.list_sources = list_clipboard_sources;
+	dialog_callbacks.remove_source = [](const std::string &name) {
+		remove_clipboard_source(name);
+	};
+	dialog_callbacks.remove_all_sources = []() {
+		remove_all_clipboard_sources();
+	};
 	settings_dialog_register(std::move(dialog_callbacks));
 
 	obs_frontend_add_save_callback(on_frontend_save, nullptr);
