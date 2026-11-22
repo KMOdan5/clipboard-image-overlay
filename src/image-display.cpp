@@ -2175,8 +2175,6 @@ std::vector<ClipboardSourceInfo> list_clipboard_sources()
 				info.scenes.push_back(obs_source_get_name(entry.scene));
 				info.canvases.push_back(entry.canvas);
 			}
-			for (obs_sceneitem_t *item : items)
-				info.visible = info.visible || obs_sceneitem_visible(item);
 			release_items(items);
 		}
 		list.push_back(std::move(info));

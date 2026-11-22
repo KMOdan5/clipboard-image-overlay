@@ -110,12 +110,12 @@ constexpr const char *SOURCES_EMPTY_NAME = "sourcesEmpty";
 constexpr const char *SOURCES_REMOVE_ALL_NAME = "sourcesRemoveAll";
 
 /// @brief 「ソース」のタブの一覧の列。
-enum SourcesColumn { COLUMN_SOURCE = 0, COLUMN_SCENES, COLUMN_LAST_SHOWN, COLUMN_VISIBLE, COLUMN_REMOVE, COLUMN_COUNT };
+enum SourcesColumn { COLUMN_SOURCE = 0, COLUMN_SCENES, COLUMN_LAST_SHOWN, COLUMN_REMOVE, COLUMN_COUNT };
 
 /// @brief 一覧の文字の列の、文字の幅に足す余白(ピクセル)。セルの左右の余白の分。
 constexpr int COLUMN_PADDING = 16;
 
-/// @brief 一覧のアイコンの列(表示状態・削除)の幅(ピクセル)。
+/// @brief 一覧の削除の列の幅(ピクセル)。
 constexpr int ICON_COLUMN_WIDTH = 32;
 
 /// @brief 割合の入力欄の objectName。開き直したときに findChild() で探すため。
@@ -519,8 +519,7 @@ bool confirm_remove(QWidget *parent, const QString &title, const QString &messag
  * @details
  * - ソース: 名前。シーン: 置かれているシーン(入りきらなければ「…」で省略し、マウスを乗せると改行区切りで全部出す)
  * - 最終表示: 参照している画像ファイルの保存日時(OBS のソースには更新日時の記録がないため)
- * - 表示状態: 表示中なら、OBS のソース一覧と同じ目のアイコン(テーマの見た目を借りる。押しても何もしない)
- * - 削除: OBS のソース一覧と同じごみ箱のアイコンのボタン。テーマにアイコンがなければ記号で代わりにする
+ * - 削除: OBS のソース一覧と同じごみ箱のアイコンのボタン(セルの上下左右の中央)。テーマにアイコンがなければ記号で代わりにする
  * 画像ソースが 1 つもなければ、一覧の代わりに案内を出し、「全て削除」を押せなくする。
  *
  * @param page 「ソース」のタブのページ。
@@ -558,24 +557,20 @@ void refresh_sources(QWidget *page)
 					     : QString();
 		table->setItem(row, COLUMN_LAST_SHOWN, new QTableWidgetItem(date));
 
-		if (info.visible) {
-			/* OBS のソース一覧の目のアイコンと同じクラスを付け、テーマの見た目を借りる。表示だけなので押せなくする */
-			auto *eye = new QCheckBox();
-			eye->setProperty("class", QStringLiteral("indicator-visibility"));
-			eye->setChecked(true);
-			eye->setFocusPolicy(Qt::NoFocus);
-			eye->setAttribute(Qt::WA_TransparentForMouseEvents);
-			eye->setToolTip(text("Settings.Sources.Visible"));
-			table->setCellWidget(row, COLUMN_VISIBLE, eye);
-		}
-
-		/* OBS のソース一覧のごみ箱と同じクラスを付け、テーマのアイコンを借りる */
+		/*
+		 * OBS のソース一覧のごみ箱と同じクラスを付け、テーマのアイコンを借りる。
+		 * セルの上下左右の中央に置くため、余白のないレイアウトで包んでからセルに入れる
+		 */
 		auto *trash = new QPushButton();
 		trash->setProperty("class", QStringLiteral("icon-trash"));
 		trash->setFlat(true);
 		trash->setFocusPolicy(Qt::NoFocus);
 		trash->setToolTip(text("Settings.Sources.Remove"));
-		table->setCellWidget(row, COLUMN_REMOVE, trash);
+		auto *trash_cell = new QWidget();
+		auto *trash_layout = new QHBoxLayout(trash_cell);
+		trash_layout->setContentsMargins(0, 0, 0, 0);
+		trash_layout->addWidget(trash, 0, Qt::AlignCenter);
+		table->setCellWidget(row, COLUMN_REMOVE, trash_cell);
 		trash->ensurePolished();
 		if (trash->icon().isNull())
 			trash->setText(QStringLiteral("\u2715"));
@@ -604,7 +599,7 @@ void refresh_sources(QWidget *page)
  *
  * @details
  * 設定の項目ではないので、枠は使わず、一覧をタブいっぱいに出す。設定画面の横幅を広げないよう、
- * ソース名・最終表示・アイコンの列は中身に合う幅で固定し、残りの幅をシーンの列に回す。
+ * ソース名・最終表示・削除の列は中身に合う幅で固定し、残りの幅をシーンの列に回す。
  * 一覧の下に、左に「更新」、右に「全て削除」を置く。
  *
  * @return 作ったページ(タブに追加すると、ダイアログが解放する)。
@@ -618,7 +613,7 @@ QWidget *make_sources_page()
 	table->setObjectName(SOURCES_TABLE_NAME);
 	table->setHorizontalHeaderLabels({text("Settings.Sources.Column.Source"),
 					  text("Settings.Sources.Column.Scenes"),
-					  text("Settings.Sources.Column.LastShown"), QString(), QString()});
+					  text("Settings.Sources.Column.LastShown"), QString()});
 	table->verticalHeader()->hide();
 	table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	table->setSelectionMode(QAbstractItemView::NoSelection);
@@ -635,7 +630,6 @@ QWidget *make_sources_page()
 			      std::max(metrics.horizontalAdvance(QStringLiteral("2026-11-22")),
 				       metrics.horizontalAdvance(text("Settings.Sources.Column.LastShown"))) +
 				      COLUMN_PADDING);
-	table->setColumnWidth(COLUMN_VISIBLE, ICON_COLUMN_WIDTH);
 	table->setColumnWidth(COLUMN_REMOVE, ICON_COLUMN_WIDTH);
 	layout->addWidget(table, 1);
 

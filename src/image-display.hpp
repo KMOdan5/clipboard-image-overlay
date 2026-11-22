@@ -222,7 +222,6 @@ struct ClipboardSourceInfo {
 	std::vector<std::string> scenes;   ///< 置かれているシーンの名前。
 	std::vector<std::string> canvases; ///< scenes と同じ並びで、別キャンバスならその名前。メインのキャンバスなら空。
 	std::string image_path;            ///< 参照している画像ファイルのパス(UTF-8)。なければ空。
-	bool visible = false;              ///< どこかのシーンで、目のアイコンがオン(表示中)なら true。
 };
 
 /**
