@@ -500,7 +500,7 @@ QString scene_label(const std::string &scene, const std::string &canvas)
 		.arg(QString::fromStdString(scene), QString::fromStdString(canvas));
 }
 
-void refresh_sources(QWidget *page);
+std::vector<ClipboardSourceInfo> refresh_sources(QWidget *page);
 
 /**
  * @brief 画像ソースを削除し、一覧を読み直す。
@@ -552,14 +552,15 @@ bool confirm_remove(QWidget *parent, const QString &message)
  * 画像ソースが 1 つもなければ、一覧の代わりに案内を出し、「全て削除」を押せなくする。
  *
  * @param page 「ソース」のタブのページ。
+ * @return 一覧に並べた画像ソース。
  */
-void refresh_sources(QWidget *page)
+std::vector<ClipboardSourceInfo> refresh_sources(QWidget *page)
 {
 	auto *table = page->findChild<QTableWidget *>(SOURCES_TABLE_NAME);
 	auto *empty = page->findChild<QLabel *>(SOURCES_EMPTY_NAME);
 	auto *remove_all = page->findChild<QPushButton *>(SOURCES_REMOVE_ALL_NAME);
 	if (!table || !empty || !remove_all)
-		return;
+		return {};
 
 	const std::vector<ClipboardSourceInfo> sources =
 		dialog_callbacks.list_sources ? dialog_callbacks.list_sources() : std::vector<ClipboardSourceInfo>();
@@ -622,6 +623,7 @@ void refresh_sources(QWidget *page)
 	empty->setVisible(sources.empty());
 	remove_all->setEnabled(!sources.empty());
 	obs_log(LOG_INFO, "settings: listed %d source(s)", static_cast<int>(sources.size()));
+	return sources;
 }
 
 /**
@@ -686,16 +688,15 @@ QWidget *make_sources_page()
 
 	QObject::connect(refresh, &QPushButton::clicked, page, [page]() { refresh_sources(page); });
 	QObject::connect(remove_all, &QPushButton::clicked, page, [page]() {
-		/* 消すのは、押した時点のプラグインの画像ソースすべて。確認の画面に、その数を出す */
+		/*
+		 * 消すのは、押した時点のプラグインの画像ソースすべて。先に一覧を読み直し、
+		 * 確認の画面に出す数と、見えている一覧の行の数を合わせる
+		 */
 		std::vector<std::string> names;
-		if (dialog_callbacks.list_sources) {
-			for (const ClipboardSourceInfo &info : dialog_callbacks.list_sources())
-				names.push_back(info.name);
-		}
-		if (names.empty()) {
-			refresh_sources(page);
+		for (const ClipboardSourceInfo &info : refresh_sources(page))
+			names.push_back(info.name);
+		if (names.empty())
 			return;
-		}
 		if (!confirm_remove(page,
 				    text("Settings.Sources.RemoveAll.Confirm").arg(static_cast<int>(names.size())))) {
 			obs_log(LOG_INFO, "settings: remove all sources canceled");
