@@ -33,6 +33,8 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDateTime>
+#include <QTime>
+#include <QEvent>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -105,6 +107,9 @@ constexpr const char *SOURCES_TABLE_NAME = "sourcesTable";
 
 /// @brief 「ソース」のタブの、画像ソースがないときの案内の objectName。
 constexpr const char *SOURCES_EMPTY_NAME = "sourcesEmpty";
+
+/// @brief 「ソース」のタブの、一覧を読み込んだ時刻の objectName。
+constexpr const char *SOURCES_UPDATED_NAME = "sourcesUpdated";
 
 /// @brief 「ソース」のタブの「全て削除」のボタンの objectName。
 constexpr const char *SOURCES_REMOVE_ALL_NAME = "sourcesRemoveAll";
@@ -524,19 +529,47 @@ void remove_sources_and_refresh(QWidget *page, const std::vector<std::string> &n
 }
 
 /**
- * @brief 削除の確認の画面を出す。既定のボタンはキャンセル(押し間違えたときの影響が大きいため)。
+ * @brief 削除の確認の画面を出す。題は OBS のソース一覧の削除の確認と同じ「削除の確認」。
+ * @details 既定のボタンはキャンセル(押し間違えたときの影響が大きく、元に戻せないため)。
  *
  * @param parent  画面の親。
- * @param title   画面の題(ボタンの名前と同じにする)。
  * @param message 確認の文。
  * @return OK を押したら true。
  */
-bool confirm_remove(QWidget *parent, const QString &title, const QString &message)
+bool confirm_remove(QWidget *parent, const QString &message)
 {
-	const auto answer = QMessageBox::question(parent, title, message, QMessageBox::Ok | QMessageBox::Cancel,
-						  QMessageBox::Cancel);
+	const auto answer = QMessageBox::question(parent, text("Settings.Sources.Remove.Title"), message,
+						  QMessageBox::Ok | QMessageBox::Cancel, QMessageBox::Cancel);
 	return answer == QMessageBox::Ok;
 }
+
+/**
+ * @brief ウィンドウが前面に戻ってきたとき(別のウィンドウから切り替えたとき)に、渡した処理を呼ぶ。
+ * @details 設定画面に付け、「ソース」のタブの一覧を読み直すために使う。イベントはそのまま流す。
+ */
+class ActivationFilter : public QObject {
+public:
+	/**
+	 * @param parent    親(設定画面)。親と一緒に解放される。
+	 * @param on_active 前面に戻ってきたときに呼ぶ処理。
+	 */
+	ActivationFilter(QObject *parent, std::function<void()> on_active)
+		: QObject(parent),
+		  on_active_(std::move(on_active))
+	{
+	}
+
+protected:
+	bool eventFilter(QObject *watched, QEvent *event) override
+	{
+		if (event->type() == QEvent::WindowActivate && on_active_)
+			on_active_();
+		return QObject::eventFilter(watched, event);
+	}
+
+private:
+	std::function<void()> on_active_; ///< 前面に戻ってきたときに呼ぶ処理。
+};
 
 /**
  * @brief 「ソース」のタブの一覧を、今の画像ソースで作り直す。
@@ -602,14 +635,17 @@ void refresh_sources(QWidget *page)
 		QObject::connect(trash, &QPushButton::clicked, page, [page_ref, name]() {
 			if (!page_ref)
 				return;
-			if (!confirm_remove(page_ref, text("Settings.Sources.Remove"),
-					    text("Settings.Sources.Remove.Confirm").arg(name))) {
+			if (!confirm_remove(page_ref, text("Settings.Sources.Remove.Confirm").arg(name))) {
 				obs_log(LOG_INFO, "settings: remove source canceled");
 				return;
 			}
 			remove_sources_and_refresh(page_ref, {name.toStdString()});
 		});
 	}
+
+	if (auto *updated = page->findChild<QLabel *>(SOURCES_UPDATED_NAME))
+		updated->setText(text("Settings.Sources.UpdatedAt")
+					 .arg(QTime::currentTime().toString(QStringLiteral("HH:mm:ss"))));
 
 	table->setVisible(!sources.empty());
 	empty->setVisible(sources.empty());
@@ -668,22 +704,31 @@ QWidget *make_sources_page()
 	remove_all->setObjectName(SOURCES_REMOVE_ALL_NAME);
 	auto *buttons = new QHBoxLayout();
 	buttons->addWidget(refresh);
+	/* 一覧を読み込んだ時刻。開いたままの間に OBS でソースが変わっても、いつの一覧かが分かるように */
+	auto *updated = new QLabel();
+	updated->setObjectName(SOURCES_UPDATED_NAME);
+	make_muted(updated);
+	buttons->addWidget(updated);
 	buttons->addStretch();
 	buttons->addWidget(remove_all);
 	layout->addLayout(buttons);
 
 	QObject::connect(refresh, &QPushButton::clicked, page, [page]() { refresh_sources(page); });
 	QObject::connect(remove_all, &QPushButton::clicked, page, [page]() {
-		if (!confirm_remove(page, text("Settings.Sources.RemoveAll"),
-				    text("Settings.Sources.RemoveAll.Confirm"))) {
-			obs_log(LOG_INFO, "settings: remove all sources canceled");
-			return;
-		}
-		/* 消すのは、押した時点のプラグインの画像ソースすべて */
+		/* 消すのは、押した時点のプラグインの画像ソースすべて。確認の画面に、その数を出す */
 		std::vector<std::string> names;
 		if (dialog_callbacks.list_sources) {
 			for (const ClipboardSourceInfo &info : dialog_callbacks.list_sources())
 				names.push_back(info.name);
+		}
+		if (names.empty()) {
+			refresh_sources(page);
+			return;
+		}
+		if (!confirm_remove(page,
+				    text("Settings.Sources.RemoveAll.Confirm").arg(static_cast<int>(names.size())))) {
+			obs_log(LOG_INFO, "settings: remove all sources canceled");
+			return;
 		}
 		remove_sources_and_refresh(page, names);
 	});
@@ -886,6 +931,15 @@ void open_settings_dialog()
 		if (index == SOURCES_TAB_INDEX)
 			refresh_sources(sources_page);
 	});
+	/*
+	 * 別のウィンドウから設定画面に戻ってきたときも、「ソース」のタブを開いていれば一覧を読み直す。
+	 * 配信者が OBS の画面でソースを足したり消したりするのは、設定画面から離れているときなので、戻ったときに追いつく。
+	 * 動くのは戻ったときの 1 回だけ
+	 */
+	dialog->installEventFilter(new ActivationFilter(dialog, [tabs, sources_page]() {
+		if (tabs->currentIndex() == SOURCES_TAB_INDEX)
+			refresh_sources(sources_page);
+	}));
 
 	widgets.show_values(settings_get());
 	update_pixel_label(dialog);
