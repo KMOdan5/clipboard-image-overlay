@@ -34,7 +34,6 @@
 #include <QDir>
 #include <QDateTime>
 #include <QTime>
-#include <QEvent>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -544,34 +543,6 @@ bool confirm_remove(QWidget *parent, const QString &message)
 }
 
 /**
- * @brief ウィンドウが前面に戻ってきたとき(別のウィンドウから切り替えたとき)に、渡した処理を呼ぶ。
- * @details 設定画面に付け、「ソース」のタブの一覧を読み直すために使う。イベントはそのまま流す。
- */
-class ActivationFilter : public QObject {
-public:
-	/**
-	 * @param parent    親(設定画面)。親と一緒に解放される。
-	 * @param on_active 前面に戻ってきたときに呼ぶ処理。
-	 */
-	ActivationFilter(QObject *parent, std::function<void()> on_active)
-		: QObject(parent),
-		  on_active_(std::move(on_active))
-	{
-	}
-
-protected:
-	bool eventFilter(QObject *watched, QEvent *event) override
-	{
-		if (event->type() == QEvent::WindowActivate && on_active_)
-			on_active_();
-		return QObject::eventFilter(watched, event);
-	}
-
-private:
-	std::function<void()> on_active_; ///< 前面に戻ってきたときに呼ぶ処理。
-};
-
-/**
  * @brief 「ソース」のタブの一覧を、今の画像ソースで作り直す。
  *
  * @details
@@ -931,15 +902,6 @@ void open_settings_dialog()
 		if (index == SOURCES_TAB_INDEX)
 			refresh_sources(sources_page);
 	});
-	/*
-	 * 別のウィンドウから設定画面に戻ってきたときも、「ソース」のタブを開いていれば一覧を読み直す。
-	 * 配信者が OBS の画面でソースを足したり消したりするのは、設定画面から離れているときなので、戻ったときに追いつく。
-	 * 動くのは戻ったときの 1 回だけ
-	 */
-	dialog->installEventFilter(new ActivationFilter(dialog, [tabs, sources_page]() {
-		if (tabs->currentIndex() == SOURCES_TAB_INDEX)
-			refresh_sources(sources_page);
-	}));
 
 	widgets.show_values(settings_get());
 	update_pixel_label(dialog);
