@@ -119,14 +119,12 @@
 
 #include <graphics/vec2.h>
 
-#include <QCoreApplication>
 #include <QTimer>
 
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -2191,12 +2189,14 @@ std::vector<ClipboardSourceInfo> list_clipboard_sources()
 namespace {
 
 /**
- * @brief プラグインの画像ソースを 1 つ、すべてのシーンから削除する(remove_clipboard_sources() の 1 回分)。
+ * @brief プラグインの画像ソースを 1 つ、すべてのシーンから削除する(remove_clipboard_sources() の 1 つ分)。
  *
  * @details
- * 置かれているシーンアイテムを削除する。OBS のソース一覧で配信者が削除するときと同じやり方にするため
- * (アイテムが残ったままソースそのものを消すと、OBS のソース一覧が作り直しを重ねて、画面が固まる)。
- * ソースそのものは、次の回に finish_removing_clipboard_source() で片付ける。
+ * 置かれているシーンアイテムを obs_sceneitem_remove() で削除する。OBS のソース一覧で配信者が削除するとき
+ * (OBSBasic::on_actionRemoveSource_triggered())と同じやり方にするため。最後のアイテムがなくなると、OBS がソースを片付ける。
+ * ソースそのものを obs_source_remove() で消すと、OBS のソース一覧が削除のたびに一覧を作り直し、
+ * まとめて消したときに処理が重なって画面が固まるので、アイテムが置かれているソースには使わない。
+ * どのシーンにも置かれていないソースだけは、ソースそのものを削除する(ソース一覧には出ていないので、作り直しは起きない)。
  *
  * @param name 削除するソースの名前。
  */
@@ -2230,70 +2230,13 @@ void remove_one_clipboard_source(const std::string &name)
 			obs_source_release(copy);
 		}
 	}
-	obs_log(LOG_INFO, "display: removed %d item(s) of \"%s\"", removed, name.c_str());
-	obs_source_release(source);
-}
-
-/**
- * @brief アイテムを削除したソースが、まだ残っていれば、ソースそのものを削除する。
- *
- * @details
- * アイテムがなくなると、ふつうは OBS がソースを片付ける。ただ、OBS の画面が削除の通知を処理し終えるまでは
- * ソースが残っていて、その間に画像を表示すると、消したはずのソースに表示してしまう。
- * どのシーンにも置かれていなかったソースも、ここで削除する。
- * OBS の画面が削除の通知を処理し終えた後(次の回)に呼ぶので、ソース一覧の作り直しは起きない。
- *
- * @param name 削除したソースの名前。
- */
-void finish_removing_clipboard_source(const std::string &name)
-{
-	obs_source_t *source = obs_get_source_by_name(name.c_str());
-	if (source && is_image_source(source) && !obs_source_removed(source) &&
-	    managed_number(obs_source_get_name(source)) > 0) {
+	if (removed == 0) {
 		obs_source_remove(source);
-		obs_log(LOG_INFO, "display: removed source \"%s\"", name.c_str());
+		obs_log(LOG_INFO, "display: removed source \"%s\" (not in any scene)", name.c_str());
+	} else {
+		obs_log(LOG_INFO, "display: removed %d item(s) of \"%s\"", removed, name.c_str());
 	}
 	obs_source_release(source);
-}
-
-/**
- * @brief remove_clipboard_sources() の残りを 1 つ削除し、次を UI スレッドの処理の列の後ろに並べる。
- *
- * @details 前の回にアイテムを削除したソースの片付け(finish_removing_clipboard_source())も、ここで行う。
- *
- * @param names      削除するソースの名前。
- * @param index      今回削除する位置。
- * @param generation 始めたときの watch_generation。片付けの後なら打ち切る。
- * @param on_done    すべて削除し終えたときに呼ぶ処理。
- */
-void remove_next_clipboard_source(std::shared_ptr<std::vector<std::string>> names, size_t index, uintptr_t generation,
-				  std::function<void()> on_done)
-{
-	if (generation != watch_generation.load()) {
-		obs_log(LOG_INFO, "display: removing sources stopped (scenes were cleaned up)");
-		return;
-	}
-	if (index > 0)
-		finish_removing_clipboard_source((*names)[index - 1]);
-	if (index >= names->size()) {
-		obs_log(LOG_INFO, "display: removed %d source(s)", static_cast<int>(names->size()));
-		if (on_done)
-			on_done();
-		return;
-	}
-
-	remove_one_clipboard_source((*names)[index]);
-
-	/*
-	 * 次は、OBS が今の削除の通知を処理し終えてから行う。OBS の画面は削除の通知を UI スレッドの処理の列に並べるので、
-	 * その後ろに並べれば、順番に処理される
-	 */
-	QMetaObject::invokeMethod(
-		QCoreApplication::instance(),
-		[names, index, generation, on_done]() {
-			remove_next_clipboard_source(names, index + 1, generation, on_done);
-		},
-		Qt::QueuedConnection);
 }
 
 } // namespace
@@ -2302,9 +2245,9 @@ void remove_next_clipboard_source(std::shared_ptr<std::vector<std::string>> name
  * @brief プラグインの画像ソースを、すべてのシーンから削除する。
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  */
-void remove_clipboard_sources(const std::vector<std::string> &names, std::function<void()> on_done)
+void remove_clipboard_sources(const std::vector<std::string> &names)
 {
 	obs_log(LOG_INFO, "display: removing %d source(s)", static_cast<int>(names.size()));
-	remove_next_clipboard_source(std::make_shared<std::vector<std::string>>(names), 0, watch_generation.load(),
-				     std::move(on_done));
+	for (const std::string &name : names)
+		remove_one_clipboard_source(name);
 }

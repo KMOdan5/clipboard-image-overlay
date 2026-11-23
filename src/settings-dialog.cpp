@@ -499,26 +499,28 @@ QString scene_label(const std::string &scene, const std::string &canvas)
 void refresh_sources(QWidget *page);
 
 /**
- * @brief 画像ソースの削除を始める。終わるまで「ソース」のタブを押せなくし、終わったら一覧を読み直す。
+ * @brief 画像ソースを削除し、一覧を読み直す。
  *
- * @details 削除は 1 つずつ間を空けて行うので、すぐには終わらない(remove_clipboard_sources())。
- *          その間に同じソースをもう一度削除しようとしないよう、タブの中を押せなくする。
+ * @details
+ * 消したソースを OBS が片付けるのは、OBS の画面が削除の通知を処理し終えた後になる。
+ * すぐに読み直すと消したソースが残って見えるので、読み直しは UI スレッドの処理の列の後ろに並べる。
  *
  * @param page  「ソース」のタブのページ。
  * @param names 削除するソースの名前。
  */
-void start_removing_sources(QWidget *page, const std::vector<std::string> &names)
+void remove_sources_and_refresh(QWidget *page, const std::vector<std::string> &names)
 {
 	if (!dialog_callbacks.remove_sources || names.empty())
 		return;
-	page->setEnabled(false);
+	dialog_callbacks.remove_sources(names);
 	QPointer<QWidget> page_ref(page);
-	dialog_callbacks.remove_sources(names, [page_ref]() {
-		if (!page_ref)
-			return;
-		page_ref->setEnabled(true);
-		refresh_sources(page_ref);
-	});
+	QMetaObject::invokeMethod(
+		page,
+		[page_ref]() {
+			if (page_ref)
+				refresh_sources(page_ref);
+		},
+		Qt::QueuedConnection);
 }
 
 /**
@@ -605,7 +607,7 @@ void refresh_sources(QWidget *page)
 				obs_log(LOG_INFO, "settings: remove source canceled");
 				return;
 			}
-			start_removing_sources(page_ref, {name.toStdString()});
+			remove_sources_and_refresh(page_ref, {name.toStdString()});
 		});
 	}
 
@@ -683,7 +685,7 @@ QWidget *make_sources_page()
 			for (const ClipboardSourceInfo &info : dialog_callbacks.list_sources())
 				names.push_back(info.name);
 		}
-		start_removing_sources(page, names);
+		remove_sources_and_refresh(page, names);
 	});
 	return page;
 }
