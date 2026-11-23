@@ -529,7 +529,8 @@ void remove_sources_and_refresh(QWidget *page, const std::vector<std::string> &n
 
 /**
  * @brief 削除の確認の画面を出す。題は OBS のソース一覧の削除の確認と同じ「削除の確認」。
- * @details 既定のボタンはキャンセル(押し間違えたときの影響が大きく、元に戻せないため)。
+ * @details 設定画面の削除の確認(「ソース」のタブの削除・「表示履歴を全て削除」)は、すべてこれで出し、題をそろえる。
+ *          既定のボタンはキャンセル(押し間違えたときの影響が大きいため)。
  *
  * @param parent  画面の親。
  * @param message 確認の文。
@@ -537,7 +538,7 @@ void remove_sources_and_refresh(QWidget *page, const std::vector<std::string> &n
  */
 bool confirm_remove(QWidget *parent, const QString &message)
 {
-	const auto answer = QMessageBox::question(parent, text("Settings.Sources.Remove.Title"), message,
+	const auto answer = QMessageBox::question(parent, text("Settings.ConfirmRemove.Title"), message,
 						  QMessageBox::Ok | QMessageBox::Cancel, QMessageBox::Cancel);
 	return answer == QMessageBox::Ok;
 }
@@ -820,15 +821,12 @@ void open_settings_dialog()
 	auto *open_folder = new QPushButton(text("Settings.OpenImageFolder"));
 	QObject::connect(open_folder, &QPushButton::clicked, dialog, []() { open_image_folder(); });
 	/*
-	 * 表示履歴を全て削除。数が多く押し間違えたときの影響が大きいので、確認の画面を出す(既定のボタンはキャンセル)。
-	 * 削除はごみ箱に移すだけなので、元に戻せる。OK と キャンセル は OBS の言語に合わせて Qt が表示する
+	 * 表示履歴を全て削除。数が多く押し間違えたときの影響が大きいので、確認の画面を出す(confirm_remove()。既定のボタンはキャンセル)。
+	 * 削除はごみ箱に移すだけなので、元に戻せる(確認の文にも、ごみ箱に移すことを書く)。OK と キャンセル は OBS の言語に合わせて Qt が表示する
 	 */
 	auto *delete_all = new QPushButton(text("Settings.DeleteAllHistory"));
 	QObject::connect(delete_all, &QPushButton::clicked, dialog, [dialog]() {
-		const auto answer = QMessageBox::question(dialog, text("Settings.DeleteAllHistory"),
-							  text("Settings.DeleteAllHistory.Confirm"),
-							  QMessageBox::Ok | QMessageBox::Cancel, QMessageBox::Cancel);
-		if (answer != QMessageBox::Ok) {
+		if (!confirm_remove(dialog, text("Settings.DeleteAllHistory.Confirm"))) {
 			obs_log(LOG_INFO, "settings: delete all history canceled");
 			return;
 		}
