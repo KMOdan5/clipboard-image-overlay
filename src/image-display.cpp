@@ -125,6 +125,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -317,6 +318,48 @@ std::string image_file_of(obs_source_t *source)
 	std::string path = file ? file : "";
 	obs_data_release(settings);
 	return path;
+}
+
+/// @brief プライベート設定の中で、プラグインのデータをまとめて入れるキー。最後に表示した日時の秒数を入れる。
+constexpr const char *LAST_SHOWN_KEY = "last_shown";
+
+/**
+ * @brief 画像ソースに、プラグインが最後に表示した日時を記録する。
+ *
+ * @details
+ * ソースのプライベート設定(obs_source_get_private_settings())に入れる。プロパティの画面には出ず、
+ * シーンコレクションと一緒に OBS が保存する。プライベート設定は OBS 本体やほかのプラグインも使うので、
+ * プラグインの名前(PLUGIN_NAME)のキーの下にまとめて入れ、ほかのキーとぶつからないようにする。
+ * 日時は 1970 年からの秒数で持つ(表示するときに日付に直す)。
+ *
+ * @param source 表示した画像ソース。
+ */
+void record_last_shown(obs_source_t *source)
+{
+	obs_data_t *private_settings = obs_source_get_private_settings(source);
+	obs_data_t *mine = obs_data_get_obj(private_settings, PLUGIN_NAME);
+	if (!mine)
+		mine = obs_data_create();
+	obs_data_set_int(mine, LAST_SHOWN_KEY, static_cast<long long>(std::time(nullptr)));
+	obs_data_set_obj(private_settings, PLUGIN_NAME, mine);
+	obs_data_release(mine);
+	obs_data_release(private_settings);
+}
+
+/**
+ * @brief 画像ソースに記録した、プラグインが最後に表示した日時を返す。
+ *
+ * @param source 画像ソース。
+ * @return 1970 年からの秒数。記録がなければ 0。
+ */
+long long last_shown_of(obs_source_t *source)
+{
+	obs_data_t *private_settings = obs_source_get_private_settings(source);
+	obs_data_t *mine = obs_data_get_obj(private_settings, PLUGIN_NAME);
+	const long long seconds = mine ? obs_data_get_int(mine, LAST_SHOWN_KEY) : 0;
+	obs_data_release(mine);
+	obs_data_release(private_settings);
+	return seconds;
 }
 
 /**
@@ -1676,6 +1719,34 @@ void prune_watched_scenes()
 			     watched_scenes.end());
 }
 
+/**
+ * @brief プラグインの画像ソース(無印と番号付き)をすべて集める。削除の途中のものは除く。
+ *
+ * @details obs_enum_sources() はソースの一覧に鍵をかけたまま呼ぶので、その中では参照を取るだけにする
+ *          (削除などの操作は、集め終わってから行う)。
+ *
+ * @return 画像ソース(参照カウント付き。使い終わったら obs_source_release() で解放する)。番号の大きい順。
+ */
+std::vector<obs_source_t *> collect_managed_sources()
+{
+	std::vector<obs_source_t *> sources;
+	obs_enum_sources(
+		[](void *param, obs_source_t *candidate) {
+			if (is_image_source(candidate) && !obs_source_removed(candidate) &&
+			    managed_number(obs_source_get_name(candidate)) > 0) {
+				obs_source_t *ref = obs_source_get_ref(candidate);
+				if (ref)
+					static_cast<std::vector<obs_source_t *> *>(param)->push_back(ref);
+			}
+			return true;
+		},
+		&sources);
+	std::sort(sources.begin(), sources.end(), [](obs_source_t *a, obs_source_t *b) {
+		return managed_number(obs_source_get_name(a)) > managed_number(obs_source_get_name(b));
+	});
+	return sources;
+}
+
 } // namespace
 
 /**
@@ -1886,6 +1957,9 @@ bool show_image_on_current_scene(const SavedImage &image, bool new_source)
 			show_on_program_copy(item, image);
 	}
 
+	/* 設定画面の「ソース」のタブの「最終表示」のため */
+	record_last_shown(source);
+
 	obs_sceneitem_release(item);
 	obs_source_release(source);
 	obs_source_release(scene_source);
@@ -2095,4 +2169,131 @@ void clear_clipboard_image()
 	}
 	obs_log(LOG_INFO, "display: cleared the image of \"%s\"", obs_source_get_name(source));
 	obs_source_release(source);
+}
+
+/**
+ * @brief プラグインの画像ソースを一覧にする。
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+std::vector<ClipboardSourceInfo> list_clipboard_sources()
+{
+	/* シーンは、メインのキャンバス(OBS のシーン一覧の順)、別キャンバスの順に集める。キャンバスの名前も覚えておく */
+	struct SceneEntry {
+		obs_source_t *scene;
+		std::string canvas;
+	};
+	std::vector<SceneEntry> scenes;
+	obs_frontend_source_list main_scenes = {};
+	obs_frontend_get_scenes(&main_scenes);
+	for (size_t i = 0; i < main_scenes.sources.num; i++)
+		scenes.push_back({obs_source_get_ref(main_scenes.sources.array[i]), std::string()});
+	obs_frontend_source_list_free(&main_scenes);
+
+	std::vector<obs_canvas_t *> canvases = collect_other_canvases();
+	for (obs_canvas_t *canvas : canvases) {
+		const char *canvas_name = obs_canvas_get_name(canvas);
+		std::vector<obs_source_t *> canvas_scenes;
+		obs_canvas_enum_scenes(
+			canvas,
+			[](void *param, obs_source_t *scene_source) {
+				static_cast<std::vector<obs_source_t *> *>(param)->push_back(
+					obs_source_get_ref(scene_source));
+				return true;
+			},
+			&canvas_scenes);
+		for (obs_source_t *scene_source : canvas_scenes)
+			scenes.push_back({scene_source, canvas_name ? canvas_name : ""});
+	}
+	release_canvases(canvases);
+
+	std::vector<ClipboardSourceInfo> list;
+	std::vector<obs_source_t *> sources = collect_managed_sources();
+	for (obs_source_t *source : sources) {
+		ClipboardSourceInfo info;
+		info.name = obs_source_get_name(source);
+		info.last_shown = last_shown_of(source);
+		for (const SceneEntry &entry : scenes) {
+			obs_scene_t *scene = entry.scene ? obs_scene_from_source(entry.scene) : nullptr;
+			if (!scene)
+				continue;
+			std::vector<obs_sceneitem_t *> items = collect_items(scene, source);
+			if (!items.empty()) {
+				info.scenes.push_back(obs_source_get_name(entry.scene));
+				info.canvases.push_back(entry.canvas);
+			}
+			release_items(items);
+		}
+		list.push_back(std::move(info));
+		obs_source_release(source);
+	}
+
+	for (SceneEntry &entry : scenes)
+		obs_source_release(entry.scene);
+	return list;
+}
+
+namespace {
+
+/**
+ * @brief プラグインの画像ソースを 1 つ、すべてのシーンから削除する(remove_clipboard_sources() の 1 つ分)。
+ *
+ * @details
+ * 置かれているシーンアイテムを obs_sceneitem_remove() で削除する。OBS のソース一覧で配信者が削除するとき
+ * (OBSBasic::on_actionRemoveSource_triggered())と同じやり方にするため。最後のアイテムがなくなると、OBS がソースを片付ける。
+ * ソースそのものを obs_source_remove() で消すと、OBS のソース一覧が削除のたびに一覧を作り直し、
+ * まとめて消したときに処理が重なって画面が固まるので、アイテムが置かれているソースには使わない。
+ * どのシーンにも置かれていないソースだけは、ソースそのものを削除する(ソース一覧には出ていないので、作り直しは起きない)。
+ *
+ * @param name 削除するソースの名前。
+ */
+void remove_one_clipboard_source(const std::string &name)
+{
+	obs_source_t *source = obs_get_source_by_name(name.c_str());
+	const bool managed = source && is_image_source(source) && !obs_source_removed(source) &&
+			     managed_number(obs_source_get_name(source)) > 0;
+	if (!managed) {
+		obs_log(LOG_INFO, "display: source \"%s\" to remove was not found", name.c_str());
+		obs_source_release(source);
+		return;
+	}
+
+	int removed = 0;
+	for_each_item_in_all_scenes(source, [&removed](obs_sceneitem_t *item) {
+		obs_sceneitem_remove(item);
+		removed++;
+		return true;
+	});
+	/* スタジオモードのプログラムのコピーに置かれたものも消す(残るとソースが片付かないため) */
+	if (in_studio_mode()) {
+		obs_source_t *copy = get_program_copy();
+		if (copy) {
+			std::vector<obs_sceneitem_t *> items = collect_items(obs_scene_from_source(copy), source);
+			for (obs_sceneitem_t *item : items) {
+				obs_sceneitem_remove(item);
+				removed++;
+			}
+			release_items(items);
+			obs_source_release(copy);
+		}
+	}
+	if (removed == 0) {
+		obs_source_remove(source);
+		obs_log(LOG_INFO, "display: removed source \"%s\" (not in any scene)", name.c_str());
+	} else {
+		obs_log(LOG_INFO, "display: removed %d item(s) of \"%s\"", removed, name.c_str());
+	}
+	obs_source_release(source);
+}
+
+} // namespace
+
+/**
+ * @brief プラグインの画像ソースを、すべてのシーンから削除する。
+ * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ */
+void remove_clipboard_sources(const std::vector<std::string> &names)
+{
+	obs_log(LOG_INFO, "display: removing %d source(s)", static_cast<int>(names.size()));
+	for (const std::string &name : names)
+		remove_one_clipboard_source(name);
 }
