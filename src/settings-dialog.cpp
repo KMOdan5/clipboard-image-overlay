@@ -32,7 +32,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
-#include <QFileInfo>
+#include <QDateTime>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -543,7 +543,7 @@ bool confirm_remove(QWidget *parent, const QString &title, const QString &messag
  *
  * @details
  * - ソース: 名前。シーン: 置かれているシーン(入りきらなければ「…」で省略し、マウスを乗せると改行区切りで全部出す)
- * - 最終表示: 参照している画像ファイルの保存日時(OBS のソースには更新日時の記録がないため)
+ * - 最終表示: プラグインがそのソースに最後に表示した日付(ソースのプライベート設定に記録したもの)。記録がなければ空欄
  * - 削除: OBS のソース一覧と同じごみ箱のアイコンのボタン(セルの上下左右の中央)。テーマにアイコンがなければ記号で代わりにする
  * 画像ソースが 1 つもなければ、一覧の代わりに案内を出し、「全て削除」を押せなくする。
  *
@@ -576,10 +576,10 @@ void refresh_sources(QWidget *page)
 		scenes_item->setToolTip(scenes.join(QStringLiteral("\n")));
 		table->setItem(row, COLUMN_SCENES, scenes_item);
 
-		const QFileInfo file(QString::fromStdString(info.image_path));
-		const QString date = (!info.image_path.empty() && file.exists())
-					     ? file.lastModified().toString(QStringLiteral("yyyy-MM-dd"))
-					     : QString();
+		const QString date =
+			info.last_shown > 0
+				? QDateTime::fromSecsSinceEpoch(info.last_shown).toString(QStringLiteral("yyyy-MM-dd"))
+				: QString();
 		table->setItem(row, COLUMN_LAST_SHOWN, new QTableWidgetItem(date));
 
 		/*

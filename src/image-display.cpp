@@ -125,6 +125,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -317,6 +318,48 @@ std::string image_file_of(obs_source_t *source)
 	std::string path = file ? file : "";
 	obs_data_release(settings);
 	return path;
+}
+
+/// @brief プライベート設定の中で、プラグインのデータをまとめて入れるキー。最後に表示した日時の秒数を入れる。
+constexpr const char *LAST_SHOWN_KEY = "last_shown";
+
+/**
+ * @brief 画像ソースに、プラグインが最後に表示した日時を記録する。
+ *
+ * @details
+ * ソースのプライベート設定(obs_source_get_private_settings())に入れる。プロパティの画面には出ず、
+ * シーンコレクションと一緒に OBS が保存する。プライベート設定は OBS 本体やほかのプラグインも使うので、
+ * プラグインの名前(PLUGIN_NAME)のキーの下にまとめて入れ、ほかのキーとぶつからないようにする。
+ * 日時は 1970 年からの秒数で持つ(表示するときに日付に直す)。
+ *
+ * @param source 表示した画像ソース。
+ */
+void record_last_shown(obs_source_t *source)
+{
+	obs_data_t *private_settings = obs_source_get_private_settings(source);
+	obs_data_t *mine = obs_data_get_obj(private_settings, PLUGIN_NAME);
+	if (!mine)
+		mine = obs_data_create();
+	obs_data_set_int(mine, LAST_SHOWN_KEY, static_cast<long long>(std::time(nullptr)));
+	obs_data_set_obj(private_settings, PLUGIN_NAME, mine);
+	obs_data_release(mine);
+	obs_data_release(private_settings);
+}
+
+/**
+ * @brief 画像ソースに記録した、プラグインが最後に表示した日時を返す。
+ *
+ * @param source 画像ソース。
+ * @return 1970 年からの秒数。記録がなければ 0。
+ */
+long long last_shown_of(obs_source_t *source)
+{
+	obs_data_t *private_settings = obs_source_get_private_settings(source);
+	obs_data_t *mine = obs_data_get_obj(private_settings, PLUGIN_NAME);
+	const long long seconds = mine ? obs_data_get_int(mine, LAST_SHOWN_KEY) : 0;
+	obs_data_release(mine);
+	obs_data_release(private_settings);
+	return seconds;
 }
 
 /**
@@ -1914,6 +1957,9 @@ bool show_image_on_current_scene(const SavedImage &image, bool new_source)
 			show_on_program_copy(item, image);
 	}
 
+	/* 設定画面の「ソース」のタブの「最終表示」のため */
+	record_last_shown(source);
+
 	obs_sceneitem_release(item);
 	obs_source_release(source);
 	obs_source_release(scene_source);
@@ -2165,7 +2211,7 @@ std::vector<ClipboardSourceInfo> list_clipboard_sources()
 	for (obs_source_t *source : sources) {
 		ClipboardSourceInfo info;
 		info.name = obs_source_get_name(source);
-		info.image_path = image_file_of(source);
+		info.last_shown = last_shown_of(source);
 		for (const SceneEntry &entry : scenes) {
 			obs_scene_t *scene = entry.scene ? obs_scene_from_source(entry.scene) : nullptr;
 			if (!scene)
