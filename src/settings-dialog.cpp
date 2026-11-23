@@ -499,6 +499,29 @@ QString scene_label(const std::string &scene, const std::string &canvas)
 void refresh_sources(QWidget *page);
 
 /**
+ * @brief 画像ソースの削除を始める。終わるまで「ソース」のタブを押せなくし、終わったら一覧を読み直す。
+ *
+ * @details 削除は 1 つずつ間を空けて行うので、すぐには終わらない(remove_clipboard_sources())。
+ *          その間に同じソースをもう一度削除しようとしないよう、タブの中を押せなくする。
+ *
+ * @param page  「ソース」のタブのページ。
+ * @param names 削除するソースの名前。
+ */
+void start_removing_sources(QWidget *page, const std::vector<std::string> &names)
+{
+	if (!dialog_callbacks.remove_sources || names.empty())
+		return;
+	page->setEnabled(false);
+	QPointer<QWidget> page_ref(page);
+	dialog_callbacks.remove_sources(names, [page_ref]() {
+		if (!page_ref)
+			return;
+		page_ref->setEnabled(true);
+		refresh_sources(page_ref);
+	});
+}
+
+/**
  * @brief 削除の確認の画面を出す。既定のボタンはキャンセル(押し間違えたときの影響が大きいため)。
  *
  * @param parent  画面の親。
@@ -582,9 +605,7 @@ void refresh_sources(QWidget *page)
 				obs_log(LOG_INFO, "settings: remove source canceled");
 				return;
 			}
-			if (dialog_callbacks.remove_source)
-				dialog_callbacks.remove_source(name.toStdString());
-			refresh_sources(page_ref);
+			start_removing_sources(page_ref, {name.toStdString()});
 		});
 	}
 
@@ -656,9 +677,13 @@ QWidget *make_sources_page()
 			obs_log(LOG_INFO, "settings: remove all sources canceled");
 			return;
 		}
-		if (dialog_callbacks.remove_all_sources)
-			dialog_callbacks.remove_all_sources();
-		refresh_sources(page);
+		/* 消すのは、押した時点のプラグインの画像ソースすべて */
+		std::vector<std::string> names;
+		if (dialog_callbacks.list_sources) {
+			for (const ClipboardSourceInfo &info : dialog_callbacks.list_sources())
+				names.push_back(info.name);
+		}
+		start_removing_sources(page, names);
 	});
 	return page;
 }

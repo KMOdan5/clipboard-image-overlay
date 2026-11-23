@@ -30,13 +30,11 @@ struct SettingsDialogCallbacks {
 	std::function<std::vector<ClipboardSourceInfo>()> list_sources;
 
 	/**
-	 * @brief 画像ソースを 1 つ、すべてのシーンから削除する(remove_clipboard_source())。
-	 * @details 「ソース」のタブのごみ箱のボタンで、確認の画面で OK を押したときに呼ぶ。引数はソースの名前。
+	 * @brief 画像ソースを、すべてのシーンから削除する(remove_clipboard_sources())。
+	 * @details 「ソース」のタブのごみ箱のボタン(名前 1 つ)と「全て削除」(一覧のすべての名前)で、確認の画面で OK を押したときに呼ぶ。
+	 *          削除は 1 つずつ間を空けて行うので、すぐには終わらない。すべて終わったら done を呼ぶ。
 	 */
-	std::function<void(const std::string &name)> remove_source;
-
-	/// @brief 画像ソースをすべて削除する(remove_all_clipboard_sources())。「全て削除」で、確認の画面で OK を押したときに呼ぶ。
-	std::function<void()> remove_all_sources;
+	std::function<void(const std::vector<std::string> &names, std::function<void()> done)> remove_sources;
 };
 
 /**
@@ -74,8 +72,9 @@ void settings_dialog_register(SettingsDialogCallbacks callbacks);
  *     - シーン: 置かれているシーンを並べる(別キャンバスのシーンはキャンバスの名前を添える)。入りきらなければ「…」で省略し、
  *       マウスを乗せると全部出す
  *     - 最終表示: 参照している画像ファイルの保存日時(2026-11-22 の形)
- *     - 削除: ごみ箱のボタン(セルの上下左右の中央)。確認の画面で OK を押すと、その場で callbacks.remove_source を呼び、一覧を読み直す
- *   - 一覧の下に「更新」(一覧を読み直す)と「全て削除」(確認の画面で OK を押すと callbacks.remove_all_sources)
+ *     - 削除: ごみ箱のボタン(セルの上下左右の中央)。確認の画面で OK を押すと callbacks.remove_sources を呼び、
+ *       終わるまでタブの中を押せなくし、終わったら一覧を読み直す
+ *   - 一覧の下に「更新」(一覧を読み直す)と「全て削除」(確認の画面で OK を押すと、そのときの画像ソースすべてで callbacks.remove_sources)
  *   - 一覧は、タブを開いたときと「更新」を押したときだけ読み込む(見えていない画面のための処理をしないため)
  *   - 画像ソースが 1 つもなければ、一覧の代わりに案内を出す
  * 枠の中の説明文は、項目と区別できるよう薄い文字で表示する。

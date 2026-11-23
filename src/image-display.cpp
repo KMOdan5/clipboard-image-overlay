@@ -119,12 +119,14 @@
 
 #include <graphics/vec2.h>
 
+#include <QCoreApplication>
 #include <QTimer>
 
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -2186,11 +2188,19 @@ std::vector<ClipboardSourceInfo> list_clipboard_sources()
 	return list;
 }
 
+namespace {
+
 /**
- * @brief プラグインの画像ソースを 1 つ、すべてのシーンから削除する。
- * @details 仕様の詳細は image-display.hpp の宣言側を参照。
+ * @brief プラグインの画像ソースを 1 つ、すべてのシーンから削除する(remove_clipboard_sources() の 1 回分)。
+ *
+ * @details
+ * 置かれているシーンアイテムを削除する。OBS のソース一覧で配信者が削除するときと同じやり方にするため
+ * (アイテムが残ったままソースそのものを消すと、OBS のソース一覧が作り直しを重ねて、画面が固まる)。
+ * ソースそのものは、次の回に finish_removing_clipboard_source() で片付ける。
+ *
+ * @param name 削除するソースの名前。
  */
-bool remove_clipboard_source(const std::string &name)
+void remove_one_clipboard_source(const std::string &name)
 {
 	obs_source_t *source = obs_get_source_by_name(name.c_str());
 	const bool managed = source && is_image_source(source) && !obs_source_removed(source) &&
@@ -2198,32 +2208,103 @@ bool remove_clipboard_source(const std::string &name)
 	if (!managed) {
 		obs_log(LOG_INFO, "display: source \"%s\" to remove was not found", name.c_str());
 		obs_source_release(source);
-		return false;
+		return;
 	}
 
-	/* ソースを削除すると、置かれているすべてのシーン(グループの中・別キャンバスを含む)から一度に消える */
-	obs_source_remove(source);
-	obs_log(LOG_INFO, "display: removed source \"%s\" from all scenes", name.c_str());
+	int removed = 0;
+	for_each_item_in_all_scenes(source, [&removed](obs_sceneitem_t *item) {
+		obs_sceneitem_remove(item);
+		removed++;
+		return true;
+	});
+	/* スタジオモードのプログラムのコピーに置かれたものも消す(残るとソースが片付かないため) */
+	if (in_studio_mode()) {
+		obs_source_t *copy = get_program_copy();
+		if (copy) {
+			std::vector<obs_sceneitem_t *> items = collect_items(obs_scene_from_source(copy), source);
+			for (obs_sceneitem_t *item : items) {
+				obs_sceneitem_remove(item);
+				removed++;
+			}
+			release_items(items);
+			obs_source_release(copy);
+		}
+	}
+	obs_log(LOG_INFO, "display: removed %d item(s) of \"%s\"", removed, name.c_str());
 	obs_source_release(source);
-	return true;
 }
 
 /**
- * @brief プラグインの画像ソースを、すべてのシーンからすべて削除する。
+ * @brief アイテムを削除したソースが、まだ残っていれば、ソースそのものを削除する。
+ *
+ * @details
+ * アイテムがなくなると、ふつうは OBS がソースを片付ける。ただ、OBS の画面が削除の通知を処理し終えるまでは
+ * ソースが残っていて、その間に画像を表示すると、消したはずのソースに表示してしまう。
+ * どのシーンにも置かれていなかったソースも、ここで削除する。
+ * OBS の画面が削除の通知を処理し終えた後(次の回)に呼ぶので、ソース一覧の作り直しは起きない。
+ *
+ * @param name 削除したソースの名前。
+ */
+void finish_removing_clipboard_source(const std::string &name)
+{
+	obs_source_t *source = obs_get_source_by_name(name.c_str());
+	if (source && is_image_source(source) && !obs_source_removed(source) &&
+	    managed_number(obs_source_get_name(source)) > 0) {
+		obs_source_remove(source);
+		obs_log(LOG_INFO, "display: removed source \"%s\"", name.c_str());
+	}
+	obs_source_release(source);
+}
+
+/**
+ * @brief remove_clipboard_sources() の残りを 1 つ削除し、次を UI スレッドの処理の列の後ろに並べる。
+ *
+ * @details 前の回にアイテムを削除したソースの片付け(finish_removing_clipboard_source())も、ここで行う。
+ *
+ * @param names      削除するソースの名前。
+ * @param index      今回削除する位置。
+ * @param generation 始めたときの watch_generation。片付けの後なら打ち切る。
+ * @param on_done    すべて削除し終えたときに呼ぶ処理。
+ */
+void remove_next_clipboard_source(std::shared_ptr<std::vector<std::string>> names, size_t index, uintptr_t generation,
+				  std::function<void()> on_done)
+{
+	if (generation != watch_generation.load()) {
+		obs_log(LOG_INFO, "display: removing sources stopped (scenes were cleaned up)");
+		return;
+	}
+	if (index > 0)
+		finish_removing_clipboard_source((*names)[index - 1]);
+	if (index >= names->size()) {
+		obs_log(LOG_INFO, "display: removed %d source(s)", static_cast<int>(names->size()));
+		if (on_done)
+			on_done();
+		return;
+	}
+
+	remove_one_clipboard_source((*names)[index]);
+
+	/*
+	 * 次は、OBS が今の削除の通知を処理し終えてから行う。OBS の画面は削除の通知を UI スレッドの処理の列に並べるので、
+	 * その後ろに並べれば、順番に処理される
+	 */
+	QMetaObject::invokeMethod(
+		QCoreApplication::instance(),
+		[names, index, generation, on_done]() {
+			remove_next_clipboard_source(names, index + 1, generation, on_done);
+		},
+		Qt::QueuedConnection);
+}
+
+} // namespace
+
+/**
+ * @brief プラグインの画像ソースを、すべてのシーンから削除する。
  * @details 仕様の詳細は image-display.hpp の宣言側を参照。
  */
-int remove_all_clipboard_sources()
+void remove_clipboard_sources(const std::vector<std::string> &names, std::function<void()> on_done)
 {
-	/* 一覧を調べ終わってから削除する(調べている間は、ソースの一覧に鍵がかかっているため) */
-	std::vector<obs_source_t *> sources = collect_managed_sources();
-	int removed = 0;
-	for (obs_source_t *source : sources) {
-		if (!obs_source_removed(source)) {
-			obs_source_remove(source);
-			removed++;
-		}
-		obs_source_release(source);
-	}
-	obs_log(LOG_INFO, "display: removed %d source(s) from all scenes", removed);
-	return removed;
+	obs_log(LOG_INFO, "display: removing %d source(s)", static_cast<int>(names.size()));
+	remove_next_clipboard_source(std::make_shared<std::vector<std::string>>(names), 0, watch_generation.load(),
+				     std::move(on_done));
 }
