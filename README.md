@@ -13,14 +13,11 @@ Author: Kemoyama (Kemodan5)
 <!-- Image: demo GIF (docs/images/demo.gif). After adding the image, remove the comment markers around the next line -->
 <!-- <img src="docs/images/demo.gif" width="720" alt="Showing a copied image with a hotkey and hiding it automatically"> -->
 
-### **[Download the latest version](https://github.com/KMOdan5/clipboard-image-overlay/releases)**
+### **[Download the latest version](https://github.com/KMOdan5/clipboard-image-overlay/releases/latest)**
 
 For Windows: `clipboard-image-overlay-(version)-windows-x64-installer.exe` (installer)
 
 </div>
-
-> [!NOTE]
-> **Beta testing is in progress.** If you find bugs, have requests, or notice anything, please let us know via [Bug reports and requests](#bug-reports-and-requests).
 
 ## Features
 
@@ -38,42 +35,29 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64-installer.exe` (inst
   - Selections copied from paint tools (with transparency)
   - Image files copied in File Explorer (GIF animations are played)
 - Press the pause hotkey to keep the image on screen
+- You can add images and show several images at the same time
+- In the history dock, you can show, pause, and hide images while looking at the thumbnails
 - You can switch to another image even before the display time is up
 - The transition effect (fade, etc.) can be changed with OBS's built-in Show/Hide Transition
 
 </details>
 
-## Roadmap to 1.0
-
-<!-- Image: roadmap illustration (docs/images/roadmap.png), shared with the Japanese README. After adding the image, remove the comment markers around the next line -->
-<!-- <p align="center"><img src="docs/images/roadmap.png" width="720" alt="Roadmap to 1.0"></p> -->
-
-| Release | Version | What's included |
-|---|---|---|
-| October 2026 | 0.1 (beta) | Beta test (closed test with acquaintances): checking the core features on different environments |
-| November 2026 | 0.2 (beta) | Public beta test: adding the history dock and an installer |
-| November 2026 | 0.3 (beta) | Public beta improvements: showing why an image could not be shown, Studio Mode support, and an OBS version check in the installer |
-| Late November 2026 | 1.0 | Official release: reflecting the test results and improving the manual |
-
-> [!TIP]
-> Anyone can join the public beta test.
-
 ## Requirements
 
 - Windows 10 / 11
 - OBS Studio 31.1.1 or later
-
-Files for macOS are also provided, but they have not been tested.
+- Not supported: operating systems other than Windows, such as macOS and Linux
 
 ## Installation and usage
 
-Download the latest version from [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases). This is the only official place to get the plugin. For installation and usage, see the [manual (Japanese)](docs/manual/ja.md). An English manual will be added in version 1.0.
+Download the latest version from [Releases](https://github.com/KMOdan5/clipboard-image-overlay/releases/latest). This is the only official place to get the plugin. For installation and usage, see the [manual (Japanese)](docs/manual/ja.md). An English manual will be added after version 1.0.
 
 ## Terms of Use
 
 - Free to use for both individuals and companies, including monetized streams.
 - No credit is required. If you like it, I would be happy if you mention it on your stream or social media.
-- If you would like to support development, you can do so via [GitHub Sponsors](https://github.com/sponsors/KMOdan5).
+- If you would like to support development, please consider supporting me via [GitHub Sponsors](https://github.com/sponsors/KMOdan5) or [BOOTH](https://gelazy.booth.pm/).
+  - Your support will be used to develop streaming tools.
 - Please make sure you have the rights (such as copyright) to the images you show.
 - Modifications and redistribution must follow GPL-2.0.
 
@@ -109,6 +93,12 @@ Until signing starts, the distributed files are not signed.
 For privacy, see the [Privacy Policy](#privacy-policy). To report a security issue, see [SECURITY.md](SECURITY.md).
 
 </details>
+
+## Testers
+
+Thank you to everyone who answered the test survey.
+
+音無ユウト · [かったん](https://www.youtube.com/channel/UC7JkaWTpr8dekND5vdNyuPw) · [cuezaku](https://www.twitch.tv/cuezaku) · [コーラサワー](https://youtube.com/@colasour-halars) · [爽葉ことと](https://x.com/sayahakototo_vt) · [成乃リツ](https://www.youtube.com/@seino_ritsu) · りっつん
 
 ## License
 

@@ -13,14 +13,11 @@
 <!-- 画像: 動作の GIF(docs/images/demo.gif)。画像を置いたら、次の行のコメントの記号を消す -->
 <!-- <img src="docs/images/demo.gif" width="720" alt="コピーした画像をホットキーで表示し、自動で非表示にする様子"> -->
 
-### **[最新版のダウンロード](https://github.com/KMOdan5/clipboard-image-overlay/releases)**
+### **[最新版のダウンロード](https://github.com/KMOdan5/clipboard-image-overlay/releases/latest)**
 
 Windows は `clipboard-image-overlay-(版)-windows-x64-installer.exe`(インストーラー)
 
 </div>
-
-> [!NOTE]
-> **現在ベータテスト中です。** 不具合や要望、気づいたことがあれば、[不具合・ご要望](#不具合ご要望)からお知らせください。
 
 ## できること
 
@@ -38,42 +35,29 @@ Windows は `clipboard-image-overlay-(版)-windows-x64-installer.exe`(インス�
   - ペイントツールの選択範囲(透過あり)
   - エクスプローラーでコピーした画像ファイル(GIF はアニメーションも再生)
 - 一時停止ホットキーを押すと、表示したままにできます
+- 画像を増やして、複数の画像を同時に表示できます
+- 表示履歴のドックでは、サムネイルを見ながら表示・一時停止・非表示などを操作できます
 - 表示時間の途中でも別の画像へ切り替えできます
 - 切り替え効果(フェードなど)は、OBS 標準機能の表示/非表示トランジションで変更できます
 
 </details>
 
-## 正式版までのロードマップ
-
-<!-- 画像: ロードマップの絵(docs/images/roadmap.png)。文字を入れない絵だけの画像で、日本語と英語の README で共有する。画像を置いたら、次の行のコメントの記号を消す -->
-<!-- <p align="center"><img src="docs/images/roadmap.png" width="720" alt="正式版までのロードマップ"></p> -->
-
-| 公開時期 | 版 | 内容 |
-|---|---|---|
-| 2026 年 10 月 | 0.1(beta) | ベータテスト(知り合いとの動作テスト)。基本機能と環境ごとの動作確認 |
-| 2026 年 11 月 | 0.2(beta) | 公開ベータテスト。履歴ドックとインストーラーの追加 |
-| 2026 年 11 月 | 0.3(beta) | 公開ベータテストの改善。表示できない理由のお知らせ・スタジオモードへの対応・インストーラーでの OBS の版の確認 |
-| 2026 年 11 月末 | 1.0(正式版) | テスト結果の反映とマニュアルの充実 |
-
-> [!TIP]
-> 公開ベータテストにはどなたでも参加できます。
-
 ## 動作環境
 
 - Windows 10 / 11
 - OBS Studio 31.1.1 以降
-
-macOS 向けのファイルもありますが、動作は確認していません。
+- 動作保証の対象外: macOS・Linux など Windows 以外の OS
 
 ## インストールと使い方
 
-最新版は[リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases)からダウンロードできます。正式な配布場所はここだけです。初めて使う方は[かんたんスタート](docs/quickstart/ja.md)を、詳しい使い方は[マニュアル](docs/manual/ja.md)をご覧ください。
+最新版は[リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases/latest)からダウンロードできます。正式な配布場所はここだけです。初めて使う方は[かんたんスタート](docs/quickstart/ja.md)を、詳しい使い方は[マニュアル](docs/manual/ja.md)をご覧ください。
 
 ## ご利用について
 
 - 個人・法人を問わず、収益化している配信を含めて無料で利用できます。
 - クレジット表記は不要です。気に入っていただけたら、配信や SNS で紹介してもらえるとうれしいです。
-- 開発を応援していただける場合は、[GitHub Sponsors](https://github.com/sponsors/KMOdan5) から支援できます。
+- 開発を応援していただける場合は、[GitHub Sponsors](https://github.com/sponsors/KMOdan5) または [BOOTH](https://gelazy.booth.pm/) からのご支援をお願いします。
+  - いただいたご支援は、配信ツールの開発に使わせていただきます。
 - 表示する画像の権利(著作権など)は、利用者の責任で確認してください。
 - プラグインの改変・再配布は、GPL-2.0 に従ってください。
 
@@ -109,6 +93,12 @@ Windows 用のファイルへのコード署名は、利用者が増えた段階
 プライバシーについては[プライバシーポリシー](#プライバシーポリシー)を、セキュリティに関わる問題の報告は [SECURITY.md](SECURITY.md) をご覧ください。
 
 </details>
+
+## テストに協力してくださった方
+
+動作テストのアンケートに答えてくださった皆さん、ありがとうございました。
+
+音無ユウト・[かったん](https://www.youtube.com/channel/UC7JkaWTpr8dekND5vdNyuPw)・[cuezaku](https://www.twitch.tv/cuezaku)・[コーラサワー](https://youtube.com/@colasour-halars)・[爽葉ことと](https://x.com/sayahakototo_vt)・[成乃リツ](https://www.youtube.com/@seino_ritsu)・りっつん
 
 ## ライセンス
 
