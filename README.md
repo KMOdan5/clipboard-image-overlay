@@ -52,7 +52,7 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64-installer.exe` (inst
 | October 2026 | 0.1 (beta) | Beta test (closed test with acquaintances): checking the core features on different environments |
 | November 2026 | 0.2 (beta) | Public beta test: adding the history dock and an installer |
 | November 2026 | 0.3 (beta) | Public beta improvements: showing why an image could not be shown, Studio Mode support, and an OBS version check in the installer |
-| Late November 2026 | 1.0 | Official release: reflecting the test results and improving the manual |
+| Late November 2026 | 1.0 | Official release: showing multiple images at once, controls in the history dock, support for other canvases (vertical streaming), and a list of image sources with removal |
 
 ## Requirements
 
