@@ -42,6 +42,18 @@ For Windows: `clipboard-image-overlay-(version)-windows-x64-installer.exe` (inst
 
 </details>
 
+## Roadmap to 1.0
+
+<!-- Image: roadmap illustration (docs/images/roadmap.png), shared with the Japanese README. After adding the image, remove the comment markers around the next line -->
+<!-- <p align="center"><img src="docs/images/roadmap.png" width="720" alt="Roadmap to 1.0"></p> -->
+
+| Release | Version | What's included |
+|---|---|---|
+| October 2026 | 0.1 (beta) | Beta test (closed test with acquaintances): checking the core features on different environments |
+| November 2026 | 0.2 (beta) | Public beta test: adding the history dock and an installer |
+| November 2026 | 0.3 (beta) | Public beta improvements: showing why an image could not be shown, Studio Mode support, and an OBS version check in the installer |
+| Late November 2026 | 1.0 | Official release: reflecting the test results and improving the manual |
+
 ## Requirements
 
 - Windows 10 / 11
