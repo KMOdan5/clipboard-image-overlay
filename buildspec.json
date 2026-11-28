@@ -38,8 +38,8 @@
     },
     "name": "clipboard-image-overlay",
     "displayName": "Clipboard Image Overlay",
-    "version": "0.3.0",
-    "beta": true,
+    "version": "1.0.0",
+    "beta": false,
     "author": "Kemoyama",
     "website": "https://github.com/KMOdan5/clipboard-image-overlay",
     "email": "gelazy.support@gmail.com"
