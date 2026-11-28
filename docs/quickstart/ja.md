@@ -10,7 +10,7 @@
 ## 2. インストールする
 
 1. OBS を起動している場合は終了します。
-2. [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases)から `clipboard-image-overlay-(版)-windows-x64-installer.exe` をダウンロードします。
+2. [リリース](https://github.com/KMOdan5/clipboard-image-overlay/releases/latest)から `clipboard-image-overlay-(版)-windows-x64-installer.exe` をダウンロードします。
 3. ダウンロードしたファイルを開きます。
    - 「Windows によって PC が保護されました」と表示された場合は「詳細情報」→「実行」を押します。
    - 「このアプリがデバイスに変更を加えることを許可しますか?」と表示されたら「はい」を押します。
